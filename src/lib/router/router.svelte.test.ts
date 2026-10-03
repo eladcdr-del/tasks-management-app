@@ -135,7 +135,11 @@ describe('Router', () => {
 });
 
 /** Appends `<a href>` to the body and clicks it like a user would (primary button, no modifiers). */
-function clickLink(hrefValue: string, init: MouseEventInit = {}, attrs: Record<string, string> = {}) {
+function clickLink(
+  hrefValue: string,
+  init: MouseEventInit = {},
+  attrs: Record<string, string> = {}
+) {
   const a = document.createElement('a');
   a.setAttribute('href', hrefValue);
   for (const [k, v] of Object.entries(attrs)) a.setAttribute(k, v);

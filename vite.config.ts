@@ -52,7 +52,8 @@ function preloadHebrewFont(): Plugin {
       handler(_html, ctx) {
         const font = Object.values(ctx.bundle ?? {}).find(
           (file) =>
-            file.type === 'asset' && /(^|\/)rubik-hebrew-wght-normal[^/]*\.woff2$/.test(file.fileName)
+            file.type === 'asset' &&
+            /(^|\/)rubik-hebrew-wght-normal[^/]*\.woff2$/.test(file.fileName)
         );
         if (!font) {
           this.warn('Hebrew Rubik woff2 not found in the bundle; no font preload injected');

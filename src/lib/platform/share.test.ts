@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { shareTask, whatsappUrl } from './share';
 
-const input = { title: 'מצבר', text: 'להחליף מצבר & לבדוק #שמן', url: 'https://example.com/#/task/a' };
+const input = {
+  title: 'מצבר',
+  text: 'להחליף מצבר & לבדוק #שמן',
+  url: 'https://example.com/#/task/a'
+};
 
 afterEach(() => vi.unstubAllGlobals());
 

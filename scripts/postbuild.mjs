@@ -31,7 +31,7 @@ function walk(dir) {
   });
 }
 
-const kb = (/** @type {number} */ bytes) => `${(bytes / 1024).toFixed(1)} kB`;
+const kb = (/** @type {number} */ bytes) => `${(bytes / 1000).toFixed(2)} kB`; // Vite reports 1 kB = 1000 B
 
 const rows = walk(outDir)
   .filter((file) => /\.(js|css)$/.test(file))

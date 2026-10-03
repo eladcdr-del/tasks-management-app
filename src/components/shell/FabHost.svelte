@@ -2,7 +2,7 @@
   // owner: step 3.1 — STUB (1.1 → 3.1); only 3.1 edits this file. No props.
   // App.svelte mounts this only where ROUTE_META[route].fab is true (Home, Memory). Placeholder "+"
   // that opens QuickAdd; step 3.1 swaps in the Fab primitive from 1.4 (inline-end, above the nav).
-  import Plus from '@lucide/svelte/icons/plus';
+  // Deliberately icon-free: no lucide runtime in the bundle until 3.1 mounts the real Fab.
   import { he } from '$lib/i18n/he';
   import { router } from '$lib/router/router.svelte';
 </script>
@@ -14,7 +14,7 @@
   data-stub="FabHost"
   onclick={() => router.openSheet({ name: 'quickAdd' })}
 >
-  <Plus size={28} aria-hidden="true" />
+  <span aria-hidden="true">+</span>
 </button>
 
 <style>
@@ -31,5 +31,8 @@
     background: var(--accent-strong);
     color: var(--ink-on-accent);
     box-shadow: var(--sh-2);
+    font-size: 2rem;
+    font-weight: 400;
+    line-height: 1;
   }
 </style>
