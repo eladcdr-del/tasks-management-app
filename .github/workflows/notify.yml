@@ -1,0 +1,75 @@
+# HomeCare notifier: every 5 minutes, read Firestore and send due web-push notifications via FCM.
+# This cron job IS the backend (Firebase Spark plan, no Cloud Functions). See scripts/notify/README.md.
+# Without the FIREBASE_SERVICE_ACCOUNT secret every run exits green after a notice: nothing to do.
+name: notify
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: notify
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write # keepalive: re-enable this workflow so GitHub's 60-day inactivity rule never disables it
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Same rule as scripts/notify/guard.ts (shouldRun), in shell so the skip path needs nothing installed.
+      - name: Guard (skip quietly without the secret)
+        id: guard
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::notice::FIREBASE_SERVICE_ACCOUNT secret missing — skipping"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/notify/package-lock.json
+
+      - name: Install notifier dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: npm ci --prefix scripts/notify --no-audit --no-fund
+
+      - name: Run notifier
+        if: steps.guard.outputs.run == 'true'
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: npx --prefix scripts/notify tsx scripts/notify/index.ts
+
+      # Scheduled workflows in a repo with no commits for 60 days get disabled. Re-enabling through the
+      # API (the keepalive-workflow "API" method, no commits) on Sundays in the first run after
+      # 06:00 UTC, and on every manual run, resets that timer. Runs even without the secret and even
+      # if the notifier failed, so the schedule survives until the secret is added.
+      - name: Keepalive (Sundays, first run after 06:00 UTC)
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || {
+            [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "06" ] && [ "$(date -u +%-M)" -lt 5 ]
+          }; then
+            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/notify.yml/enable"
+            echo "keepalive: workflow enable call sent"
+          else
+            echo "keepalive: not due"
+          fi
