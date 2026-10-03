@@ -31,7 +31,7 @@
 
   /*
    * Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface),
-   * -on (text/initials ON the member colour = -ink).
+   * -on (= -ink: text/initials on the member's SOFT fill, never on -base).
    * AA pairing for avatars, chips and member labels: text/initials use --m-on (= --m-ink) on a
    * --m-soft fill, with a --m-base ring. Ink on soft is >= 4.7:1 for every member in light and dark.
    * Never put white (or --ink-on-accent) text on --m-base: 2.6–4.3:1 fails AA.

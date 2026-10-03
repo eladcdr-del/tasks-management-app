@@ -16,6 +16,7 @@
       // Apply the saved theme before first paint (no flash). Values: 'system' | 'light' | 'dark'.
       // Runtime changes go through src/lib/platform/theme.ts (applyTheme), which mirrors this logic:
       // a forced theme collapses the two media-scoped theme-color metas into one of its colour.
+      (function () {
       try {
         var t = localStorage.getItem('homecare.theme');
         if (t === 'light' || t === 'dark' || t === 'system')
@@ -27,6 +28,7 @@
           metas[0].setAttribute('content', t === 'dark' ? '#1C1714' : '#FBF6EF');
         }
       } catch (e) {}
+      })();
     </script>
   </head>
   <body>

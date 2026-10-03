@@ -16,7 +16,9 @@ test('boots as a Hebrew RTL shell under /tasks-management-app/ with Rubik loaded
   expect(new URL(page.url()).pathname).toBe('/tasks-management-app/');
 
   // The fixtures' auto fixed clock is installed before navigation.
-  expect(await page.evaluate(() => Date.now())).toBe(FIXED_NOW.getTime());
+  const drift = (await page.evaluate(() => Date.now())) - FIXED_NOW.getTime();
+  expect(drift).toBeGreaterThanOrEqual(0);
+  expect(drift).toBeLessThan(60_000);
 
   const html = page.locator('html');
   await expect(html).toHaveAttribute('dir', 'rtl');

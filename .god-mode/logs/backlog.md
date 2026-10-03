@@ -15,3 +15,8 @@
 - [1.3] Live-typing flicker on intermediate values (debounce in the UI, or mark partial matches at the cursor).
 - [1.3] "מהיום" (from now on) sets today.
 - [1.3] A bare H:MM with no ב/בשעה becomes a time ("ניצחנו 3:10").
+- [1.1 r2] Router: 1s fallback timer can replay a queued navigate onto a still-current sheet entry if the real popstate arrives late (>1s). Fix: track expected target idx; replay on timeout only if history.state.idx unchanged.
+- [1.1 r2] Router tab policy: navigateTab while a sheet is open replaces the sheet entry without Home beneath; Home tab after plain links leaves [Home, Settings, Home]. Fix: close sheet first; stamp distance-to-Home and history.go(-n).
+- [1.1 r2] Cold start on a tab/deep link (e.g. notification → #/task/:id) exits on hardware Back; and pushState without user activation may be skipped by Chrome's back intervention. Verify on Android + installed PWA (Phase 7).
+- [1.1 r2] Keyboard + fixed bars: with resizes-content, BottomNav/FAB sit above the keyboard when a field outside a sheet has focus (Memory search). 3.1/4.1: hide nav while keyboard open.
+- [1.1 r2] 7.3 budget must measure startup JS only (exclude sw.js and lazy chunks).

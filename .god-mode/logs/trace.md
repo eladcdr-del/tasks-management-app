@@ -15,3 +15,4 @@
 | 12 | 13:40 | Worker 2.3 | BEST (opus), worktree | Firestore rules + indexes + rules tests + schema doc + security review (started early: depends only on frozen contracts) | worktree branch |
 | 13 | 13:40 | Surgeon 1.3 | BEST (opus), in 1.3 worktree | Parser precision: numbers≠dates, ב+weekday, composites, times, week horizon, strong/weak keywords, chip API with dismissed keys, negatives corpus | worktree branch |
 | 14 | 13:40 | Worker 2.1 | BEST (opus), worktree | Demo adapter + seed + reusable repository contract suite (started early) | worktree branch |
+| 15 | 13:43 | Orchestrator (as Surgeon) | — | 1.1 round-2 fixes: link handler bubble phase, #/new in place, theme IIFE, clock.install, token comment | main tree |

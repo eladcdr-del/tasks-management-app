@@ -10,7 +10,7 @@
 //     await shot(page, 'home-light');           // tests/e2e/__screens__/home-light.png
 //   });
 //
-// Fixed clock: an auto fixture freezes Date to FIXED_NOW (Sunday 4 Oct 2026, 09:00 Asia/Jerusalem)
+// Fixed clock: an auto fixture starts Date at FIXED_NOW (time then flows normally) (Sunday 4 Oct 2026, 09:00 Asia/Jerusalem)
 // before any navigation, so "today" buckets and date labels are deterministic; timers still run.
 //   test.use({ now: new Date('2026-10-08T20:00:00+03:00') });   // override for a file / describe
 //   test.use({ now: null });                                    // opt out (real time)
@@ -33,7 +33,7 @@ export const test = base.extend<Fixtures>({
   now: [FIXED_NOW, { option: true }],
   fixedClock: [
     async ({ page, now }, use) => {
-      if (now) await page.clock.setFixedTime(now);
+      if (now) await page.clock.install({ time: now });
       await use();
     },
     { auto: true }

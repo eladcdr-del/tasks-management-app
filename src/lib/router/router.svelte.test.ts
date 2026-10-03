@@ -210,6 +210,39 @@ describe('Router history rules (S1–S3, tabs)', () => {
     expect(router.route.name).toBe('home');
   });
 
+  it('N1: a component handler that preventDefault()s a link click cancels routing', () => {
+    const a = document.createElement('a');
+    a.setAttribute('href', '#/jar');
+    a.addEventListener('click', (e) => e.preventDefault());
+    document.body.append(a);
+    a.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }));
+    a.remove();
+    expect(router.route.name).toBe('home');
+    expect(window.location.hash).not.toBe('#/jar');
+  });
+
+  it('N1: a capture-phase window listener registered after start() can cancel a link click', () => {
+    const swallow = (e: Event) => e.preventDefault();
+    window.addEventListener('click', swallow, { capture: true });
+    try {
+      clickLink('#/household');
+    } finally {
+      window.removeEventListener('click', swallow, { capture: true });
+    }
+    expect(router.route.name).toBe('home');
+  });
+
+  it('a #/new link clicked on a sheet-less Home opens QuickAdd in place (no duplicate Home entry)', async () => {
+    const idxBefore = (window.history.state as { idx: number }).idx;
+    clickLink('#/new');
+    expect(router.route.name).toBe('home');
+    expect(router.sheet).toEqual({ name: 'quickAdd' });
+    expect((window.history.state as { idx: number }).idx).toBe(idxBefore + 1);
+    await afterPopstate(() => window.history.back());
+    expect(router.sheet).toBeNull();
+    expect((window.history.state as { idx: number }).idx).toBe(idxBefore);
+  });
+
   it('S2: modified, targeted and download clicks are left to the browser', () => {
     const seen: boolean[] = [];
     const record = (e: Event) => {

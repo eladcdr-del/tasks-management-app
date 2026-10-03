@@ -23,10 +23,14 @@
 //     on that popstate. So `closeSheet(); navigate('#/task/a')` lands on the task, with Home beneath.
 //     `closeSheet()`/`back()`/`navigateTab()` return a Promise that resolves once their work has landed;
 //     awaiting it is optional.
-//  4. Links. `start()` installs ONE capture-phase click handler: a primary-button click, with no
-//     modifier keys, on a same-document `<a href="#/…">` (no `target`, no `download`) is
+//  4. Links. `start()` installs ONE bubble-phase click handler on window: a primary-button click,
+//     with no modifier keys, on a same-document `<a href="#/…">` (no `target`, no `download`) is
 //     `preventDefault()`-ed and routed through `navigate(href)` — or through `navigateTab(tab)` when
-//     the link carries `data-tab="<TabId>"` (BottomNav does). Prefer `<a href={href(...)}>` for links.
+//     the link carries `data-tab="<TabId>"` (BottomNav does). Because it runs in the bubble phase,
+//     a component handler that calls `preventDefault()` (unsaved-changes guard, swipe suppression,
+//     a loading link-button) cancels the routing. Prefer `<a href={href(...)}>` for links.
+//     A link to `#/new` clicked while Home is current (no sheet) opens the QuickAdd sheet in place
+//     instead of pushing a duplicate Home entry.
 //  5. Hash changes the router did not make (manual URL edits, `location.hash = …`): a fresh entry is
 //     stamped `idx + 1`. If it was pushed over a sheet entry, that sheet is stripped when Back lands
 //     on it. If the hash of the sheet's own entry changes, the sheet is dropped.
@@ -144,13 +148,13 @@ export class Router {
     const onClick = (e: MouseEvent) => this.#onLinkClick(e);
     win.addEventListener('popstate', onPopState);
     win.addEventListener('hashchange', onHashChange);
-    win.addEventListener('click', onClick, { capture: true });
+    win.addEventListener('click', onClick);
     this.#sync();
     this.#started = true;
     this.#stop = () => {
       win.removeEventListener('popstate', onPopState);
       win.removeEventListener('hashchange', onHashChange);
-      win.removeEventListener('click', onClick, { capture: true });
+      win.removeEventListener('click', onClick);
       this.#queue = [];
       this.#endTraversal();
       this.#stop = null;
@@ -167,6 +171,15 @@ export class Router {
     }
     const url = toHash(to);
     const current = readEntryState(win.history.state);
+    // `#/new` from a sheet-less Home: open QuickAdd in place (no duplicate Home entry).
+    if (
+      current?.sheet === undefined &&
+      this.route.name === 'home' &&
+      /^#\/new(?:[?#]|$)/.test(url)
+    ) {
+      this.openSheet({ name: 'quickAdd' });
+      return;
+    }
     // A navigation from inside a sheet replaces the sheet's entry, so Back never reopens it.
     const sheetOpen = current?.sheet !== undefined;
     const sameUrl = url === win.location.hash;
