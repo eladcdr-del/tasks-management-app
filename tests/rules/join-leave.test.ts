@@ -243,11 +243,9 @@ describe('leave (self)', () => {
 
   it('denied: a released event cannot ride in the leave batch (the leaver is no longer a member after it)', async () => {
     await seedTask(env(), 'mine-1', { ownerId: BOB });
-    const b = leaveBatch(as(env(), BOB), BOB, HID, ['mine-1']);
-    b.set(
-      doc(as(env(), BOB), path.event('left-1')),
-      eventDoc(BOB, 'released', { taskId: 'mine-1' })
-    );
+    const db = as(env(), BOB);
+    const b = leaveBatch(db, BOB, HID, ['mine-1']);
+    b.set(doc(db, path.event('left-1')), eventDoc(BOB, 'released', { taskId: 'mine-1' }));
     await assertFails(b.commit());
   });
 
