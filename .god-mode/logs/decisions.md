@@ -27,3 +27,10 @@
   - (g) An urgent recurring task's next instance is reset to normal.
 
   Recorded in Blueprint §3 "Domain rule amendments".
+- [1.3 QA] Parser decisions (escalated by the assessor):
+  - (a) Category keywords split into strong and weak signals. This deviates from the §6 list; precision beats recall.
+  - (b) A single "!" no longer sets priority (Israelis end ordinary sentences with "!"). "!!" still means urgent, and priority words still apply.
+  - (c) A past date with no year, within 14 days back, stays this year, so the task shows as overdue. Otherwise it rolls to next year.
+  - (d) A time with no date gets scheduledFor = today if the time is later than now, otherwise tomorrow.
+  - (e) The parser uses domain/dates.ts and weekHorizon instead of its own dateMath.ts duplicate.
+  - (f) "סוף השבוע" on Friday means today in the parser ("this weekend" said on Friday). The snooze sheet's "סוף השבוע" on Friday means next Friday. The snooze label shows the date, so the difference is transparent.

@@ -10,3 +10,8 @@
 - [1.2] Search recall: plene/defective spelling variants; category label and cost are not searchable.
 - [1.2] Jar: `justFilled(before, after)` helper; optional guard against early redemption.
 - [1.4] Promote the light-dark() fallbacks to tokens: --surface-raised, --inverse-surface/ink/accent, --success-soft, --progress-track. Components: Toggle, SegmentedControl, Stepper, Snackbar, Button, Fab, ProgressBar.
+- [1.3] Parser keyword lists duplicate domain/categories.ts keywords (two sources of truth).
+- [1.3] Not recognized: "לפני שבת", "ערב שבת", "במוצ״ש", "אחרי החגים".
+- [1.3] Live-typing flicker on intermediate values (debounce in the UI, or mark partial matches at the cursor).
+- [1.3] "מהיום" (from now on) sets today.
+- [1.3] A bare H:MM with no ב/בשעה becomes a time ("ניצחנו 3:10").
