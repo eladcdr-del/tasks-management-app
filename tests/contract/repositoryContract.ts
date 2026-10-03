@@ -30,6 +30,7 @@ import type {
   ActivityEvent,
   AuthUser,
   EarnedTreat,
+  EncodedPhoto,
   EventType,
   Household,
   ISODate,
@@ -74,11 +75,11 @@ const DAY = 86_400_000;
 const TINY_JPEG_BASE64 =
   '/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABALDA4MChAODQ4SERATGCgaGBYWGDEjJR0oOjM9PDkzODdASFxOQERXRTc4UG1RV19iZ2hnPk1xeXBkeFxlZ2P/2wBDARESEhgVGC8aGi9jQjhCY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2P/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAT/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABf/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/AKABpl//2Q==';
 
-function jpegBlob(): Blob {
-  const bin = atob(TINY_JPEG_BASE64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return new Blob([bytes], { type: 'image/jpeg' });
+const TINY_JPEG_DATA_URL = `data:image/jpeg;base64,${TINY_JPEG_BASE64}`;
+
+/** What platform/image.ts hands over: the adapter only stores it. The 1×1 JPEG doubles as thumbnail. */
+function jpegPhoto(): EncodedPhoto {
+  return { dataUrl: TINY_JPEG_DATA_URL, thumbDataUrl: TINY_JPEG_DATA_URL, width: 1, height: 1 };
 }
 
 const PROFILES = {
@@ -435,6 +436,7 @@ export function runRepositoryContract(
           householdId: hid,
           householdName: 'הבית של מיכל',
           inviterName: 'מיכל',
+          memberCount: 1,
           createdBy: A,
           revoked: false
         });
@@ -476,6 +478,14 @@ export function runRepositoryContract(
           inviterName: 'מיכל',
           memberCount: 1
         });
+      });
+
+      it('an invite carries the member count at creation, and the preview reports it', async () => {
+        const { hid } = await pair();
+        const inv = await repo.createInvite(hid);
+        expect(inv.memberCount).toBe(2);
+        await env.asUser(user('guest'));
+        expect((await repo.previewInvite(inv.code)).memberCount).toBe(2);
       });
 
       it('previewInvite of an unknown or malformed code is not-found', async () => {
@@ -956,7 +966,7 @@ export function runRepositoryContract(
       it('deleting a completed task removes its photos', async () => {
         const { hid } = await solo();
         const id = await newTask(hid, { title: 'קבלה על תיקון' });
-        await repo.completeTask(hid, id, NO_DOCS, [jpegBlob()]);
+        await repo.completeTask(hid, id, NO_DOCS, [jpegPhoto()]);
         const t = await existing(hid, id, (t) => t.status === 'done');
         const [photoId] = t.completion!.photoIds;
         expect(await repo.getPhoto(hid, photoId!)).not.toBeNull();
@@ -1092,8 +1102,8 @@ export function runRepositoryContract(
       it('stores up to 3 photos, retrievable with getPhoto', async () => {
         const { hid, A } = await solo();
         const id = await newTask(hid, { title: 'קבלה על מזגן' });
-        const blobs = [jpegBlob(), jpegBlob(), jpegBlob(), jpegBlob()];
-        await repo.completeTask(hid, id, { ...NO_DOCS, note: 'הקבלה בתמונה' }, blobs);
+        const photos = [jpegPhoto(), jpegPhoto(), jpegPhoto(), jpegPhoto()];
+        await repo.completeTask(hid, id, { ...NO_DOCS, note: 'הקבלה בתמונה' }, photos);
         const t = await existing(hid, id, (t) => t.status === 'done');
         const ids = t.completion!.photoIds;
         expect(ids).toHaveLength(3);
@@ -1119,7 +1129,7 @@ export function runRepositoryContract(
         repo.setJar(hid, { treat: 'ארוחה', target: 10 });
         await jarOf(hid);
         const id = await newTask(hid, { title: 'לתקן את הידית' });
-        await repo.completeTask(hid, id, { ...NO_DOCS, cost: 60 }, [jpegBlob()]);
+        await repo.completeTask(hid, id, { ...NO_DOCS, cost: 60 }, [jpegPhoto()]);
         const done = await existing(hid, id, (t) => t.status === 'done');
         await jarOf(hid, (j) => j.count === 1);
 

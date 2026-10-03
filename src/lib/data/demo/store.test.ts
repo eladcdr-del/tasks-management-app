@@ -71,6 +71,7 @@ describe('DemoStore.watch', () => {
         householdId: 'h',
         householdName: 'בית',
         inviterName: 'מיכל',
+        memberCount: 1,
         createdBy: 'm',
         createdAt: 1,
         expiresAt: 2,

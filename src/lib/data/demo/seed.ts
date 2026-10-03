@@ -688,6 +688,7 @@ export function createSeed(now: Date): DemoState {
     householdId: DEMO_HOUSEHOLD_ID,
     householdName: 'הבית שלנו',
     inviterName: 'מיכל',
+    memberCount: 1, // snapshot at creation: דני joined with this invite half an hour later
     createdBy: M,
     createdAt: inviteAt,
     expiresAt: inviteAt + INVITE_TTL,

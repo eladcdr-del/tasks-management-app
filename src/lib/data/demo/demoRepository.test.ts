@@ -6,6 +6,7 @@ import type {
   ActivityEvent,
   AuthUser,
   EarnedTreat,
+  EncodedPhoto,
   Household,
   Member,
   SyncState,
@@ -18,7 +19,13 @@ import {
   type DemoRepository,
   type DemoRepositoryOptions
 } from './demoRepository';
-import { DANI, DEMO_HOUSEHOLD_ID as HID, MICHAL, SEED_RECEIPT_JPEG } from './seed';
+import {
+  DANI,
+  DEMO_HOUSEHOLD_ID as HID,
+  MICHAL,
+  SEED_RECEIPT_JPEG,
+  SEED_RECEIPT_THUMB
+} from './seed';
 import { emptyState, memoryPersistence, type Persistence } from './store';
 
 const NOW = Date.parse('2026-10-04T09:00:00+03:00');
@@ -58,9 +65,13 @@ const members = (r: DemoRepository) => current<Member[]>((cb) => r.watchMembers(
 const household = (r: DemoRepository) => current<Household>((cb) => r.watchHousehold(HID, cb));
 const authUser = (r: DemoRepository) => current<AuthUser | null>((cb) => r.onAuthChange(cb));
 
-function jpegBlob(): Blob {
-  const b64 = SEED_RECEIPT_JPEG.slice(SEED_RECEIPT_JPEG.indexOf(',') + 1);
-  return new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: 'image/jpeg' });
+function jpegPhoto(): EncodedPhoto {
+  return {
+    dataUrl: SEED_RECEIPT_JPEG,
+    thumbDataUrl: SEED_RECEIPT_THUMB,
+    width: 120,
+    height: 160
+  };
 }
 
 describe('demo repository: the seeded household', () => {
@@ -103,14 +114,18 @@ describe('demo repository: the seeded household', () => {
     expect(photo?.taskId).toBe('seed-battery');
   });
 
-  it('previews an invite with the live member count', async () => {
+  it('stamps an invite with the member count at creation, and previews that snapshot', async () => {
     const repo = await make();
     const inv = await repo.createInvite(HID);
+    expect(inv.memberCount).toBe(2);
     expect(await repo.previewInvite(inv.code)).toEqual({
       householdName: 'הבית שלנו',
       inviterName: 'מיכל',
       memberCount: 2
     });
+    await repo.simulateJoin({ code: inv.code });
+    expect((await household(repo)).memberCount).toBe(3);
+    expect((await repo.previewInvite(inv.code)).memberCount).toBe(2); // a snapshot, not live
   });
 
   it('runs the whole jar story: three more completions fill it, redeeming starts round 4', async () => {
@@ -349,15 +364,18 @@ describe('demo repository: other options', () => {
     expect(await repo.getMyHouseholdId()).toBeNull();
   });
 
-  it('stores completion photos exactly, with their pixel size', async () => {
+  it('stores completion photos exactly as given, thumbnail and pixel size included', async () => {
     const repo = await make();
     await repo.completeTask(HID, 'seed-bulbs', { note: '', cost: null, place: '', contact: '' }, [
-      jpegBlob()
+      jpegPhoto()
     ]);
     const t = (await current<Task | null>((cb) => repo.watchTask(HID, 'seed-bulbs', cb)))!;
     const photo = await repo.getPhoto(HID, t.completion!.photoIds[0]!);
-    expect(photo).toMatchObject({
+    expect(photo).toEqual({
+      id: t.completion!.photoIds[0],
+      taskId: 'seed-bulbs',
       dataUrl: SEED_RECEIPT_JPEG,
+      thumbDataUrl: SEED_RECEIPT_THUMB,
       width: 120,
       height: 160,
       createdBy: MICHAL,
@@ -365,23 +383,18 @@ describe('demo repository: other options', () => {
     });
   });
 
-  it('accepts a custom photo encoder (e.g. one that makes real thumbnails)', async () => {
-    const encodePhoto = vi.fn(async () => ({
-      dataUrl: 'data:image/jpeg;base64,AA==',
-      thumbDataUrl: 'data:image/jpeg;base64,AQ==',
-      width: 4,
-      height: 3
-    }));
-    const repo = await make({ encodePhoto });
-    await repo.completeTask(HID, 'seed-bulbs', { note: '', cost: null, place: '', contact: '' }, [
-      jpegBlob()
-    ]);
+  it('stores at most 3 of the photos it is given, in order', async () => {
+    const repo = await make();
+    const photos = [1, 2, 3, 4].map((width) => ({ ...jpegPhoto(), width }));
+    await repo.completeTask(
+      HID,
+      'seed-bulbs',
+      { note: '', cost: null, place: '', contact: '' },
+      photos
+    );
     const t = (await current<Task | null>((cb) => repo.watchTask(HID, 'seed-bulbs', cb)))!;
-    expect(await repo.getPhoto(HID, t.completion!.photoIds[0]!)).toMatchObject({
-      thumbDataUrl: 'data:image/jpeg;base64,AQ==',
-      width: 4
-    });
-    expect(encodePhoto).toHaveBeenCalledTimes(1);
+    const stored = await Promise.all(t.completion!.photoIds.map((id) => repo.getPhoto(HID, id)));
+    expect(stored.map((p) => p!.width)).toEqual([1, 2, 3]);
   });
 
   it('logs a failed queued write when nobody listens to onWriteError', async () => {

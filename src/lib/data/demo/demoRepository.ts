@@ -35,6 +35,7 @@ import type {
   AuthUser,
   Completion,
   EarnedTreat,
+  EncodedPhoto,
   EventType,
   Household,
   Invite,
@@ -49,7 +50,6 @@ import type {
   TaskPatch,
   Unsubscribe
 } from '../../domain/types';
-import { encodePhoto, type PhotoEncoder } from './photo';
 import { ALL_NOTIFY_ON, createSeed, DEMO_USERS, MICHAL } from './seed';
 import {
   DEFAULT_STORAGE_KEY,
@@ -79,8 +79,6 @@ export interface DemoRepositoryOptions {
   storageKey?: string;
   /** Debounce for persistence writes, in ms. Default 200. */
   persistDelayMs?: number;
-  /** Turns a completion photo into a stored Photo's data. Default: data URL as-is (photo.ts). */
-  encodePhoto?: PhotoEncoder;
 }
 
 export interface SimulateJoinOptions {
@@ -138,7 +136,7 @@ export async function createDemoRepository(
     state = options.initial === 'empty' ? emptyState() : createSeed(new Date(now()));
   const store = new DemoStore(state, persistence, options.persistDelayMs);
   if (fresh) store.markDirty();
-  return buildDemoRepository(store, now, options.encodePhoto ?? encodePhoto);
+  return buildDemoRepository(store, now);
 }
 
 function resolvePersistence(o: DemoRepositoryOptions): Persistence | null {
@@ -282,11 +280,7 @@ function newMember(
 
 // ── The repository ────────────────────────────────────────────────────────────
 
-function buildDemoRepository(
-  store: DemoStore,
-  now: () => Millis,
-  encode: PhotoEncoder
-): DemoRepository {
+function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepository {
   const writeErrorListeners = new Set<(e: RepoError) => void>();
   const s = () => store.state;
 
@@ -422,6 +416,7 @@ function buildDemoRepository(
       householdId: hid,
       householdName: rec.household.name,
       inviterName: rec.members[uid]?.displayName ?? '',
+      memberCount: rec.household.memberCount,
       createdBy: uid,
       createdAt: t,
       expiresAt: t + INVITE_TTL_MS,
@@ -525,7 +520,7 @@ function buildDemoRepository(
       return {
         householdName: inv.householdName,
         inviterName: inv.inviterName,
-        memberCount: st.households[inv.householdId]?.household.memberCount ?? 0
+        memberCount: inv.memberCount
       };
     },
 
@@ -778,15 +773,8 @@ function buildDemoRepository(
       hid: string,
       id: string,
       c: Omit<Completion, 'photoIds'>,
-      photos: Blob[]
+      photos: EncodedPhoto[]
     ): Promise<CompleteResult> {
-      // Fail fast before encoding photos; everything is re-checked when the write is applied.
-      {
-        const st = s();
-        const task = getTask(memberHousehold(st, hid, requireUser(st)), id);
-        if (task.status === 'done') throw new RepoError('conflict', 'the task is already done');
-      }
-      const encoded = await Promise.all(photos.slice(0, MAX_PHOTOS).map((blob) => encode(blob)));
       return store.mutate((st): CompleteResult => {
         const uid = requireUser(st);
         const rec = memberHousehold(st, hid, uid);
@@ -794,10 +782,13 @@ function buildDemoRepository(
         if (task.status === 'done') throw new RepoError('conflict', 'the task is already done');
 
         const t = now();
-        const docs: Photo[] = encoded.map((e) => ({
+        const docs: Photo[] = photos.slice(0, MAX_PHOTOS).map((e) => ({
           id: randomId(20),
           taskId: id,
-          ...e,
+          dataUrl: e.dataUrl,
+          thumbDataUrl: e.thumbDataUrl,
+          width: e.width,
+          height: e.height,
           createdBy: uid,
           createdAt: t
         }));

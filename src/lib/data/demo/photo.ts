@@ -1,28 +1,9 @@
-// Completion photos in the demo adapter. `completeTask` receives Blobs that platform/image.ts has
-// already compressed (Blueprint §5 "Photos are compressed by platform/image.ts, not the adapter").
-// The demo stores each one as a data URL. Width and height are read from the JPEG/PNG header (no
-// canvas, so it also works in Node). The thumbnail defaults to the photo itself, because the demo
-// has no size limit; an app can pass its own encoder (createDemoRepository `encodePhoto`) to store a
-// real 240px thumbnail.
+// Completion photos in the demo adapter. `completeTask` receives EncodedPhoto values that
+// platform/image.ts has already compressed and thumbnailed (Blueprint §5 "Photos are compressed by
+// platform/image.ts, not the adapter"); the demo stores them as they are. What remains here is a
+// JPEG/PNG header reader (no canvas, so it works in Node), used to check the seed's photo sizes.
 
-export interface EncodedPhoto {
-  dataUrl: string;
-  thumbDataUrl: string;
-  width: number;
-  height: number;
-}
-
-export type PhotoEncoder = (blob: Blob) => Promise<EncodedPhoto>;
-
-/** Base64 of raw bytes, in chunks (String.fromCharCode has an argument limit). */
-export function bytesToBase64(bytes: Uint8Array): string {
-  let bin = '';
-  const CHUNK = 0x8000;
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(bin);
-}
+export type { EncodedPhoto } from '../../domain/types';
 
 const u16 = (b: Uint8Array, i: number) => ((b[i] ?? 0) << 8) | (b[i + 1] ?? 0);
 const u32 = (b: Uint8Array, i: number) => u16(b, i) * 65_536 + u16(b, i + 2);
@@ -63,12 +44,3 @@ export function imageSize(bytes: Uint8Array): { width: number; height: number } 
   }
   return null;
 }
-
-/** The default demo encoder: data URL of the blob as-is, the same URL as thumbnail, header size. */
-export const encodePhoto: PhotoEncoder = async (blob) => {
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  const type = blob.type || (bytes[0] === 0x89 ? 'image/png' : 'image/jpeg');
-  const dataUrl = `data:${type};base64,${bytesToBase64(bytes)}`;
-  const size = imageSize(bytes) ?? { width: 0, height: 0 };
-  return { dataUrl, thumbDataUrl: dataUrl, ...size };
-};

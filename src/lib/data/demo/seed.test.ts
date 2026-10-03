@@ -86,6 +86,7 @@ describe('createSeed: household and people', () => {
       inviteCode: DEMO_INVITE_CODE
     });
     expect(seed.invites[DEMO_INVITE_CODE]!.expiresAt).toBeLessThan(NOW.getTime()); // long expired
+    expect(seed.invites[DEMO_INVITE_CODE]!.memberCount).toBe(1); // michal alone when it was made
   });
 });
 
