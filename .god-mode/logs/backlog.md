@@ -6,3 +6,6 @@
 - [1.1] `globPatterns` precaches all JS chunks, including Firebase. 5.1 should exclude Firebase chunks from the precache, or use runtime caching.
 - [1.1] Canvas mock decision for `image.ts` tests (3.3).
 - [1.1→1.3] The parser has its own `dateMath.ts`, duplicating `domain/dates.ts`. Consolidate after the 1.2/1.3 merge.
+- [1.2] Overlap between "waiting" and today's list: render unowned cards de-emphasised in the time list (note for 3.2).
+- [1.2] Search recall: plene/defective spelling variants; category label and cost are not searchable.
+- [1.2] Jar: `justFilled(before, after)` helper; optional guard against early redemption.
