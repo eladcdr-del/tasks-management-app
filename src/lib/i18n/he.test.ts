@@ -1,4 +1,3 @@
-import { readFileSync, readdirSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { form, gendered, he } from './he';
 
@@ -27,19 +26,23 @@ describe('gendered strings', () => {
 });
 
 describe('per-owner string files (src/lib/i18n/he/)', () => {
-  const dir = new URL('./he/', import.meta.url);
-  const files = readdirSync(dir).filter((f) => f.endsWith('.ts'));
+  const sources = import.meta.glob<string>('./he/*.ts', {
+    query: '?raw',
+    import: 'default',
+    eager: true
+  });
+  const files = Object.keys(sources);
 
   it('every file starts with its owner header', () => {
     expect(files.length).toBeGreaterThan(0);
     for (const file of files) {
-      const first = readFileSync(new URL(file, dir), 'utf8').split('\n', 1)[0];
+      const first = sources[file]?.split('\n', 1)[0];
       expect(first, file).toMatch(/^\/\/ owner: step \d\.\d — only that step edits this file$/);
     }
   });
 
   it('he aggregates exactly one namespace per file, named after it', () => {
-    const namespaces = files.map((f) => f.replace(/\.ts$/, '')).sort();
+    const namespaces = files.map((f) => f.replace(/^\.\/he\/|\.ts$/g, '')).sort();
     expect(Object.keys(he).sort()).toEqual(namespaces);
   });
 

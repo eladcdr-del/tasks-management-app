@@ -1,13 +1,7 @@
 // @vitest-environment jsdom
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it } from 'vitest';
+import indexHtml from '../../../index.html?raw';
 import { THEME_COLORS, THEME_STORAGE_KEY, applyTheme, currentTheme } from './theme';
-
-// Path-based: under jsdom the global URL is jsdom's, which node:fs does not accept.
-const here = dirname(fileURLToPath(import.meta.url));
-const indexHtml = readFileSync(resolve(here, '../../../index.html'), 'utf8');
 const headHtml = /<head>([\s\S]*)<\/head>/.exec(indexHtml)?.[1] ?? '';
 const prePaintScript = /<script>([\s\S]*?)<\/script>/.exec(headHtml)?.[1] ?? '';
 

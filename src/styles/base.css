@@ -109,9 +109,9 @@ ol[role='list'] {
   color: var(--ink);
 }
 
-/* ── Focus: visible ring for keyboard users only ───────────────────────────── */
+/* ── Focus: visible ring for keyboard users only (--focus-ring is >= 3:1 on every surface) ── */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -121,9 +121,10 @@ ol[role='list'] {
 
 /* ── Utilities ──────────────────────────────────────────────────────────────── */
 
-/* Directional icons (arrows, chevrons) mirror in RTL. */
-[dir='rtl'] .flip-rtl {
-  transform: scaleX(-1);
+/* Directional icons (arrows, chevrons) mirror in RTL. Uses :dir() (follows the element's resolved
+   direction, including dir="auto" ancestors) and `scale`, so it composes with any `transform`. */
+.flip-rtl:dir(rtl) {
+  scale: -1 1;
 }
 
 /* Counts, numerals and money. */
