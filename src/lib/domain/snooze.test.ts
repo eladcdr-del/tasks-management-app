@@ -22,6 +22,7 @@ function task(over: Partial<Task> = {}): Task {
     updatedBy: 'u1',
     updatedAt: 1_000,
     scheduledFor: null,
+    weekPlan: false,
     dueDate: null,
     dueTime: null,
     hardDeadline: false,

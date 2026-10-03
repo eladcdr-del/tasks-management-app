@@ -195,6 +195,7 @@ class SeedBuilder {
       updatedBy,
       updatedAt,
       scheduledFor: lastSnooze ? lastSnooze[1] : (s.scheduledFor ?? null),
+      weekPlan: false,
       dueDate: s.dueDate ?? null,
       dueTime: s.dueTime ?? null,
       hardDeadline: s.hardDeadline ?? false,

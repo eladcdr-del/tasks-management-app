@@ -258,6 +258,7 @@ describe('isStuck', () => {
         updatedBy: 'u1',
         updatedAt: created(30),
         scheduledFor: null,
+        weekPlan: false,
         dueDate: '2026-10-01',
         dueTime: null,
         hardDeadline: false,

@@ -112,6 +112,7 @@ export function buildNextInstance(
     updatedBy: actorUid,
     updatedAt: nowMillis,
     scheduledFor: hasDue ? null : next,
+    weekPlan: hasDue ? false : task.weekPlan,
     dueDate: hasDue ? next : null,
     dueTime: task.dueTime,
     hardDeadline: task.hardDeadline,

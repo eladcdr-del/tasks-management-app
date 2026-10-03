@@ -648,6 +648,7 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const t = now();
         const dates = {
           scheduledFor: d.scheduledFor ?? null,
+          weekPlan: d.weekPlan ?? false,
           dueDate: d.dueDate ?? null,
           recurrence: d.recurrence ?? null
         };
@@ -665,6 +666,7 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
           updatedBy: uid,
           updatedAt: t,
           scheduledFor: dates.scheduledFor,
+          weekPlan: dates.weekPlan,
           dueDate: dates.dueDate,
           dueTime: d.dueTime ?? null,
           hardDeadline: d.hardDeadline ?? false,

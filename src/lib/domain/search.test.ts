@@ -330,6 +330,7 @@ describe('searchDoneTasks', () => {
       updatedBy: 'u1',
       updatedAt: 100,
       scheduledFor: null,
+      weekPlan: false,
       dueDate: null,
       dueTime: null,
       hardDeadline: false,
