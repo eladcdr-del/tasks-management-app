@@ -4,8 +4,7 @@
     // DOM is included because Playwright callbacks (page.evaluate) run in the browser.
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client"],
-    "allowImportingTsExtensions": true,
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo"
+    "allowImportingTsExtensions": true
   },
   "include": [
     "vite.config.ts",

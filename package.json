@@ -9,18 +9,20 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/postbuild.mjs",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.app.json --fail-on-warnings && tsc -p tsconfig.node.json && tsc -p tsconfig.sw.json",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test:unit": "vitest run --project unit",
+    "test:coverage": "vitest run --project unit --coverage",
     "test:rules": "firebase emulators:exec --only firestore --project demo-homecare \"vitest run --project rules\"",
     "test:integration": "firebase emulators:exec --only auth,firestore --project demo-homecare \"vitest run --project integration\"",
     "test:e2e": "playwright test --project=demo",
     "test:e2e:emu": "firebase emulators:exec --only auth,firestore --project demo-homecare \"playwright test --project=emulator\"",
     "notify:test": "firebase emulators:exec --only firestore --project demo-homecare \"vitest run --project notifier\"",
-    "notify:dry": "tsx scripts/notify/index.ts --dry"
+    "notify:dry": "tsx scripts/notify/index.ts --dry",
+    "budget": "node scripts/check-budget.mjs"
   },
   "dependencies": {
     "@fontsource-variable/rubik": "^5.3.0",

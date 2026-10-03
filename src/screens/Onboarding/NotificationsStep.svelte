@@ -4,7 +4,7 @@
 </script>
 
 <section class="stub" data-stub="NotificationsStep">
-  <h1>{he.onboarding.notifications.title}</h1>
+  <h1>{he.onboardingNotifications.title}</h1>
   <p>{he.common.comingSoon}</p>
 </section>
 

@@ -11,7 +11,7 @@
 </script>
 
 <div class="stub" data-stub="JarSetupSheet">
-  <h2>{he.sheets.jarSetup.title}</h2>
+  <h2>{he.jar.setup.title}</h2>
   <p>{he.common.comingSoon}</p>
   <button type="button" onclick={onClose}>{he.common.close}</button>
 </div>

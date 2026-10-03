@@ -13,7 +13,7 @@
 
 <section class="stub" data-stub="TaskDetailScreen" data-task-id={id}>
   <button type="button" class="back" onclick={() => router.back('/')}>{he.common.back}</button>
-  <h1>{he.task.detailTitle}</h1>
+  <h1>{he.taskDetail.title}</h1>
   <p>{he.common.comingSoon}</p>
 </section>
 

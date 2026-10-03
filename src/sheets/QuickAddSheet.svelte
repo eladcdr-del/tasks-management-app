@@ -11,7 +11,7 @@
 </script>
 
 <div class="stub" data-stub="QuickAddSheet">
-  <h2>{he.sheets.quickAdd.title}</h2>
+  <h2>{he.sheetQuickAdd.title}</h2>
   <p>{he.common.comingSoon}</p>
   <button type="button" onclick={onClose}>{he.common.close}</button>
 </div>

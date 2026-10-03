@@ -2,19 +2,30 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#FBF6EF" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="theme-color" content="#FBF6EF" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1C1714" media="(prefers-color-scheme: dark)" />
     <meta name="color-scheme" content="light dark" />
     <meta name="description" content="HomeCare — משימות הבית, במקום אחד" />
     <meta name="mobile-web-app-capable" content="yes" />
     <title>HomeCare</title>
     <script>
       // Apply the saved theme before first paint (no flash). Values: 'system' | 'light' | 'dark'.
-      // Settings (step 4.3) writes localStorage['homecare.theme'] and sets <html data-theme>.
+      // Runtime changes go through src/lib/platform/theme.ts (applyTheme), which mirrors this logic:
+      // a forced theme collapses the two media-scoped theme-color metas into one of its colour.
       try {
         var t = localStorage.getItem('homecare.theme');
         if (t === 'light' || t === 'dark' || t === 'system')
           document.documentElement.dataset.theme = t;
+        if (t === 'light' || t === 'dark') {
+          var metas = document.querySelectorAll('meta[name="theme-color"]');
+          for (var i = 1; i < metas.length; i++) metas[i].remove();
+          metas[0].removeAttribute('media');
+          metas[0].setAttribute('content', t === 'dark' ? '#1C1714' : '#FBF6EF');
+        }
       } catch (e) {}
     </script>
   </head>

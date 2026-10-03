@@ -8,6 +8,11 @@ import { alias } from './vite.config.ts';
 // runs only the emulator-free projects (unit + notifier) instead of failing on connection errors.
 const withEmulator = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 
+// Deterministic time zone for every test run (the app pins Asia/Jerusalem explicitly where it
+// matters; domain tests were also verified under other zones). Set before workers spawn, and again
+// via `test.env` for the workers themselves.
+process.env.TZ = 'UTC';
+
 export default defineConfig({
   plugins: [svelte()],
   cacheDir: '.vite', // worktree-local (see vite.config.ts)
@@ -17,6 +22,16 @@ export default defineConfig({
     __APP_COMMIT__: JSON.stringify('test')
   },
   test: {
+    env: { TZ: 'UTC' },
+    // `npm run test:coverage`: the pure logic must stay ≥ 90 % line-covered. Globs that match nothing
+    // yet (src/lib/parser/** before step 1.3 lands) are simply empty.
+    coverage: {
+      provider: 'v8',
+      include: ['src/lib/domain/**/*.ts', 'src/lib/parser/**/*.ts', 'src/lib/i18n/format.ts'],
+      exclude: ['**/*.{test,spec}.ts', '**/__fixtures__/**', 'src/lib/domain/types.ts'],
+      reporter: ['text', 'text-summary'],
+      thresholds: { lines: 90 }
+    },
     projects: [
       {
         extends: true,
