@@ -67,6 +67,10 @@ describe('create', () => {
     await assertSucceeds(create(BOB, { recurrence: { freq: 'weekly' }, ownerId: null }));
   });
 
+  it('allowed: a week plan (weekPlan true with a scheduledFor Saturday)', async () => {
+    await assertSucceeds(create(BOB, { scheduledFor: '2026-10-10', weekPlan: true }));
+  });
+
   const invalid: Array<[string, Record<string, unknown>]> = [
     ['empty title', { title: '' }],
     ['201-char title', { title: 'ת'.repeat(201) }],
@@ -95,6 +99,10 @@ describe('create', () => {
     ['dueTime "9:00"', { dueTime: '9:00' }],
     ['dueTime "24:00"', { dueTime: '24:00' }],
     ['hardDeadline as a string', { hardDeadline: 'yes' }],
+    ['weekPlan as a string', { weekPlan: 'true' }],
+    ['weekPlan as a number', { weekPlan: 1 }],
+    ['weekPlan null', { weekPlan: null }],
+    ['weekPlan true without a scheduledFor', { weekPlan: true, scheduledFor: null }],
     ['recurrence with unknown freq "daily"', { recurrence: { freq: 'daily' } }],
     ['recurrence with an extra key', { recurrence: { freq: 'weekly', every: 2 } }],
     ['recurrence anchor null', { recurrence: { freq: 'weekly', anchor: null } }],
@@ -118,6 +126,12 @@ describe('create', () => {
     await assertFails(setDoc(doc(db, path.task('t-a')), omit(taskDoc(BOB), 'title')));
     await assertFails(setDoc(doc(db, path.task('t-b')), omit(taskDoc(BOB), 'completion')));
     await assertFails(setDoc(doc(db, path.task('t-c')), omit(taskDoc(BOB), 'seriesId')));
+  });
+
+  it('denied: missing weekPlan', async () => {
+    await assertFails(
+      setDoc(doc(as(env(), BOB), path.task('t-wp')), omit(taskDoc(BOB), 'weekPlan'))
+    );
   });
 
   it('denied: creating a task as already done, even with consistent completion fields', async () => {
@@ -173,6 +187,21 @@ describe('update', () => {
     await assertSucceeds(
       update(BOB, {
         scheduledFor: '2026-10-05',
+        snoozeCount: increment(1),
+        lastSnoozedAt: serverTimestamp()
+      })
+    );
+  });
+  it('allowed: set a week plan (weekPlan true + the Saturday), then clear it', async () => {
+    await assertSucceeds(update(BOB, { scheduledFor: '2026-10-10', weekPlan: true }));
+    await assertSucceeds(update(BOB, { scheduledFor: '2026-10-12', weekPlan: false }));
+  });
+  it('allowed: snooze a week plan (a day, weekPlan false)', async () => {
+    await seedTask(env(), 'task-1', { scheduledFor: '2026-10-10', weekPlan: true });
+    await assertSucceeds(
+      update(BOB, {
+        scheduledFor: '2026-10-11',
+        weekPlan: false,
         snoozeCount: increment(1),
         lastSnoozedAt: serverTimestamp()
       })
@@ -315,6 +344,10 @@ describe('update', () => {
     ['adding `pending`', { pending: true }],
     ['adding an unknown key', { archived: true }],
     ['removing a key', { notes: deleteField() }],
+    ['removing weekPlan', { weekPlan: deleteField() }],
+    ['weekPlan as a string', { weekPlan: 'true' }],
+    ['weekPlan null', { weekPlan: null }],
+    ['weekPlan true while scheduledFor is null', { weekPlan: true }],
     ['201-char title', { title: 'ת'.repeat(201) }],
     ['bad dueDate format', { dueDate: '2026/10/31' }],
     ['recurrence unknown freq', { recurrence: { freq: 'hourly' } }],
@@ -326,6 +359,12 @@ describe('update', () => {
       await assertFails(update(BOB, patch));
     });
   }
+
+  it('denied: clearing scheduledFor of a week plan without clearing weekPlan', async () => {
+    await seedTask(env(), 'task-1', { scheduledFor: '2026-10-10', weekPlan: true });
+    await assertFails(update(BOB, { scheduledFor: null }));
+    await assertSucceeds(update(BOB, { scheduledFor: null, weekPlan: false }));
+  });
 
   it('denied: outsider update', async () => {
     await assertFails(update(EVE, { title: 'pwned' }));
