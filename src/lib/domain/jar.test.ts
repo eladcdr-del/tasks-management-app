@@ -100,6 +100,9 @@ describe('applyRedeem', () => {
     expect(before.round).toBe(1);
     expect(before.count).toBe(10);
   });
+  it('accepts a Date for now and stores epoch millis', () => {
+    expect(applyRedeem(jar({ count: 10 }), new Date(9_999))?.startedAt).toBe(9_999);
+  });
   it('passes null through', () => {
     expect(applyRedeem(null, 5)).toBeNull();
   });

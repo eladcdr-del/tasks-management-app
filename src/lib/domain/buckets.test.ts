@@ -7,8 +7,10 @@ import {
   needsAttention,
   openCountsByMember,
   pulseCounts,
-  sortTasks
+  sortTasks,
+  weekHorizon
 } from './buckets';
+import { todayISO } from './dates';
 import type { Task } from './types';
 
 // Fixture clock: Sunday 2026-10-04. The week runs Sun 10-04 .. Sat 10-10.
@@ -113,15 +115,29 @@ describe('bucketOf (today = Sunday 2026-10-04)', () => {
     expect(bucketOf(task(), TODAY)).toBe('later');
   });
 
-  describe('week boundary (Saturday -> Sunday)', () => {
-    it('on a Saturday the week is already over: tomorrow (Sunday) is later', () => {
+  describe('week horizon (Saturday; on Friday and Saturday the NEXT Saturday)', () => {
+    it('on a Saturday the coming week is "this week": tomorrow (Sunday) is week', () => {
       const sat = '2026-10-10';
       expect(bucketOf(task({ dueDate: '2026-10-10' }), sat)).toBe('today');
-      expect(bucketOf(task({ dueDate: '2026-10-11' }), sat)).toBe('later');
+      expect(bucketOf(task({ dueDate: '2026-10-11' }), sat)).toBe('week');
+      expect(bucketOf(task({ dueDate: '2026-10-17' }), sat)).toBe('week');
+      expect(bucketOf(task({ dueDate: '2026-10-18' }), sat)).toBe('later');
     });
-    it('on a Friday, Saturday is still this week', () => {
-      expect(bucketOf(task({ dueDate: '2026-10-10' }), '2026-10-09')).toBe('week');
-      expect(bucketOf(task({ dueDate: '2026-10-11' }), '2026-10-09')).toBe('later');
+    it('Saturday 23:30 with a task due Sunday: week (bucketing is date-only)', () => {
+      const today = todayISO(Date.parse('2026-10-10T23:30:00+03:00'));
+      expect(today).toBe('2026-10-10');
+      expect(bucketOf(task({ dueDate: '2026-10-11' }), today)).toBe('week');
+    });
+    it('on a Friday the horizon is also next Saturday', () => {
+      const fri = '2026-10-09';
+      expect(bucketOf(task({ dueDate: '2026-10-10' }), fri)).toBe('week');
+      expect(bucketOf(task({ dueDate: '2026-10-11' }), fri)).toBe('week');
+      expect(bucketOf(task({ scheduledFor: '2026-10-17' }), fri)).toBe('week');
+      expect(bucketOf(task({ dueDate: '2026-10-18' }), fri)).toBe('later');
+    });
+    it('on a Thursday the week still ends this Saturday', () => {
+      expect(bucketOf(task({ dueDate: '2026-10-10' }), '2026-10-08')).toBe('week');
+      expect(bucketOf(task({ dueDate: '2026-10-11' }), '2026-10-08')).toBe('later');
     });
     it('on the next Sunday a new week opens', () => {
       expect(bucketOf(task({ dueDate: '2026-10-17' }), '2026-10-11')).toBe('week');
@@ -135,6 +151,22 @@ describe('bucketOf (today = Sunday 2026-10-04)', () => {
       expect(bucketOf(task({ dueDate: '2026-03-28' }), '2026-03-26')).toBe('week');
       expect(bucketOf(task({ dueDate: '2026-03-29' }), '2026-03-26')).toBe('later');
     });
+  });
+});
+
+describe('weekHorizon', () => {
+  it('is the Saturday of this week from Sunday to Thursday', () => {
+    for (const d of ['2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07', '2026-10-08']) {
+      expect(weekHorizon(d)).toBe('2026-10-10');
+    }
+  });
+  it('is NEXT Saturday on Friday and Saturday', () => {
+    expect(weekHorizon('2026-10-09')).toBe('2026-10-17');
+    expect(weekHorizon('2026-10-10')).toBe('2026-10-17');
+  });
+  it('crosses month and year ends', () => {
+    expect(weekHorizon('2027-01-01')).toBe('2027-01-09'); // a Friday
+    expect(weekHorizon('2026-12-31')).toBe('2027-01-02'); // a Thursday
   });
 });
 
@@ -178,13 +210,25 @@ describe('bucketInfo / plannedFromPast', () => {
   });
 });
 
-describe('needsAttention', () => {
-  it('is true for overdue tasks', () => {
+describe('needsAttention (overdue, OR urgent and not planned for later)', () => {
+  it('is true for overdue tasks, whatever their priority or plan', () => {
     expect(needsAttention(task({ dueDate: '2026-10-03' }), TODAY)).toBe(true);
+    expect(needsAttention(task({ dueDate: '2026-10-03', scheduledFor: '2026-10-08' }), TODAY)).toBe(
+      true
+    );
   });
-  it('is true for urgent tasks whatever their date', () => {
+  it('is true for urgent tasks with no plan, or a plan for today or earlier', () => {
     expect(needsAttention(task({ priority: 'urgent' }), TODAY)).toBe(true);
     expect(needsAttention(task({ priority: 'urgent', dueDate: '2027-01-01' }), TODAY)).toBe(true);
+    expect(needsAttention(task({ priority: 'urgent', scheduledFor: TODAY }), TODAY)).toBe(true);
+    expect(needsAttention(task({ priority: 'urgent', scheduledFor: '2026-10-01' }), TODAY)).toBe(
+      true
+    );
+  });
+  it('is false for an urgent task snoozed or planned for a later day (until that day)', () => {
+    const snoozed = task({ priority: 'urgent', scheduledFor: '2026-10-11' });
+    expect(needsAttention(snoozed, TODAY)).toBe(false);
+    expect(needsAttention(snoozed, '2026-10-11')).toBe(true);
   });
   it('is false for high/normal tasks that are not overdue', () => {
     expect(needsAttention(task({ priority: 'high', dueDate: TODAY }), TODAY)).toBe(false);
@@ -338,6 +382,42 @@ describe('groupTasks', () => {
     expect(input).toEqual(snapshot);
   });
 
+  it('an urgent task snoozed to next week leaves attention for its time bucket', () => {
+    const snoozed = task({ priority: 'urgent', scheduledFor: '2026-10-11', snoozeCount: 1 });
+    const out = groupTasks([snoozed], TODAY);
+    expect(out.attention).toEqual([]);
+    expect(ids(out.later)).toEqual([snoozed.id]);
+    expect(ids(groupTasks([snoozed], '2026-10-09').week)).toEqual([snoozed.id]); // Friday: next week shows
+    expect(ids(groupTasks([snoozed], '2026-10-11').attention)).toEqual([snoozed.id]); // its day comes
+  });
+
+  it('ignores tasks that are not open (defensive: callers should pass open tasks only)', () => {
+    const doneTask = task({ status: 'done', dueDate: '2026-10-01', ownerId: null });
+    const out = groupTasks([doneTask, todayMine], TODAY);
+    expect(out).toEqual({ attention: [], waiting: [], today: [todayMine], week: [], later: [] });
+  });
+
+  describe('with memberIds: a former member is treated as nobody', () => {
+    const formerMemberTask = task({ dueDate: '2026-10-08', ownerId: 'gone' });
+    const formerOverdue = task({ dueDate: '2026-10-01', ownerId: 'gone' });
+
+    it('a task owned by someone who left goes to waiting (and stays in its time bucket)', () => {
+      const out = groupTasks([formerMemberTask, weekMine], TODAY, ['u1', 'u2']);
+      expect(ids(out.waiting)).toEqual([formerMemberTask.id]);
+      expect(ids(out.week)).toEqual([weekMine.id, formerMemberTask.id]);
+    });
+
+    it('attention still wins over waiting', () => {
+      const out = groupTasks([formerOverdue], TODAY, ['u1', 'u2']);
+      expect(ids(out.attention)).toEqual([formerOverdue.id]);
+      expect(out.waiting).toEqual([]);
+    });
+
+    it('without memberIds the owner id is trusted as-is', () => {
+      expect(groupTasks([formerMemberTask], TODAY).waiting).toEqual([]);
+    });
+  });
+
   it('returns five empty lists for no tasks', () => {
     expect(groupTasks([], TODAY)).toEqual({
       attention: [],
@@ -365,6 +445,15 @@ describe('pulseCounts', () => {
   it('is all zeros for an empty list', () => {
     expect(pulseCounts([], TODAY)).toEqual({ attention: 0, today: 0, waiting: 0 });
   });
+
+  it('ignores tasks that are not open, and honours memberIds like groupTasks', () => {
+    const open = [
+      task({ dueDate: '2026-10-02', status: 'done' }), // ignored
+      task({ dueDate: TODAY, ownerId: 'gone' }) // today, and waiting once memberIds is known
+    ];
+    expect(pulseCounts(open, TODAY)).toEqual({ attention: 0, today: 1, waiting: 0 });
+    expect(pulseCounts(open, TODAY, ['u1'])).toEqual({ attention: 0, today: 1, waiting: 1 });
+  });
 });
 
 describe('openCountsByMember', () => {
@@ -380,6 +469,11 @@ describe('openCountsByMember', () => {
 
   it('handles no members', () => {
     expect(openCountsByMember([task()], [])).toEqual({});
+  });
+
+  it('ignores tasks that are not open', () => {
+    const tasks = [task({ ownerId: 'u1' }), task({ ownerId: 'u1', status: 'done' })];
+    expect(openCountsByMember(tasks, ['u1'])).toEqual({ u1: 1 });
   });
 
   it('is not fooled by owner ids that collide with Object.prototype keys', () => {

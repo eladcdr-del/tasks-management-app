@@ -8,9 +8,11 @@ import {
   diffDays,
   endOfMonth,
   endOfWeek,
+  isoDateAt,
   isValidISO,
   localTimeParts,
   minISO,
+  msUntilNextLocalMidnight,
   nextWeekday,
   parseISO,
   startOfWeek,
@@ -391,5 +393,56 @@ describe('compareISO / minISO', () => {
   it('minISO returns null when there is nothing to compare', () => {
     expect(minISO(null, null)).toBeNull();
     expect(minISO()).toBeNull();
+  });
+});
+
+describe('isoDateAt (alias of todayISO for any instant)', () => {
+  it('is the calendar date of an instant in the given timezone', () => {
+    const t = Date.parse('2026-10-03T22:30:00Z'); // 01:30 on Oct 4 in Jerusalem, 15:30 Oct 3 in LA
+    expect(isoDateAt(t)).toBe('2026-10-04');
+    expect(isoDateAt(new Date(t), 'America/Los_Angeles')).toBe('2026-10-03');
+    expect(isoDateAt).toBe(todayISO);
+  });
+});
+
+describe('msUntilNextLocalMidnight (state rollover timer)', () => {
+  const H = 3_600_000;
+
+  it('counts down to the next 00:00 in Asia/Jerusalem', () => {
+    expect(msUntilNextLocalMidnight(Date.parse('2026-10-04T23:59:00+03:00'))).toBe(60_000);
+    expect(msUntilNextLocalMidnight(Date.parse('2026-10-04T23:59:59.999+03:00'))).toBe(1);
+    expect(msUntilNextLocalMidnight(Date.parse('2026-10-04T09:00:00+03:00'))).toBe(15 * H);
+  });
+
+  it('at exactly midnight it waits for the NEXT midnight (a full day)', () => {
+    expect(msUntilNextLocalMidnight(Date.parse('2026-10-04T00:00:00+03:00'))).toBe(24 * H);
+  });
+
+  it('accepts a Date', () => {
+    expect(msUntilNextLocalMidnight(new Date('2026-10-04T22:00:00+03:00'))).toBe(2 * H);
+  });
+
+  it('is 23 hours on the spring-forward day (Fri 27 Mar 2026, 02:00 -> 03:00)', () => {
+    expect(msUntilNextLocalMidnight(Date.parse('2026-03-27T00:00:00+02:00'))).toBe(23 * H);
+    // 01:00 +02:00 to midnight +03:00 is 22 real hours
+    expect(msUntilNextLocalMidnight(Date.parse('2026-03-27T01:00:00+02:00'))).toBe(22 * H);
+  });
+
+  it('is 25 hours on the fall-back day (Sun 25 Oct 2026, 02:00 -> 01:00)', () => {
+    expect(msUntilNextLocalMidnight(Date.parse('2026-10-25T00:00:00+03:00'))).toBe(25 * H);
+    expect(msUntilNextLocalMidnight(Date.parse('2026-10-25T23:00:00+02:00'))).toBe(1 * H);
+  });
+
+  it('copes with a zone whose midnight does not exist (Beirut, 29 Mar 2026 starts at 01:00)', () => {
+    // 23:30 +02:00 on the 28th; the clock jumps from 23:59:59 straight to 01:00 +03:00
+    expect(msUntilNextLocalMidnight(Date.parse('2026-03-28T23:30:00+02:00'), 'Asia/Beirut')).toBe(
+      30 * 60_000
+    );
+  });
+
+  it('honours an explicit timezone', () => {
+    const t = Date.parse('2026-10-04T12:00:00Z'); // 05:00 in Los Angeles (-07:00)
+    expect(msUntilNextLocalMidnight(t, 'America/Los_Angeles')).toBe(19 * H);
+    expect(msUntilNextLocalMidnight(t, 'Asia/Jerusalem')).toBe(9 * H); // 15:00 there
   });
 });
