@@ -11,3 +11,7 @@
 | 8 | 13:02 | Assessor 1.2 | BEST (opus) | Date/time + Hebrew correctness review of domain logic (in 1.2 worktree) | phase-1/step-2/qa/assessment.md |
 | 9 | 13:16 | Surgeon 1.2 (Strategist merged) | BEST (opus), in 1.2 worktree | Search stopwords/fold/ranking, age/stuck from instance date, recurrence anchor, whenChip, Hebrew helpers, snooze API, week horizon | worktree branch |
 | 10 | 13:19 | Assessor 1.3 | BEST (opus) | Hebrew parser review with 40+ realistic probes (in 1.3 worktree) | phase-1/step-3/qa/assessment.md |
+| 11 | 13:40 | Assessor 1.1 round 2 | BEST (opus) | Verify C1/M1–M7 fixed, regressions | (pending) |
+| 12 | 13:40 | Worker 2.3 | BEST (opus), worktree | Firestore rules + indexes + rules tests + schema doc + security review (started early: depends only on frozen contracts) | worktree branch |
+| 13 | 13:40 | Surgeon 1.3 | BEST (opus), in 1.3 worktree | Parser precision: numbers≠dates, ב+weekday, composites, times, week horizon, strong/weak keywords, chip API with dismissed keys, negatives corpus | worktree branch |
+| 14 | 13:40 | Worker 2.1 | BEST (opus), worktree | Demo adapter + seed + reusable repository contract suite (started early) | worktree branch |
