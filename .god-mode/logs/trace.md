@@ -7,3 +7,5 @@
 | 4 | 12:44 | Worker 1.2 | STRONG (sonnet), worktree | Domain logic TDD (dates, buckets, age, recurrence, jar, categories, ids, search, format) | worktree branch |
 | 5 | 12:44 | Worker 1.3 | STRONG (sonnet), worktree | Hebrew quick-add parser TDD (§6) | worktree branch |
 | 6 | 12:44 | Worker 1.4 | BEST (opus), worktree | Design system components, illustrations, AppMark, dev gallery, screenshots, axe | worktree branch |
+| 7 | 13:02 | Surgeon 1.1 (Strategist merged) | BEST (opus) | Fix C1, M1–M7 + minors: router history, he/* split, stubs, fixtures, theme-color, viewport, AA tokens, coverage, preload | main tree |
+| 8 | 13:02 | Assessor 1.2 | BEST (opus) | Date/time + Hebrew correctness review of domain logic (in 1.2 worktree) | phase-1/step-2/qa/assessment.md |
