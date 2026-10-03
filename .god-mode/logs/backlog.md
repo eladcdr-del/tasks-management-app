@@ -20,3 +20,4 @@
 - [1.1 r2] Cold start on a tab/deep link (e.g. notification → #/task/:id) exits on hardware Back; and pushState without user activation may be skipped by Chrome's back intervention. Verify on Android + installed PWA (Phase 7).
 - [1.1 r2] Keyboard + fixed bars: with resizes-content, BottomNav/FAB sit above the keyboard when a field outside a sheet has focus (Memory search). 3.1/4.1: hide nav while keyboard open.
 - [1.1 r2] 7.3 budget must measure startup JS only (exclude sw.js and lazy chunks).
+- [1.3] "בשבת לנקות" (ב + bare day, verb after) no longer dated; "מחר ב-8" leaves "ב-8" in the title. Consider allowing ב-N when a date phrase precedes it.

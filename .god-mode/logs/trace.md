@@ -18,3 +18,6 @@
 | 15 | 13:43 | Orchestrator (as Surgeon) | — | 1.1 round-2 fixes: link handler bubble phase, #/new in place, theme IIFE, clock.install, token comment | main tree |
 | 16 | 13:44 | Worker 5.2 | BEST (opus), worktree | Cron notifier: pure planner, FCM sender, run loop with sent/ dedupe, workflow + keepalive, emulator integration test (started early: disjoint files) | worktree branch |
 | 17 | 14:19 | Surgeon (contracts) | STRONG (sonnet), main tree | Apply EncodedPhoto[] + Invite.memberCount to demo adapter and contract suite | main tree |
+| 18 | 14:25 | Worker 2.2 | BEST (opus), worktree | Firebase adapter + emulator contract/offline/batch tests | worktree branch |
+| 19 | 14:25 | Worker 2.4 | BEST (opus), worktree | State stores, select.ts, boot gating, demo banner, boot E2E | worktree branch |
+| 20 | 14:25 | Council P1 (3 judges) | BEST (opus) ×3 | Phase 1 whole: contracts+domain+parser+design system coherence | phase-1/qa/council-*.md |
