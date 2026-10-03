@@ -171,6 +171,44 @@ Domain rules (1.2):
   - Every non-stopword token must match. Rank exact matches above folded or peeled ones.
   - Acceptance test: "מתי החלפנו מצבר ובאיזה מוסך?" finds "החלפת מצבר" with place "מוסך השרון".
 
+**Phase 1 council amendments (orchestrator; binding):**
+- **Week plans (`Task.weekPlan`).**
+  - What sets them:
+    - The parser's "השבוע" sets `scheduledFor = weekHorizon(today)` and `weekPlan: true`.
+    - "בשבוע הבא" sets `scheduledFor` = the Saturday of next week and `weekPlan: true`.
+    - "כל שבוע" with no weekday means this week's plan.
+  - Explicit days or dates give `weekPlan: false`. `snoozePatch` sets `weekPlan: false` (snooze targets are days). The next instance copies `weekPlan` only when it has no `dueDate`.
+  - Buckets are unchanged.
+  - Display through `whenChip` and `plannedFromLabel`:
+    - "השבוע" (or "סוף השבוע" when scheduledFor is today)
+    - "בשבוע הבא"
+    - missed: "תוכננה לשבוע שעבר"
+- **`Category.short`** is a compact label for card meta rows: רכב, קניות, בית, בריאות, כספים, החזרות, משפחה, אחר.
+- **Attention** also includes `hardDeadline && dueDate ≤ today + 1`. A hard deadline on its last day or the day before must shout.
+- **A missed hard deadline** that gets snoozed becomes a soft date (`hardDeadline: false`).
+- **Parser priority:** "!!" or "!!!" alone gives at most `high` (Israelis use them for emphasis). Punctuation alone never means `urgent`; only words such as דחוף do.
+- **Parser times:**
+  - Unpadded hours 1–5 are PM.
+  - Unpadded 6 and 7 are ambiguous: no time chip unless a part-of-day word or a strong cue (להעיר, טיסה, הסעה = AM; ארוחת ערב = PM) settles it.
+  - Zero-padded times are literal.
+- **Parser rule: never consume text a chip doesn't carry.** Part of day goes in the chip label ("מחר בבוקר"); range ends stay in the title.
+- **Age** shows weeks up to 8 weeks ("פתוחה 7 שבועות"), then months.
+- **Search:**
+  - Common question verbs are stopwords: שילמנו, עשינו, תיקן/תיקנו, החלפנו, קנינו, החזרנו, היה/הייתה/היו, עלה/עלו.
+  - There is a small synonym table (אוטו/מכונית ↔ רכב).
+  - When the strict AND match finds nothing, fall back to ranking by the number of matched tokens, with a minimum of one meaningful token.
+- **Notifier:** timed plans get the due-day reminder: `dueDate == null && dueTime != null && scheduledFor == today`. The copy is "היום ב-17:30".
+- **User text direction:** `dir = textDir(s)`, which is 'rtl' if the string contains any Hebrew letter, else 'auto'. This replaces bare `dir="auto"`.
+- **Colour semantics** (distinguish by treatment, not tint):
+  - overdue and urgent: a solid `--danger` fill with white text
+  - due and hard deadline: a neutral sand badge with an icon (LockClock for a hard deadline)
+  - selection: ink-based
+  - `--accent-soft` is reserved for brand and parsed tokens
+- **Router:**
+  - `SheetSpec` gains `{name:'photo', photoId}`.
+  - `RouteMeta.access` ∈ public | auth | household drives boot gating.
+- **Clock:** `src/lib/state/clock.svelte.ts` (2.4) owns `nowMs`, `today` and `wall`. Screens never call `Date.now()` for display.
+
 ## 4. Firestore schema & Security Rules
 ```
 users/{uid}                         { householdId|null, createdAt }                 owner-only r/w
