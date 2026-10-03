@@ -116,10 +116,11 @@ export interface ActivityEvent {
   push: 'pending'|'none'|'sent'|'skipped';  // client writes 'pending' for requested|completed|jar_filled, else 'none'
 }
 export interface EarnedTreat { id: string /* String(round) */; treat: string; target: number; filledAt: Millis; redeemedAt: Millis | null }
-export interface Invite { code: string; householdId: string; householdName: string; inviterName: string; createdBy: string; createdAt: Millis; expiresAt: Millis; revoked: boolean }
+export interface Invite { code: string; householdId: string; householdName: string; inviterName: string; memberCount: number /* snapshot at creation: non-members cannot read the household */; createdBy: string; createdAt: Millis; expiresAt: Millis; revoked: boolean }
 export interface InvitePreview { householdName: string; inviterName: string; memberCount: number }
 export interface DeviceToken { deviceId: string; householdId: string; token: string; userAgent: string; createdAt: Millis; updatedAt: Millis }
 export interface Photo { id: string; taskId: string; dataUrl: string /* jpeg ≤ ~270k chars */; thumbDataUrl: string /* ≤ 20k */; width: number; height: number; createdBy: string; createdAt: Millis }
+export interface EncodedPhoto { dataUrl: string /* jpeg data URL ≤ 300k chars */; thumbDataUrl: string /* ≤ 20k chars */; width: number; height: number } // produced by platform/image.ts (client-side canvas); adapters only store it
 export interface Category { id: CategoryId; label: string; icon: string /* lucide name */; keywords: string[] }
 export interface AuthUser { uid: string; displayName: string; email: string; photoURL: string | null }
 export type SyncState = { status: 'synced'|'saving'|'offline'; pendingWrites: number };
@@ -266,7 +267,7 @@ export interface Repository {
   requestTask(hid: string, id: string, toUid: string): void;     // ownerId=to, requestedBy=me
   releaseTask(hid: string, id: string): void;                    // ownerId=null
   snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
-  completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: Blob[]): Promise<CompleteResult>;
+  completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: EncodedPhoto[]): Promise<CompleteResult>; // photos already compressed+thumbnailed by platform/image.ts; ≤3 stored
   reopenTask(hid: string, id: string): void;                     // undo: status open, jar −1, delete auto-created next instance if untouched
   deleteTask(hid: string, id: string): void;                     // UI delays call 5s for Undo
   getPhoto(hid: string, photoId: string): Promise<Photo | null>;

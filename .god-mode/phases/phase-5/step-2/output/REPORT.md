@@ -1,0 +1,9 @@
+# Step 5.2 REPORT: notifier (summary of worker hand-back). Merged (b04869f).
+- `scripts/notify/{time,types,copy,planner,sender,load,run,guard,index,seed}.ts`, own package.json (firebase-admin ^14.5, tsx), README; `.github/workflows/notify.yml` (actionlint 1.7.7: 0 errors).
+- Tests: 108 under emulator (planner 68, time 15, guard 13, index 5, integration 7). Dry runs verified at 08:05 / 10:30 / 18:30 / 23:00.
+- Send = {keys[], uid, type, title, body, url, tag, eventIds}; keys created via create() before send; summary re-sent with same tag (replaces on phone); transient failure deletes only own keys; thrown send fails the run.
+- Planner extras: requests skipped if task no longer open/assigned to target or >7 days old; completions skipped if reopened; day-before coalesced; missing prefs = on; foreign-household devices ignored; reads only when something can go out; daily prune 03:00–06:00 via prune:{date} key; logs counts only.
+- Workflow: */5 cron + dispatch; concurrency notify; permissions contents:read actions:write; 10-min timeout; guard step (secret absent → ::notice::, exit 0); keepalive last step Sundays 06:00–06:04 UTC + every manual run.
+- Client requirements (5.1/2.2): devices doc id == deviceId, {deviceId, householdId, token, userAgent, createdAt, updatedAt}; events push 'pending' only for requested/completed/jar_filled with createdAt serverTimestamp; requested events need targetId+taskId+taskTitle; SW must showNotification with tag + data.url.
+- SETUP.md (6.2): secret FIREBASE_SERVICE_ACCOUNT (whole JSON, delete locally); Actions → notify → Run workflow; 5–15 min delays normal; 60-day disable → Enable workflow; red run = malformed secret or FCM failure; optional Firestore TTL on sent.expireAt.
+- Local gotcha: `npm ci --prefix scripts/notify` is required in a fresh checkout before `npm run notify:test`.
