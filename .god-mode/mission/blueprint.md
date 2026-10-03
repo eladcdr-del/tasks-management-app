@@ -418,7 +418,7 @@ Tokens in `tokens.css` on `:root`, with dark values under `[data-theme=dark]` an
 | --ink-3 | #998B80 | #8E8177 | icons/placeholder only (≥ 3:1) |
 | --accent | #D9774B | #E58A5F | fills, FAB, jar, focus ring |
 | --accent-strong | #B85A2C | #EE9A70 | primary button bg (white text 4.6:1); dark mode uses --ink-on-accent #1C1714 |
-| --accent-ink | #A94E26 | #F0A27C | accent text/links |
+| --accent-ink | #A04822 | #F0A27C | accent text/links |
 | --accent-soft | #F6E2D6 | #4A2E21 | selected chip bg |
 | --sage | #8BA888 | #9DB89A | secondary fills, success |
 | --sage-ink | #4F6B4D | #B5CCB2 | success text |
@@ -429,7 +429,7 @@ Member palette, each with `-base`, `-soft` (bg tint) and `-ink` (AA text):
 
 | colour | base | soft | ink |
 |---|---|---|---|
-| terracotta | #D9774B | #F6E2D6 | #A94E26 |
+| terracotta | #D9774B | #F6E2D6 | #A04822 |
 | sage | #7E9E7B | #E3ECE1 | #4A6648 |
 | slate | #6F8FAF | #E1E9F1 | #44617F |
 | plum | #9C6B8E | #EFE2EC | #74476A |

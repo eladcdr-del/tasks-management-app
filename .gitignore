@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output & caches
+dist/
+dev-dist/
+.vite/
+*.local
+
+# Test artefacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# Firebase emulator / CLI
+.firebase/
+*-debug.log
+firebase-debug*.log
+ui-debug.log
+firestore-debug.log
+
+# Environment (never commit secrets)
+.env*
+
+# Agent worktrees
+.claude/worktrees/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json

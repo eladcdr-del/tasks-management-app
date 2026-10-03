@@ -16,3 +16,4 @@
 - Parallel steps run in isolated git worktrees (Agent isolation: worktree), symlinking node_modules from the main checkout (no dependency changes allowed outside 1.1). Shared machine resources serialized with flock: emulator commands under `flock /tmp/homecare-emu.lock`, Playwright under `flock /tmp/homecare-e2e.lock`; playwright reuseExistingServer=false so an agent never hits another worktree's server. Worktree agents commit on their branch; orchestrator merges.
 - Step 1.1 installs every dependency the whole project needs (except scripts/notify which has its own package.json in 5.2).
 - While a Worker writes in the main tree, orchestrator commits ONLY .god-mode/ paths (git add .god-mode) to avoid committing partial work.
+- Contrast: --accent-ink and --member-terracotta-ink changed #A94E26 → #A04822 (4.41→4.87:1 on accent-soft) to meet AA; blueprint updated.

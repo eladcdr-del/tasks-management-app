@@ -1,0 +1,14 @@
+# Planning state is never reformatted.
+.god-mode/
+package-lock.json
+dist/
+.vite/
+dev-dist/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+tests/e2e/__screens__/
+# Contracts kept verbatim from the Blueprint (§3, §5).
+src/lib/domain/types.ts
+src/lib/data/repository.ts

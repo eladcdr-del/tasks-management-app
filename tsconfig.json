@@ -1,0 +1,12 @@
+{
+  // Solution-style root. Each sub-project is type-checked on its own by `npm run check`:
+  //   tsconfig.app.json  → browser app (src/**, firebase-config.ts) via svelte-check
+  //   tsconfig.node.json → configs, tests/**, scripts/** (Node + Playwright) via tsc
+  //   tsconfig.sw.json   → the service worker (WebWorker lib) via tsc
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.sw.json" }
+  ]
+}

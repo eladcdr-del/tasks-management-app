@@ -1,0 +1,280 @@
+/*
+ * HomeCare design tokens (Blueprint §8). CONTRACT — owned by step 1.1; step 7.2 may adjust values.
+ *
+ * Theme selection (set on <html>):
+ *   no data-theme / data-theme="system" → follows prefers-color-scheme
+ *   data-theme="light" | "dark"          → forced
+ * The two dark blocks below are generated to be identical; keep them in sync.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ── Colour (light) ─────────────────────────────────────────────────────── */
+  --bg: #fbf6ef; /* page */
+  --surface: #ffffff; /* cards / sheets */
+  --surface-2: #f4ece1; /* wells, chips */
+  --line: #eadfd2; /* hairlines */
+  --ink: #2b2420; /* primary text */
+  --ink-2: #6b5f57; /* secondary text (AA on bg) */
+  --ink-3: #998b80; /* icons / placeholder only (>= 3:1) */
+  --accent: #d9774b; /* fills, FAB, jar, focus ring */
+  --accent-strong: #b85a2c; /* primary button bg */
+  --ink-on-accent: #ffffff; /* text on --accent-strong (4.6:1 light / 8:1 dark) */
+  --accent-ink: #a04822; /* accent text / links */
+  --accent-soft: #f6e2d6; /* selected chip bg */
+  --sage: #8ba888; /* secondary fills, success */
+  --sage-ink: #4f6b4d; /* success text */
+  --danger: #b23b2a; /* overdue / urgent text */
+  --danger-soft: #f8e1dc; /* danger tint */
+
+  /* Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface) */
+  --member-terracotta-base: #d9774b;
+  --member-terracotta-soft: #f6e2d6;
+  --member-terracotta-ink: #a04822;
+  --member-sage-base: #7e9e7b;
+  --member-sage-soft: #e3ece1;
+  --member-sage-ink: #4a6648;
+  --member-slate-base: #6f8faf;
+  --member-slate-soft: #e1e9f1;
+  --member-slate-ink: #44617f;
+  --member-plum-base: #9c6b8e;
+  --member-plum-soft: #efe2ec;
+  --member-plum-ink: #74476a;
+  --member-ochre-base: #c99a3e;
+  --member-ochre-soft: #f5ebd3;
+  --member-ochre-ink: #85621a;
+  --member-teal-base: #4e9a96;
+  --member-teal-soft: #dceeed;
+  --member-teal-ink: #2f6e6a;
+
+  /* Elevation (warm). Dark mode: 0.4 black shadows + 1px --line borders. */
+  --sh-1: 0 1px 2px rgba(74, 44, 24, 0.06), 0 2px 8px rgba(74, 44, 24, 0.05);
+  --sh-2: 0 6px 24px rgba(74, 44, 24, 0.1);
+  --sh-sheet: 0 -8px 32px rgba(74, 44, 24, 0.14);
+  --edge: 1px solid transparent; /* card/sheet border: invisible in light, --line in dark */
+  --scrim: rgba(43, 36, 32, 0.32); /* sheet / dialog backdrop */
+
+  /* ── Spacing: 4-pt scale ────────────────────────────────────────────────── */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s5: 20px;
+  --s6: 24px;
+  --s7: 32px;
+  --s8: 40px;
+  --s9: 48px;
+  --s10: 64px;
+  --screen-pad: var(--s5); /* 20 */
+  --card-pad: var(--s4); /* 16 */
+
+  /* ── Radii ──────────────────────────────────────────────────────────────── */
+  --r-sm: 10px;
+  --r-md: 16px; /* chips, inputs */
+  --r-lg: 22px; /* cards */
+  --r-xl: 28px; /* sheet top */
+  --r-pill: 999px;
+
+  /* ── Type: Rubik, rem-based (honours the system font scale) ─────────────── */
+  --font-sans:
+    'Rubik Variable', 'Rubik', system-ui, -apple-system, 'Segoe UI', 'Noto Sans Hebrew', Arial,
+    sans-serif;
+
+  --fs-display: 1.875rem; /* 30 */
+  --lh-display: 2.25rem; /* 36 */
+  --fw-display: 600;
+  --fs-title: 1.375rem; /* 22 */
+  --lh-title: 1.75rem; /* 28 */
+  --fw-title: 600;
+  --fs-headline: 1.125rem; /* 18 */
+  --lh-headline: 1.5rem; /* 24 */
+  --fw-headline: 600;
+  --fs-body: 1rem; /* 16 */
+  --lh-body: 1.5rem; /* 24 */
+  --fw-body: 400;
+  --fs-callout: 0.9375rem; /* 15 */
+  --lh-callout: 1.375rem; /* 22 */
+  --fw-callout: 400;
+  --fs-caption: 0.8125rem; /* 13 */
+  --lh-caption: 1.125rem; /* 18 */
+  --fw-caption: 500;
+  --fs-numeral: 2.125rem; /* 34 — use with font-variant-numeric: tabular-nums */
+  --lh-numeral: 2.375rem; /* 38 */
+  --fw-numeral: 600;
+
+  /* `font:` shorthands, e.g. `font: var(--font-title);` */
+  --font-display: var(--fw-display) var(--fs-display) / var(--lh-display) var(--font-sans);
+  --font-title: var(--fw-title) var(--fs-title) / var(--lh-title) var(--font-sans);
+  --font-headline: var(--fw-headline) var(--fs-headline) / var(--lh-headline) var(--font-sans);
+  --font-body: var(--fw-body) var(--fs-body) / var(--lh-body) var(--font-sans);
+  --font-callout: var(--fw-callout) var(--fs-callout) / var(--lh-callout) var(--font-sans);
+  --font-caption: var(--fw-caption) var(--fs-caption) / var(--lh-caption) var(--font-sans);
+  --font-numeral: var(--fw-numeral) var(--fs-numeral) / var(--lh-numeral) var(--font-sans);
+
+  /* ── Touch ──────────────────────────────────────────────────────────────── */
+  --tap-min: 44px; /* minimum hit target */
+  --btn-h: 52px; /* primary buttons */
+
+  /* ── Motion ─────────────────────────────────────────────────────────────── */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* CSS stand-in for the sheet spring; JS uses Svelte spring({ stiffness: 0.18, damping: 0.75 }). */
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  --d-fast: 120ms;
+  --d-base: 200ms;
+  --d-slow: 320ms;
+
+  /* ── Layout & safe areas ────────────────────────────────────────────────── */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --nav-h: 64px; /* bottom nav height, excluding --safe-bottom */
+  --content-max: 560px; /* readable column on tablets / desktop */
+
+  /* ── Stacking ───────────────────────────────────────────────────────────── */
+  --z-nav: 10;
+  --z-fab: 20;
+  --z-sheet: 40;
+  --z-snackbar: 50;
+  --z-overlay: 60; /* celebration, dialogs */
+  --z-update: 70; /* update prompt */
+}
+
+/* ── Member colour hook: <el data-member-color="sage"> exposes --m-base / --m-soft / --m-ink ── */
+[data-member-color='terracotta'] {
+  --m-base: var(--member-terracotta-base);
+  --m-soft: var(--member-terracotta-soft);
+  --m-ink: var(--member-terracotta-ink);
+}
+[data-member-color='sage'] {
+  --m-base: var(--member-sage-base);
+  --m-soft: var(--member-sage-soft);
+  --m-ink: var(--member-sage-ink);
+}
+[data-member-color='slate'] {
+  --m-base: var(--member-slate-base);
+  --m-soft: var(--member-slate-soft);
+  --m-ink: var(--member-slate-ink);
+}
+[data-member-color='plum'] {
+  --m-base: var(--member-plum-base);
+  --m-soft: var(--member-plum-soft);
+  --m-ink: var(--member-plum-ink);
+}
+[data-member-color='ochre'] {
+  --m-base: var(--member-ochre-base);
+  --m-soft: var(--member-ochre-soft);
+  --m-ink: var(--member-ochre-ink);
+}
+[data-member-color='teal'] {
+  --m-base: var(--member-teal-base);
+  --m-soft: var(--member-teal-soft);
+  --m-ink: var(--member-teal-ink);
+}
+
+/* ── Dark (forced) ────────────────────────────────────────────────────────── */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #1c1714;
+  --surface: #26201c;
+  --surface-2: #302823;
+  --line: #3d332d;
+  --ink: #f4ece3;
+  --ink-2: #c4b6a9;
+  --ink-3: #8e8177;
+  --accent: #e58a5f;
+  --accent-strong: #ee9a70;
+  --ink-on-accent: #1c1714;
+  --accent-ink: #f0a27c;
+  --accent-soft: #4a2e21;
+  --sage: #9db89a;
+  --sage-ink: #b5ccb2;
+  --danger: #f08a78;
+  --danger-soft: #4a2420;
+
+  /* Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface) */
+  --member-terracotta-base: #e58a5f;
+  --member-terracotta-soft: #4a2e21;
+  --member-terracotta-ink: #f0a27c;
+  --member-sage-base: #9db89a;
+  --member-sage-soft: #2e3a2d;
+  --member-sage-ink: #b5ccb2;
+  --member-slate-base: #8aa8c6;
+  --member-slate-soft: #25303c;
+  --member-slate-ink: #afc6dd;
+  --member-plum-base: #bc8dae;
+  --member-plum-soft: #3b2935;
+  --member-plum-ink: #d9b3cd;
+  --member-ochre-base: #d9b05e;
+  --member-ochre-soft: #3d3220;
+  --member-ochre-ink: #e8cb8c;
+  --member-teal-base: #6db5b0;
+  --member-teal-soft: #1f3634;
+  --member-teal-ink: #97d0cc;
+
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --sh-2: 0 6px 24px rgba(0, 0, 0, 0.4);
+  --sh-sheet: 0 -8px 32px rgba(0, 0, 0, 0.4);
+  --edge: 1px solid var(--line);
+  --scrim: rgba(0, 0, 0, 0.55);
+}
+
+/* ── Dark (system) ────────────────────────────────────────────────────────── */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme='system'],
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #1c1714;
+    --surface: #26201c;
+    --surface-2: #302823;
+    --line: #3d332d;
+    --ink: #f4ece3;
+    --ink-2: #c4b6a9;
+    --ink-3: #8e8177;
+    --accent: #e58a5f;
+    --accent-strong: #ee9a70;
+    --ink-on-accent: #1c1714;
+    --accent-ink: #f0a27c;
+    --accent-soft: #4a2e21;
+    --sage: #9db89a;
+    --sage-ink: #b5ccb2;
+    --danger: #f08a78;
+    --danger-soft: #4a2420;
+
+    /* Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface) */
+    --member-terracotta-base: #e58a5f;
+    --member-terracotta-soft: #4a2e21;
+    --member-terracotta-ink: #f0a27c;
+    --member-sage-base: #9db89a;
+    --member-sage-soft: #2e3a2d;
+    --member-sage-ink: #b5ccb2;
+    --member-slate-base: #8aa8c6;
+    --member-slate-soft: #25303c;
+    --member-slate-ink: #afc6dd;
+    --member-plum-base: #bc8dae;
+    --member-plum-soft: #3b2935;
+    --member-plum-ink: #d9b3cd;
+    --member-ochre-base: #d9b05e;
+    --member-ochre-soft: #3d3220;
+    --member-ochre-ink: #e8cb8c;
+    --member-teal-base: #6db5b0;
+    --member-teal-soft: #1f3634;
+    --member-teal-ink: #97d0cc;
+
+    --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
+    --sh-2: 0 6px 24px rgba(0, 0, 0, 0.4);
+    --sh-sheet: 0 -8px 32px rgba(0, 0, 0, 0.4);
+    --edge: 1px solid var(--line);
+    --scrim: rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* ── Reduced motion: crossfades ≤ 120ms, no bounce ───────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ease-spring: var(--ease-out);
+    --d-base: var(--d-fast);
+    --d-slow: var(--d-fast);
+  }
+}

@@ -1,0 +1,155 @@
+/*
+ * Global base styles. Owned by step 1.1; step 7.2 may adjust.
+ * Rules: logical properties only (margin-inline-start, inset-inline-end, …). The only physical
+ * properties are safe-area paddings, because env(safe-area-inset-*) values are physical.
+ */
+
+/* ── Reset ──────────────────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+* {
+  margin: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  font-family: var(--font-sans);
+  background-color: var(--bg);
+  color: var(--ink);
+  hanging-punctuation: first last;
+}
+
+body {
+  min-block-size: 100dvh;
+  background-color: var(--bg);
+  color: var(--ink);
+  font: var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Landscape notches (physical by nature). Top/bottom insets are handled by the shell & sheets. */
+  padding-left: var(--safe-left);
+  padding-right: var(--safe-right);
+}
+
+img,
+picture,
+video,
+canvas,
+svg {
+  display: block;
+  max-inline-size: 100%;
+}
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+a {
+  color: var(--accent-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+
+p,
+li,
+figcaption {
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+
+ul[role='list'],
+ol[role='list'] {
+  list-style: none;
+  padding: 0;
+}
+
+#app {
+  isolation: isolate;
+  min-block-size: 100dvh;
+}
+
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--ink);
+}
+
+/* ── Focus: visible ring for keyboard users only ───────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* ── Utilities ──────────────────────────────────────────────────────────────── */
+
+/* Directional icons (arrows, chevrons) mirror in RTL. */
+[dir='rtl'] .flip-rtl {
+  transform: scaleX(-1);
+}
+
+/* Counts, numerals and money. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Hidden visually, still announced by screen readers. */
+.visually-hidden {
+  position: absolute !important;
+  inline-size: 1px !important;
+  block-size: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────────── */
+/* Duration tokens shrink in tokens.css; Svelte transitions consult platform/motion.ts (1.4). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
