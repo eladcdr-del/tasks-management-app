@@ -1,7 +1,7 @@
 // CONTRACT (Blueprint §5) — frozen in step 1.1. Do not edit; request changes via the orchestrator.
 import type {
   ActivityEvent, AddressAs, AuthUser, Completion, DeviceToken, EarnedTreat, Household, Invite,
-  InvitePreview, ISODate, Member, MemberColor, Photo, SyncState, Task, TaskDraft, TaskPatch, Unsubscribe
+  InvitePreview, ISODate, Member, MemberColor, Photo, SyncState, Task, TaskDraft, TaskPatch, Unsubscribe, EncodedPhoto
 } from '../domain/types';
 
 export class RepoError extends Error { constructor(public code: 'not-found'|'expired'|'revoked'|'full'|'already-member'|'permission'|'popup-blocked'|'network'|'conflict'|'unknown', msg?: string) { super(msg ?? code); } }
@@ -33,7 +33,7 @@ export interface Repository {
   requestTask(hid: string, id: string, toUid: string): void;     // ownerId=to, requestedBy=me
   releaseTask(hid: string, id: string): void;                    // ownerId=null
   snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
-  completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: Blob[]): Promise<CompleteResult>;
+  completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: EncodedPhoto[]): Promise<CompleteResult>; // photos already compressed+thumbnailed by platform/image.ts; ≤3 stored
   reopenTask(hid: string, id: string): void;                     // undo: status open, jar −1, delete auto-created next instance if untouched
   deleteTask(hid: string, id: string): void;                     // UI delays call 5s for Undo
   getPhoto(hid: string, photoId: string): Promise<Photo | null>;
