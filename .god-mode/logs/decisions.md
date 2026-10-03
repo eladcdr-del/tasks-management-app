@@ -34,3 +34,4 @@
   - (d) A time with no date gets scheduledFor = today if the time is later than now, otherwise tomorrow.
   - (e) The parser uses domain/dates.ts and weekHorizon instead of its own dateMath.ts duplicate.
   - (f) "סוף השבוע" on Friday means today in the parser ("this weekend" said on Friday). The snooze sheet's "סוף השבוע" on Friday means next Friday. The snooze label shows the date, so the difference is transparent.
+- [1.2] Round-2 step assessment folded into the Phase 1 Council Assessment: the surgeon's report was exhaustive and test-backed (100% coverage, 480 tests), and the council reviews all Phase 1 outputs anyway.
