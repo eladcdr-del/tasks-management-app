@@ -8,4 +8,18 @@
 // Note for the merge of step 1.4: keys 1.4 added to the old `dev` block of he.ts that are used by
 // primitives are re-homed here by the orchestrator.
 
-export const ui = {} as const;
+export const ui = {
+  remove: (label: string) => `הסרת ${label}`,
+  unassigned: 'עדיין לא נלקחה',
+  andMore: (n: number) => `ועוד ${n}`,
+  increase: 'הוספה',
+  decrease: 'הפחתה',
+  markDone: (title: string) => `סימון כבוצעה: ${title}`,
+  currency: '₪',
+  sync: {
+    synced: 'הכל שמור',
+    saving: 'שומר…',
+    offline: 'אין רשת',
+    pending: (n: number) => (n === 1 ? 'שינוי אחד ממתין' : `${n} שינויים ממתינים`)
+  }
+} as const;

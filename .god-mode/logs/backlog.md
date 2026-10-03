@@ -9,3 +9,4 @@
 - [1.2] Overlap between "waiting" and today's list: render unowned cards de-emphasised in the time list (note for 3.2).
 - [1.2] Search recall: plene/defective spelling variants; category label and cost are not searchable.
 - [1.2] Jar: `justFilled(before, after)` helper; optional guard against early redemption.
+- [1.4] Promote the light-dark() fallbacks to tokens: --surface-raised, --inverse-surface/ink/accent, --success-soft, --progress-track. Components: Toggle, SegmentedControl, Stepper, Snackbar, Button, Fab, ProgressBar.
