@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { FIXED_NOW, expect, openApp, test } from './fixtures';
 
 // Shell smoke test (step 1.1). Deliberately generic so it stays green as later steps replace the
 // placeholder screens and add boot gating: whatever the first screen is, it must be a Hebrew RTL
@@ -10,10 +10,13 @@ test('boots as a Hebrew RTL shell under /tasks-management-app/ with Rubik loaded
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
 
-  // Relative URL: keeps the /tasks-management-app/ base path from playwright.config baseURL.
-  const response = await page.goto('./');
+  // openApp navigates relatively (./?demo=1&reset=1#/), keeping the /tasks-management-app/ base.
+  const response = await openApp(page);
   expect(response?.ok()).toBe(true);
   expect(new URL(page.url()).pathname).toBe('/tasks-management-app/');
+
+  // The fixtures' auto fixed clock is installed before navigation.
+  expect(await page.evaluate(() => Date.now())).toBe(FIXED_NOW.getTime());
 
   const html = page.locator('html');
   await expect(html).toHaveAttribute('dir', 'rtl');

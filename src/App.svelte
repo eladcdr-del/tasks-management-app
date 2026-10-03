@@ -1,5 +1,5 @@
 <script lang="ts">
-  // App root (1.1 → 2.4). Route outlet + bottom nav + sheet / snackbar hosts + update prompt.
+  // App root (1.1 → 2.4). Route outlet + FAB + bottom nav + sheet / snackbar hosts + update prompt.
   // Step 2.4 adds boot gating (adapter selection, auth, onboarding/setup redirects) only.
   import { router } from '$lib/router/router.svelte';
   import HomeScreen from './screens/Home/HomeScreen.svelte';
@@ -16,6 +16,7 @@
   import JoinScreen from './screens/Join/JoinScreen.svelte';
   import SetupScreen from './screens/Setup/SetupScreen.svelte';
   import BottomNav from '$components/shell/BottomNav.svelte';
+  import FabHost from '$components/shell/FabHost.svelte';
   import SheetHost from '$components/shell/SheetHost.svelte';
   import SnackbarHost from '$components/shell/SnackbarHost.svelte';
   import UpdatePrompt from '$components/shell/UpdatePrompt.svelte';
@@ -29,6 +30,7 @@
 
   const route = $derived(router.route);
   const tab = $derived(router.meta.tab);
+  const fab = $derived(router.meta.fab);
 </script>
 
 <div class="app" class:with-nav={tab !== undefined}>
@@ -67,6 +69,10 @@
       {/await}
     {/if}
   </main>
+
+  {#if fab}
+    <FabHost />
+  {/if}
 
   {#if tab !== undefined}
     <BottomNav active={tab} />

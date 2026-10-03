@@ -2,6 +2,7 @@
 .god-mode/
 package-lock.json
 dist/
+dist-e2e/
 .vite/
 dev-dist/
 coverage/

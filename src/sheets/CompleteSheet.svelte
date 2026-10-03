@@ -12,7 +12,7 @@
 </script>
 
 <div class="stub" data-stub="CompleteSheet" data-task-id={taskId}>
-  <h2>{he.sheets.complete.title}</h2>
+  <h2>{he.sheetComplete.title}</h2>
   <p>{he.common.comingSoon}</p>
   <button type="button" onclick={onClose}>{he.common.close}</button>
 </div>

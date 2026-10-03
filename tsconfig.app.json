@@ -2,8 +2,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client", "vite-plugin-pwa/svelte", "vite-plugin-pwa/client"],
-    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
+    "types": ["vite/client", "vite-plugin-pwa/svelte", "vite-plugin-pwa/client"]
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte", "firebase-config.ts"],
   "exclude": ["src/sw.ts", "node_modules"]

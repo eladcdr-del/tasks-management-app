@@ -31,26 +31,28 @@ export const TABS: readonly TabId[] = ['home', 'memory', 'jar', 'household'];
 export interface RouteMeta {
   /** Highlighted bottom-nav tab. Routes without a tab render without the bottom nav. */
   tab?: TabId;
+  /** Whether App.svelte mounts the quick-add FAB (<FabHost />) on this route (Home and Memory). */
+  fab: boolean;
   /** Only reachable in dev / E2E builds; tree-shaken from production. */
   devOnly?: boolean;
 }
 
 export const ROUTE_META: Readonly<Record<RouteName, RouteMeta>> = {
-  home: { tab: 'home' },
-  memory: { tab: 'memory' },
-  jar: { tab: 'jar' },
-  household: { tab: 'household' },
-  settings: {},
-  task: {},
-  new: { tab: 'home' },
-  welcome: {},
-  onboardingProfile: {},
-  onboardingHousehold: {},
-  onboardingInstall: {},
-  onboardingNotifications: {},
-  join: {},
-  setup: {},
-  devGallery: { devOnly: true }
+  home: { tab: 'home', fab: true },
+  memory: { tab: 'memory', fab: true },
+  jar: { tab: 'jar', fab: false },
+  household: { tab: 'household', fab: false },
+  settings: { fab: false },
+  task: { fab: false },
+  new: { tab: 'home', fab: true }, // renders Home; the router canonicalises it to #/ + QuickAdd
+  welcome: { fab: false },
+  onboardingProfile: { fab: false },
+  onboardingHousehold: { fab: false },
+  onboardingInstall: { fab: false },
+  onboardingNotifications: { fab: false },
+  join: { fab: false },
+  setup: { fab: false },
+  devGallery: { devOnly: true, fab: false }
 };
 
 /** The root route of each tab (all param-less, so `href(TAB_ROUTE[tab])` type-checks). */

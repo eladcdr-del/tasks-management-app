@@ -12,7 +12,7 @@
 </script>
 
 <div class="stub" data-stub="SnoozeSheet" data-task-id={taskId}>
-  <h2>{he.sheets.snooze.title}</h2>
+  <h2>{he.sheetSnooze.title}</h2>
   <p>{he.common.comingSoon}</p>
   <button type="button" onclick={onClose}>{he.common.close}</button>
 </div>

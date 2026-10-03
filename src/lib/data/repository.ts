@@ -32,7 +32,7 @@ export interface Repository {
   takeTask(hid: string, id: string): Promise<TakeResult>;        // tx online; batch offline
   requestTask(hid: string, id: string, toUid: string): void;     // ownerId=to, requestedBy=me
   releaseTask(hid: string, id: string): void;                    // ownerId=null
-  snoozeTask(hid: string, id: string, until: ISODate): void;     // scheduledFor=until, snoozeCount+1
+  snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
   completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: Blob[]): Promise<CompleteResult>;
   reopenTask(hid: string, id: string): void;                     // undo: status open, jar −1, delete auto-created next instance if untouched
   deleteTask(hid: string, id: string): void;                     // UI delays call 5s for Undo

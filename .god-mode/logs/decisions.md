@@ -17,3 +17,21 @@
 - Step 1.1 installs every dependency the whole project needs (except scripts/notify which has its own package.json in 5.2).
 - While a Worker writes in the main tree, orchestrator commits ONLY .god-mode/ paths (git add .god-mode) to avoid committing partial work.
 - Contrast: --accent-ink and --member-terracotta-ink changed #A94E26 → #A04822 (4.41→4.87:1 on accent-soft) to meet AA; blueprint updated.
+- [1.2 QA] Contract amendments, escalated by the assessor and decided by the orchestrator:
+  - (a) `recurrence.anchor?: ISODate` is added to types.ts. It is optional, so it stays compatible with the parser's `{freq}`.
+  - (b) `snoozeTask` semantics are now `snoozePatch`, which moves a soft dueDate and caps snoozes at a hard deadline.
+  - (c) The week horizon on Friday and Saturday extends to next Saturday.
+  - (d) Urgent tasks drop out of attention while snoozed or planned for the future.
+  - (e) Age and stuck are measured from the instance date for recurring tasks, and "stuck" requires the task to be actionable.
+  - (f) Search now uses stopwords, a light stemming fold and ranking.
+  - (g) An urgent recurring task's next instance is reset to normal.
+
+  Recorded in Blueprint §3 "Domain rule amendments".
+- [1.3 QA] Parser decisions (escalated by the assessor):
+  - (a) Category keywords split into strong and weak signals. This deviates from the §6 list; precision beats recall.
+  - (b) A single "!" no longer sets priority (Israelis end ordinary sentences with "!"). "!!" still means urgent, and priority words still apply.
+  - (c) A past date with no year, within 14 days back, stays this year, so the task shows as overdue. Otherwise it rolls to next year.
+  - (d) A time with no date gets scheduledFor = today if the time is later than now, otherwise tomorrow.
+  - (e) The parser uses domain/dates.ts and weekHorizon instead of its own dateMath.ts duplicate.
+  - (f) "סוף השבוע" on Friday means today in the parser ("this weekend" said on Friday). The snooze sheet's "סוף השבוע" on Friday means next Friday. The snooze label shows the date, so the difference is transparent.
+- [1.2] Round-2 step assessment folded into the Phase 1 Council Assessment: the surgeon's report was exhaustive and test-backed (100% coverage, 480 tests), and the council reviews all Phase 1 outputs anyway.

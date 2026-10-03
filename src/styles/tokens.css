@@ -17,8 +17,8 @@
   --line: #eadfd2; /* hairlines */
   --ink: #2b2420; /* primary text */
   --ink-2: #6b5f57; /* secondary text (AA on bg) */
-  --ink-3: #998b80; /* icons / placeholder only (>= 3:1) */
-  --accent: #d9774b; /* fills, FAB, jar, focus ring */
+  --ink-3: #998b80; /* icons / placeholder only: >= 3:1 on --bg / --surface only, NOT on --surface-2 */
+  --accent: #d9774b; /* fills, FAB, jar (not text, not the focus ring: 2.9:1 on --bg) */
   --accent-strong: #b85a2c; /* primary button bg */
   --ink-on-accent: #ffffff; /* text on --accent-strong (4.6:1 light / 8:1 dark) */
   --accent-ink: #a04822; /* accent text / links */
@@ -27,26 +27,39 @@
   --sage-ink: #4f6b4d; /* success text */
   --danger: #b23b2a; /* overdue / urgent text */
   --danger-soft: #f8e1dc; /* danger tint */
+  --focus-ring: #b85a2c; /* :focus-visible outline (= --accent-strong): 4.3:1 on --bg, >= 3:1 everywhere */
 
-  /* Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface) */
+  /*
+   * Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface),
+   * -on (text/initials ON the member colour = -ink).
+   * AA pairing for avatars, chips and member labels: text/initials use --m-on (= --m-ink) on a
+   * --m-soft fill, with a --m-base ring. Ink on soft is >= 4.7:1 for every member in light and dark.
+   * Never put white (or --ink-on-accent) text on --m-base: 2.6–4.3:1 fails AA.
+   */
   --member-terracotta-base: #d9774b;
   --member-terracotta-soft: #f6e2d6;
   --member-terracotta-ink: #a04822;
+  --member-terracotta-on: var(--member-terracotta-ink);
   --member-sage-base: #7e9e7b;
   --member-sage-soft: #e3ece1;
   --member-sage-ink: #4a6648;
+  --member-sage-on: var(--member-sage-ink);
   --member-slate-base: #6f8faf;
   --member-slate-soft: #e1e9f1;
   --member-slate-ink: #44617f;
+  --member-slate-on: var(--member-slate-ink);
   --member-plum-base: #9c6b8e;
   --member-plum-soft: #efe2ec;
   --member-plum-ink: #74476a;
+  --member-plum-on: var(--member-plum-ink);
   --member-ochre-base: #c99a3e;
   --member-ochre-soft: #f5ebd3;
   --member-ochre-ink: #85621a;
+  --member-ochre-on: var(--member-ochre-ink);
   --member-teal-base: #4e9a96;
   --member-teal-soft: #dceeed;
   --member-teal-ink: #2f6e6a;
+  --member-teal-on: var(--member-teal-ink);
 
   /* Elevation (warm). Dark mode: 0.4 black shadows + 1px --line borders. */
   --sh-1: 0 1px 2px rgba(74, 44, 24, 0.06), 0 2px 8px rgba(74, 44, 24, 0.05);
@@ -141,36 +154,42 @@
   --z-update: 70; /* update prompt */
 }
 
-/* ── Member colour hook: <el data-member-color="sage"> exposes --m-base / --m-soft / --m-ink ── */
+/* ── Member colour hook: <el data-member-color="sage"> exposes --m-base / --m-soft / --m-ink / --m-on ── */
 [data-member-color='terracotta'] {
   --m-base: var(--member-terracotta-base);
   --m-soft: var(--member-terracotta-soft);
   --m-ink: var(--member-terracotta-ink);
+  --m-on: var(--member-terracotta-on);
 }
 [data-member-color='sage'] {
   --m-base: var(--member-sage-base);
   --m-soft: var(--member-sage-soft);
   --m-ink: var(--member-sage-ink);
+  --m-on: var(--member-sage-on);
 }
 [data-member-color='slate'] {
   --m-base: var(--member-slate-base);
   --m-soft: var(--member-slate-soft);
   --m-ink: var(--member-slate-ink);
+  --m-on: var(--member-slate-on);
 }
 [data-member-color='plum'] {
   --m-base: var(--member-plum-base);
   --m-soft: var(--member-plum-soft);
   --m-ink: var(--member-plum-ink);
+  --m-on: var(--member-plum-on);
 }
 [data-member-color='ochre'] {
   --m-base: var(--member-ochre-base);
   --m-soft: var(--member-ochre-soft);
   --m-ink: var(--member-ochre-ink);
+  --m-on: var(--member-ochre-on);
 }
 [data-member-color='teal'] {
   --m-base: var(--member-teal-base);
   --m-soft: var(--member-teal-soft);
   --m-ink: var(--member-teal-ink);
+  --m-on: var(--member-teal-on);
 }
 
 /* ── Dark (forced) ────────────────────────────────────────────────────────── */
@@ -192,26 +211,33 @@
   --sage-ink: #b5ccb2;
   --danger: #f08a78;
   --danger-soft: #4a2420;
+  --focus-ring: #e58a5f; /* = dark --accent: 6.9:1 on --bg */
 
-  /* Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface) */
+  /* Member palette: see the light block for the AA pairing rule (--m-on on --m-soft). */
   --member-terracotta-base: #e58a5f;
   --member-terracotta-soft: #4a2e21;
   --member-terracotta-ink: #f0a27c;
+  --member-terracotta-on: var(--member-terracotta-ink);
   --member-sage-base: #9db89a;
   --member-sage-soft: #2e3a2d;
   --member-sage-ink: #b5ccb2;
+  --member-sage-on: var(--member-sage-ink);
   --member-slate-base: #8aa8c6;
   --member-slate-soft: #25303c;
   --member-slate-ink: #afc6dd;
+  --member-slate-on: var(--member-slate-ink);
   --member-plum-base: #bc8dae;
   --member-plum-soft: #3b2935;
   --member-plum-ink: #d9b3cd;
+  --member-plum-on: var(--member-plum-ink);
   --member-ochre-base: #d9b05e;
   --member-ochre-soft: #3d3220;
   --member-ochre-ink: #e8cb8c;
+  --member-ochre-on: var(--member-ochre-ink);
   --member-teal-base: #6db5b0;
   --member-teal-soft: #1f3634;
   --member-teal-ink: #97d0cc;
+  --member-teal-on: var(--member-teal-ink);
 
   --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
   --sh-2: 0 6px 24px rgba(0, 0, 0, 0.4);
@@ -241,26 +267,33 @@
     --sage-ink: #b5ccb2;
     --danger: #f08a78;
     --danger-soft: #4a2420;
+    --focus-ring: #e58a5f; /* = dark --accent: 6.9:1 on --bg */
 
-    /* Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface) */
+    /* Member palette: see the light block for the AA pairing rule (--m-on on --m-soft). */
     --member-terracotta-base: #e58a5f;
     --member-terracotta-soft: #4a2e21;
     --member-terracotta-ink: #f0a27c;
+    --member-terracotta-on: var(--member-terracotta-ink);
     --member-sage-base: #9db89a;
     --member-sage-soft: #2e3a2d;
     --member-sage-ink: #b5ccb2;
+    --member-sage-on: var(--member-sage-ink);
     --member-slate-base: #8aa8c6;
     --member-slate-soft: #25303c;
     --member-slate-ink: #afc6dd;
+    --member-slate-on: var(--member-slate-ink);
     --member-plum-base: #bc8dae;
     --member-plum-soft: #3b2935;
     --member-plum-ink: #d9b3cd;
+    --member-plum-on: var(--member-plum-ink);
     --member-ochre-base: #d9b05e;
     --member-ochre-soft: #3d3220;
     --member-ochre-ink: #e8cb8c;
+    --member-ochre-on: var(--member-ochre-ink);
     --member-teal-base: #6db5b0;
     --member-teal-soft: #1f3634;
     --member-teal-ink: #97d0cc;
+    --member-teal-on: var(--member-teal-ink);
 
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
     --sh-2: 0 6px 24px rgba(0, 0, 0, 0.4);

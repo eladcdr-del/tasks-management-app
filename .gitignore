@@ -1,8 +1,9 @@
 # Dependencies
-node_modules/
+node_modules
 
 # Build output & caches
 dist/
+dist-e2e/
 dev-dist/
 .vite/
 *.local
@@ -33,3 +34,4 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+tests/e2e/__screens__/

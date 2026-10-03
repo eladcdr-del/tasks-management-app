@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ROUTES, href, isSheetSpec, matchRoute, parseHash, pathFor } from './routes';
+import { ROUTES, ROUTE_META, href, isSheetSpec, matchRoute, parseHash, pathFor } from './routes';
 
 const prod = { allowDev: false };
 const dev = { allowDev: true };
@@ -101,5 +101,14 @@ describe('isSheetSpec', () => {
     expect(isSheetSpec({ name: 'other' })).toBe(false);
     expect(isSheetSpec(null)).toBe(false);
     expect(isSheetSpec('quickAdd')).toBe(false);
+  });
+});
+
+describe('ROUTE_META', () => {
+  it('shows the FAB on Home and Memory only', () => {
+    const withFab = (Object.keys(ROUTE_META) as (keyof typeof ROUTE_META)[]).filter(
+      (name) => ROUTE_META[name].fab && name !== 'new'
+    );
+    expect(withFab.sort()).toEqual(['home', 'memory']);
   });
 });

@@ -1,1 +1,17 @@
 # Backlog (Minor findings + ceiling leftovers)
+- [1.1] Dark palette duplicated 3× by hand in tokens.css → use `light-dark()`, or add a test asserting the blocks are identical.
+- [1.1] `tsBuildInfoFile` points into shared node_modules/.tmp (harmless now).
+- [1.1] Screens and sheets are imported by relative paths. Add `$screens`/`$sheets` aliases.
+- [1.1] Every screen is imported eagerly in App.svelte. Lazy-load non-tab routes (2.4/7.x budget).
+- [1.1] `globPatterns` precaches all JS chunks, including Firebase. 5.1 should exclude Firebase chunks from the precache, or use runtime caching.
+- [1.1] Canvas mock decision for `image.ts` tests (3.3).
+- [1.1→1.3] The parser has its own `dateMath.ts`, duplicating `domain/dates.ts`. Consolidate after the 1.2/1.3 merge.
+- [1.2] Overlap between "waiting" and today's list: render unowned cards de-emphasised in the time list (note for 3.2).
+- [1.2] Search recall: plene/defective spelling variants; category label and cost are not searchable.
+- [1.2] Jar: `justFilled(before, after)` helper; optional guard against early redemption.
+- [1.4] Promote the light-dark() fallbacks to tokens: --surface-raised, --inverse-surface/ink/accent, --success-soft, --progress-track. Components: Toggle, SegmentedControl, Stepper, Snackbar, Button, Fab, ProgressBar.
+- [1.3] Parser keyword lists duplicate domain/categories.ts keywords (two sources of truth).
+- [1.3] Not recognized: "לפני שבת", "ערב שבת", "במוצ״ש", "אחרי החגים".
+- [1.3] Live-typing flicker on intermediate values (debounce in the UI, or mark partial matches at the cursor).
+- [1.3] "מהיום" (from now on) sets today.
+- [1.3] A bare H:MM with no ב/בשעה becomes a time ("ניצחנו 3:10").
