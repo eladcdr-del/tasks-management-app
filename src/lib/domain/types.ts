@@ -29,7 +29,7 @@ export interface Task {
   createdBy: string; createdAt: Millis; updatedBy: string; updatedAt: Millis;
   scheduledFor: ISODate | null;           // soft plan (היום / השבוע / date)
   dueDate: ISODate | null; dueTime: string | null /* 'HH:mm' */; hardDeadline: boolean;
-  recurrence: { freq: RecurrenceFreq } | null; seriesId: string | null;
+  recurrence: { freq: RecurrenceFreq; anchor?: ISODate } | null; seriesId: string | null; // anchor = series base date (set on create/first completion; never shifted by snooze)
   status: 'open'|'done';
   snoozeCount: number; lastSnoozedAt: Millis | null;
   completedAt: Millis | null; completedBy: string | null; completion: Completion | null;

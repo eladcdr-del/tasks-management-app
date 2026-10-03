@@ -101,7 +101,7 @@ export interface Task {
   createdBy: string; createdAt: Millis; updatedBy: string; updatedAt: Millis;
   scheduledFor: ISODate | null;           // soft plan (היום / השבוע / date)
   dueDate: ISODate | null; dueTime: string | null /* 'HH:mm' */; hardDeadline: boolean;
-  recurrence: { freq: RecurrenceFreq } | null; seriesId: string | null;
+  recurrence: { freq: RecurrenceFreq; anchor?: ISODate } | null; seriesId: string | null; // anchor = series base date (set on create/first completion; never shifted by snooze)
   status: 'open'|'done';
   snoozeCount: number; lastSnoozedAt: Millis | null;
   completedAt: Millis | null; completedBy: string | null; completion: Completion | null;
@@ -146,6 +146,29 @@ Domain rules (1.2):
 - Recurrence: `next = add(dueDate ?? scheduledFor ?? completionDate, freq)`. Monthly clamps the day (31 Jan → 28/29 Feb). Next id is deterministic: `${seriesId}__${nextDate}`. Copies title, notes, category, priority, owner and hardDeadline; resets snooze.
 - Jar: `isFull = count ≥ target`. On redeem, `count = max(0, count − target)` and `round + 1`.
 - Search: strip niqqud and geresh, map final letters to regular (ך→כ, ם→מ, ן→נ, ף→פ, ץ→צ), lower-case Latin, match tokens with optional prefix letters ו/ה/ב/ל/מ/ש/כ.
+
+**Domain rule amendments (orchestrator, after 1.2 QA). These are binding.**
+- **Week horizon:** on Friday and Saturday, the "week" bucket extends through NEXT Saturday, because Israeli families plan the coming week on the weekend. Exposed as `weekHorizon(today)`.
+- **Attention:** a task needs attention when it is overdue, OR when it is urgent AND (`scheduledFor` is null OR `scheduledFor` ≤ today). This means snoozing an urgent task takes it out of attention until its date.
+- **Snooze** (`snoozePatch(task, until, now)`, which every adapter applies):
+  - Always: `scheduledFor = until`, `snoozeCount + 1`, `lastSnoozedAt = now`.
+  - If the task has a `dueDate` AND (`!hardDeadline` OR `dueDate < today`): `dueDate = until`. A soft due date moves; a missed hard deadline becomes a moved date.
+  - If `hardDeadline` AND `dueDate ≥ today`: the `dueDate` stays. The UI caps the snooze options at `dueDate`.
+  - `snoozeTargets(today)`:
+    - מחר = +1
+    - סוף השבוע = the coming Friday, or next Friday if today is Friday or Saturday
+    - שבוע הבא = next Sunday
+    - בעוד חודש = +1 month (clamped)
+- **Recurrence:** `recurrence.anchor` is the series base date. It is set on create when a date exists, otherwise at first completion. It is carried unchanged to every instance. The next date is the first `advance(anchor, freq, k)` strictly after max(the current instance's own date, completion date). This avoids month-end drift, Feb 29 drift and snooze drift.
+  - The next instance copies priority, except urgent, which becomes normal.
+- **Age and stuck:** `ageStart(task)` = the creation day for one-offs, and max(creation day, the instance's own date) for recurring instances (`seriesId != null`).
+  - `isStuck` requires that the task be actionable: its effective date is null or ≤ today. The rule is then age ≥ 21 days OR `snoozeCount` ≥ 3.
+- **Search:**
+  - Drop Hebrew question and function words from the query.
+  - Apply a light suffix and construct-state fold to query tokens of ≥ 4 letters (minimum 3 letters left).
+  - Peel prefixes only when ≥ 3 letters remain.
+  - Every non-stopword token must match. Rank exact matches above folded or peeled ones.
+  - Acceptance test: "מתי החלפנו מצבר ובאיזה מוסך?" finds "החלפת מצבר" with place "מוסך השרון".
 
 ## 4. Firestore schema & Security Rules
 ```
@@ -242,7 +265,7 @@ export interface Repository {
   takeTask(hid: string, id: string): Promise<TakeResult>;        // tx online; batch offline
   requestTask(hid: string, id: string, toUid: string): void;     // ownerId=to, requestedBy=me
   releaseTask(hid: string, id: string): void;                    // ownerId=null
-  snoozeTask(hid: string, id: string, until: ISODate): void;     // scheduledFor=until, snoozeCount+1
+  snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
   completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: Blob[]): Promise<CompleteResult>;
   reopenTask(hid: string, id: string): void;                     // undo: status open, jar −1, delete auto-created next instance if untouched
   deleteTask(hid: string, id: string): void;                     // UI delays call 5s for Undo

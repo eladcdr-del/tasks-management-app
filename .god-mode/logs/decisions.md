@@ -17,3 +17,13 @@
 - Step 1.1 installs every dependency the whole project needs (except scripts/notify which has its own package.json in 5.2).
 - While a Worker writes in the main tree, orchestrator commits ONLY .god-mode/ paths (git add .god-mode) to avoid committing partial work.
 - Contrast: --accent-ink and --member-terracotta-ink changed #A94E26 → #A04822 (4.41→4.87:1 on accent-soft) to meet AA; blueprint updated.
+- [1.2 QA] Contract amendments, escalated by the assessor and decided by the orchestrator:
+  - (a) `recurrence.anchor?: ISODate` is added to types.ts. It is optional, so it stays compatible with the parser's `{freq}`.
+  - (b) `snoozeTask` semantics are now `snoozePatch`, which moves a soft dueDate and caps snoozes at a hard deadline.
+  - (c) The week horizon on Friday and Saturday extends to next Saturday.
+  - (d) Urgent tasks drop out of attention while snoozed or planned for the future.
+  - (e) Age and stuck are measured from the instance date for recurring tasks, and "stuck" requires the task to be actionable.
+  - (f) Search now uses stopwords, a light stemming fold and ranking.
+  - (g) An urgent recurring task's next instance is reset to normal.
+
+  Recorded in Blueprint §3 "Domain rule amendments".
