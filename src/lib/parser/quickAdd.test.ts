@@ -1,175 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import {
-  addDays,
-  addMonths,
-  endOfMonth,
-  endOfWeek,
-  isValidYMD,
-  nextOccurrence,
-  nextWeekdayAfter,
-  nextWeekdayOnOrAfter,
-  parseISO,
-  startOfNextMonth,
-  todayInTz,
-  toISO,
-  weekday
-} from './dateMath';
+import { isValidISO } from '$lib/domain/dates';
 import type { CategoryId } from '../domain/types';
 import { CATEGORY_KEYWORDS, lit, MONTHS, WEEKDAYS } from './lexicon';
-import { parseQuickAdd, rebuildTitle, removeMatch, type ParseResult } from './quickAdd';
+import {
+  deletePhraseFromInput,
+  parseQuickAdd,
+  rebuildTitle,
+  removeMatch,
+  type ParseResult
+} from './quickAdd';
 
-// ───────────────────────────── dateMath ─────────────────────────────
-
-describe('dateMath: todayInTz', () => {
-  it('reads the calendar date in Asia/Jerusalem (UTC+3 in October 2026)', () => {
-    // 09:00 Jerusalem = 06:00Z
-    expect(todayInTz(new Date('2026-10-04T06:00:00Z'))).toBe('2026-10-04');
-  });
-
-  it('rolls over to the next day after local midnight even while UTC is still the old day', () => {
-    // 22:30Z on the 4th is 01:30 on the 5th in Jerusalem (IDT, UTC+3)
-    expect(todayInTz(new Date('2026-10-04T22:30:00Z'))).toBe('2026-10-05');
-    // 20:59Z is still 23:59 on the 4th
-    expect(todayInTz(new Date('2026-10-04T20:59:00Z'))).toBe('2026-10-04');
-  });
-
-  it('uses winter time (UTC+2) after the DST switch', () => {
-    // IDT ends Sun 2026-10-25. 22:30Z on Jan 10 is 00:30 on Jan 11 in IST (UTC+2)
-    expect(todayInTz(new Date('2027-01-10T22:30:00Z'))).toBe('2027-01-11');
-    expect(todayInTz(new Date('2027-01-10T21:30:00Z'))).toBe('2027-01-10');
-  });
-
-  it('honours an explicit tz argument', () => {
-    expect(todayInTz(new Date('2026-10-04T22:30:00Z'), 'UTC')).toBe('2026-10-04');
-    expect(todayInTz(new Date('2026-10-04T22:30:00Z'), 'Pacific/Auckland')).toBe('2026-10-05');
-  });
-
-  it('falls back instead of throwing on a bad timezone or an invalid Date', () => {
-    expect(todayInTz(new Date('2026-10-04T06:00:00Z'), 'Not/AZone')).toBe('2026-10-04');
-    expect(todayInTz(new Date(NaN))).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-});
-
-describe('dateMath: validation and conversion', () => {
-  it('validates real calendar dates only', () => {
-    expect(isValidYMD(2026, 10, 4)).toBe(true);
-    expect(isValidYMD(2026, 2, 28)).toBe(true);
-    expect(isValidYMD(2026, 2, 29)).toBe(false);
-    expect(isValidYMD(2028, 2, 29)).toBe(true);
-    expect(isValidYMD(2100, 2, 29)).toBe(false); // century, not a leap year
-    expect(isValidYMD(2026, 31, 1)).toBe(false);
-    expect(isValidYMD(2026, 4, 31)).toBe(false);
-    expect(isValidYMD(2026, 0, 10)).toBe(false);
-    expect(isValidYMD(2026, 13, 10)).toBe(false);
-    expect(isValidYMD(2026, 10, 0)).toBe(false);
-    expect(isValidYMD(2026.5, 10, 4)).toBe(false);
-    expect(isValidYMD(NaN, 10, 4)).toBe(false);
-  });
-
-  it('formats and parses ISO dates', () => {
-    expect(toISO(2026, 1, 5)).toBe('2026-01-05');
-    expect(parseISO('2026-10-04')).toEqual({ y: 2026, m: 10, d: 4 });
-    expect(parseISO('2026-02-30')).toBeNull();
-    expect(parseISO('nope')).toBeNull();
-    expect(parseISO('2026-1-5')).toBeNull();
-  });
-});
-
-describe('dateMath: day and month arithmetic', () => {
-  it('adds days across month and year ends', () => {
-    expect(addDays('2026-10-04', 1)).toBe('2026-10-05');
-    expect(addDays('2026-10-31', 1)).toBe('2026-11-01');
-    expect(addDays('2026-12-31', 1)).toBe('2027-01-01');
-    expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
-    expect(addDays('2026-10-04', 14)).toBe('2026-10-18');
-  });
-
-  it('is immune to DST: Israel clocks change on 2026-03-27 and 2026-10-25', () => {
-    expect(addDays('2026-03-26', 1)).toBe('2026-03-27');
-    expect(addDays('2026-03-27', 1)).toBe('2026-03-28');
-    expect(addDays('2026-10-24', 1)).toBe('2026-10-25');
-    expect(addDays('2026-10-25', 1)).toBe('2026-10-26');
-    expect(addDays('2026-10-04', 28)).toBe('2026-11-01');
-  });
-
-  it('adds months and clamps the day to the target month length', () => {
-    expect(addMonths('2026-10-04', 1)).toBe('2026-11-04');
-    expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
-    expect(addMonths('2028-01-31', 1)).toBe('2028-02-29');
-    expect(addMonths('2026-10-31', 1)).toBe('2026-11-30');
-    expect(addMonths('2026-12-15', 1)).toBe('2027-01-15');
-    expect(addMonths('2026-10-04', 3)).toBe('2027-01-04');
-    expect(addMonths('2026-03-31', -1)).toBe('2026-02-28');
-  });
-
-  it('computes the weekday with Sunday = 0', () => {
-    expect(weekday('2026-10-04')).toBe(0); // Sunday
-    expect(weekday('2026-10-08')).toBe(4); // Thursday
-    expect(weekday('2026-10-10')).toBe(6); // Saturday
-  });
-
-  it('finds the next weekday strictly after the given date', () => {
-    expect(nextWeekdayAfter('2026-10-04', 0)).toBe('2026-10-11'); // Sunday -> next Sunday
-    expect(nextWeekdayAfter('2026-10-04', 4)).toBe('2026-10-08');
-    expect(nextWeekdayAfter('2026-10-04', 6)).toBe('2026-10-10');
-    expect(nextWeekdayAfter('2026-10-10', 6)).toBe('2026-10-17'); // Saturday -> next Saturday
-    expect(nextWeekdayAfter('2026-10-10', 0)).toBe('2026-10-11');
-  });
-
-  it('finds the next weekday on or after the given date', () => {
-    expect(nextWeekdayOnOrAfter('2026-10-04', 0)).toBe('2026-10-04');
-    expect(nextWeekdayOnOrAfter('2026-10-04', 5)).toBe('2026-10-09');
-    expect(nextWeekdayOnOrAfter('2026-10-09', 5)).toBe('2026-10-09');
-    expect(nextWeekdayOnOrAfter('2026-10-10', 5)).toBe('2026-10-16');
-  });
-
-  it('end of week is the Saturday of the Sunday-to-Saturday week', () => {
-    expect(endOfWeek('2026-10-04')).toBe('2026-10-10'); // Sunday
-    expect(endOfWeek('2026-10-07')).toBe('2026-10-10'); // Wednesday
-    expect(endOfWeek('2026-10-10')).toBe('2026-10-10'); // Saturday is the last day itself
-    expect(endOfWeek('2026-12-30')).toBe('2027-01-02');
-  });
-
-  it('end of month and start of next month', () => {
-    expect(endOfMonth('2026-10-04')).toBe('2026-10-31');
-    expect(endOfMonth('2026-02-10')).toBe('2026-02-28');
-    expect(endOfMonth('2028-02-10')).toBe('2028-02-29');
-    expect(endOfMonth('2026-10-31')).toBe('2026-10-31');
-    expect(startOfNextMonth('2026-10-04')).toBe('2026-11-01');
-    expect(startOfNextMonth('2026-12-31')).toBe('2027-01-01');
-  });
-});
-
-describe('dateMath: malformed input never throws', () => {
-  it('hands an unparseable date back unchanged instead of guessing', () => {
-    expect(addDays('bogus', 1)).toBe('bogus');
-    expect(addMonths('bogus', 1)).toBe('bogus');
-    expect(endOfMonth('bogus')).toBe('bogus');
-    expect(startOfNextMonth('bogus')).toBe('bogus');
-    expect(weekday('bogus')).toBe(0);
-    expect(nextOccurrence(1, 1, 'bogus')).toBeNull();
-  });
-});
-
-describe('dateMath: nextOccurrence (year-less dd/mm)', () => {
-  it('keeps a future date in the current year, and today itself', () => {
-    expect(nextOccurrence(10, 15, '2026-10-04')).toBe('2026-10-15');
-    expect(nextOccurrence(10, 4, '2026-10-04')).toBe('2026-10-04');
-  });
-
-  it('rolls a past date over to next year', () => {
-    expect(nextOccurrence(1, 3, '2026-10-04')).toBe('2027-01-03');
-    expect(nextOccurrence(10, 3, '2026-10-04')).toBe('2027-10-03');
-  });
-
-  it('finds the next leap year for 29/2 and ignores impossible dates', () => {
-    expect(nextOccurrence(2, 29, '2026-10-04')).toBe('2028-02-29');
-    expect(nextOccurrence(2, 29, '2096-03-01')).toBe('2104-02-29'); // 2100 is not a leap year
-    expect(nextOccurrence(2, 31, '2026-10-04')).toBeNull();
-    expect(nextOccurrence(4, 31, '2026-10-04')).toBeNull();
-    expect(nextOccurrence(13, 1, '2026-10-04')).toBeNull();
-  });
-});
+// Date helpers moved to $lib/domain/dates (tested there) and ./util (util.test.ts).
 
 // ───────────────────────────── parser helpers ─────────────────────────────
 
@@ -280,7 +121,6 @@ describe('Hebrew prefixes ו/ה/ב/ל/מ/ש/כ (up to two)', () => {
     ['להתקשר כמחר', '2026-10-05'], // כ
     ['להתקשר וממחר', '2026-10-05'],
     ['להתקשר כשמחר', '2026-10-05'],
-    ['להתקשר ומהיום', '2026-10-04'],
     ['להתקשר ולמחרתיים', '2026-10-06'],
     ['להתקשר ובשבוע הבא', '2026-10-11'],
     ['להתקשר לשבוע הבא', '2026-10-11'],
@@ -305,6 +145,10 @@ describe('Hebrew prefixes ו/ה/ב/ל/מ/ש/כ (up to two)', () => {
     expect(fields('מחרוזת לקנות').scheduledFor).toBeUndefined(); // "מחר" + "וזת" is another word
     expect(fields('שגרת היומיום').scheduledFor).toBeUndefined(); // "היום" + "יום"
     expect(fields('מחרתיים').scheduledFor).toBe('2026-10-06'); // and מחר does not eat מחרתיים
+  });
+
+  it('"מהיום" means "from now on", not today (round-2 minor)', () => {
+    expect(fields('להתקשר ומהיום').scheduledFor).toBeUndefined();
   });
 });
 
@@ -343,18 +187,18 @@ describe('weekday names resolve to the next occurrence strictly after today', ()
     });
   });
 
-  it('does not mistake "יום הולדת" or a bare ה for a weekday', () => {
+  it('does not mistake "יום הולדת" for a weekday; a geresh-less "יום ה" is Thursday (M6)', () => {
     expect(fields('יום הולדת לדנה').scheduledFor).toBeUndefined();
-    expect(fields('יום ה לקנות').scheduledFor).toBeUndefined();
+    expect(fields('יום ה לקנות').scheduledFor).toBe('2026-10-08');
   });
 
   it('bare weekday names are only dates after "עד" (otherwise שני = "two" etc.)', () => {
     expect(fields('לקנות שני חלבים').scheduledFor).toBeUndefined();
     expect(fields('פגישה שישי בערב').scheduledFor).toBeUndefined();
+    // a returns verb with no store or clothing word is only a weak signal: no hardDeadline (M2)
     expect(fields('להחזיר עד חמישי')).toEqual({
       title: 'להחזיר',
       dueDate: '2026-10-08',
-      hardDeadline: true,
       categoryId: 'returns'
     });
     expect(fields('לסדר עד לחמישי')).toEqual({ title: 'לסדר', dueDate: '2026-10-08' });
@@ -371,8 +215,12 @@ describe('weekday names resolve to the next occurrence strictly after today', ()
     expect(fields('לנקות ביום שבת הקרובים').title).toBe('לנקות הקרובים');
   });
 
-  it('"every Sunday" is not treated as a one-off date (no dangling "כל" in the title)', () => {
-    expect(fields('לכבס כל יום ראשון')).toEqual({ title: 'לכבס כל יום ראשון' });
+  it('"every Sunday" is a weekly recurrence starting next Sunday, not a one-off date (M6)', () => {
+    expect(fields('לכבס כל יום ראשון')).toEqual({
+      title: 'לכבס',
+      scheduledFor: '2026-10-11',
+      recurrence: { freq: 'weekly' }
+    });
   });
 
   it('when today is Saturday, "ביום שבת" means NEXT Saturday', () => {
@@ -388,10 +236,11 @@ describe('weekday names resolve to the next occurrence strictly after today', ()
 // ───────────────────────────── week / month phrases ─────────────────────────────
 
 describe('week and month phrases', () => {
-  it('"השבוע" is the Saturday of this Sunday-to-Saturday week', () => {
+  it('"השבוע" is weekHorizon(today): this Saturday, or next Saturday on Friday/Saturday (M1)', () => {
     expect(fields('להתקשר השבוע').scheduledFor).toBe('2026-10-10');
     expect(fields('להתקשר השבוע', WED).scheduledFor).toBe('2026-10-10');
-    expect(fields('להתקשר השבוע', SAT).scheduledFor).toBe('2026-10-10'); // Saturday is the last day
+    expect(fields('להתקשר השבוע', FRI).scheduledFor).toBe('2026-10-17');
+    expect(fields('להתקשר השבוע', SAT).scheduledFor).toBe('2026-10-17');
   });
 
   it('"סוף השבוע" and all weekend spellings are the coming Friday, not the Saturday of "השבוע"', () => {
@@ -572,12 +421,12 @@ describe('numeric dates: dd/mm, dd.mm, dd/mm/yy(yy), "ב-15/10"', () => {
     ['15/10', '2026-10-15'],
     ['15.10', '2026-10-15'],
     ['4/10', '2026-10-04'], // today stays today
-    ['3/10', '2027-10-03'], // already passed: next year
-    ['3/1', '2027-01-03'],
-    ['3.1', '2027-01-03'],
+    ['3/10', '2026-10-03'], // passed by 1 day: stays this year, overdue (decision c)
+    ['3/1', '2027-01-03'], // 91 days ahead: still a date
     ['03/01', '2027-01-03'],
+    ['03.01', '2027-01-03'],
     ['1/12', '2026-12-01'],
-    ['29/2', '2028-02-29'], // next leap year
+    ['ב-29/2', '2028-02-29'], // next leap year (introduced: un-introduced is > 120 days ahead)
     ['15/10/2027', '2027-10-15'],
     ['15.10.2027', '2027-10-15'],
     ['15/10/27', '2027-10-15'],
@@ -629,8 +478,8 @@ describe('numeric dates: dd/mm, dd.mm, dd/mm/yy(yy), "ב-15/10"', () => {
       expect(r.scheduledFor, input).toBeUndefined();
       expect(r.title, input).toBe(input);
     }
-    // ...but the same digits ARE a date when nothing marks them as a quantity
-    expect(fields('לבדוק 2.5').scheduledFor).toBe('2027-05-02');
+    // a bare 2.5 is a number too (C1c), not 2 May
+    expect(fields('לבדוק 2.5')).toEqual({ title: 'לבדוק 2.5' });
   });
 
   it('"עד" + each date form moves it to dueDate', () => {
@@ -696,10 +545,10 @@ describe('Hebrew month names', () => {
     ]);
   });
 
-  it('"3 בינואר" rolls over to next year, "4 באוקטובר" is today, "3 באוקטובר" next year', () => {
+  it('"3 בינואר" rolls over to next year, "4 באוקטובר" is today, "3 באוקטובר" stays (overdue)', () => {
     expect(fields('פגישה 3 בינואר').scheduledFor).toBe('2027-01-03');
     expect(fields('פגישה 4 באוקטובר').scheduledFor).toBe('2026-10-04');
-    expect(fields('פגישה 3 באוקטובר').scheduledFor).toBe('2027-10-03');
+    expect(fields('פגישה 3 באוקטובר').scheduledFor).toBe('2026-10-03');
   });
 
   it('takes an explicit year literally', () => {
@@ -738,7 +587,8 @@ describe('dueTime', () => {
     ['בשעה 9', '09:00'],
     ['בשעה 12', '12:00'],
     ['בשעה 07', '07:00'], // zero-padded is literal
-    ['בשעה 5:30', '05:30'], // explicit minutes are literal
+    ['בשעה 5:30', '17:30'], // unpadded H:MM under 8 is afternoon too (C4)
+    ['בשעה 05:30', '05:30'], // zero-padded is literal
     ['ב-9:05', '09:05'],
     ['ב-08:15', '08:15'],
     ['השעה 17:30', '17:30'],
@@ -750,7 +600,9 @@ describe('dueTime', () => {
     ['ב-23:59', '23:59'],
     ['ב-0:00', '00:00']
   ])('%s', (phrase, dueTime) => {
-    expect(fields(`להתקשר ${phrase}`)).toEqual({ title: 'להתקשר', dueTime });
+    // decision (d): no date, so today if the time is still ahead (now is 09:00), else tomorrow
+    const scheduledFor = dueTime > '09:00' ? '2026-10-04' : '2026-10-05';
+    expect(fields(`להתקשר ${phrase}`)).toEqual({ title: 'להתקשר', dueTime, scheduledFor });
   });
 
   it('rejects impossible clock times and bare numbers', () => {
@@ -779,9 +631,18 @@ describe('dueTime', () => {
   });
 
   it('a time with a dot after בשעה is not mistaken for a dd.mm date', () => {
-    expect(fields('להתקשר בשעה 17.10')).toEqual({ title: 'להתקשר', dueTime: '17:10' });
-    // explicit minutes are taken literally, there is no PM guess
-    expect(fields('להתקשר בשעה 5.10')).toEqual({ title: 'להתקשר', dueTime: '05:10' });
+    const today = '2026-10-04';
+    expect(fields('להתקשר בשעה 17.10')).toEqual({
+      title: 'להתקשר',
+      dueTime: '17:10',
+      scheduledFor: today
+    });
+    // the PM guess applies to unpadded H.MM like H:MM (C4)
+    expect(fields('להתקשר בשעה 5.10')).toEqual({
+      title: 'להתקשר',
+      dueTime: '17:10',
+      scheduledFor: today
+    });
   });
 });
 
@@ -803,14 +664,10 @@ describe('priority', () => {
     expect(fields('לשלם ארנונה!!!').priority).toBe('urgent');
   });
 
-  it('"!" is high', () => {
-    expect(fields('לשלם ארנונה !')).toEqual({
-      title: 'לשלם ארנונה',
-      priority: 'high',
-      categoryId: 'finance'
-    });
-    expect(fields('לשלם ארנונה!').priority).toBe('high');
-    expect(fields('! לשלם ארנונה').priority).toBe('high');
+  it('a single "!" sets nothing and stays in the title (decision b)', () => {
+    expect(fields('לשלם ארנונה !')).toEqual({ title: 'לשלם ארנונה !', categoryId: 'finance' });
+    expect(fields('לשלם ארנונה!').priority).toBeUndefined();
+    expect(fields('! לשלם ארנונה').priority).toBeUndefined();
   });
 
   it('דחוף is urgent and חשוב is high, with prefixes and feminine forms', () => {
@@ -841,8 +698,8 @@ describe('priority', () => {
   it('does not read a negated priority, or a verb that merely looks like one', () => {
     expect(fields('לא דחוף לקנות חלב').priority).toBeUndefined();
     expect(fields('לא דחוף!').priority).toBeUndefined();
-    // a separate "!" is still an explicit emphasis mark
-    expect(fields('לא חשוב לקנות חלב!').priority).toBe('high');
+    // a single "!" is just punctuation (decision b)
+    expect(fields('לא חשוב לקנות חלב!').priority).toBeUndefined();
     expect(fields('לדחוף את העגלה').priority).toBeUndefined();
     expect(fields('לחשוב על מתנה').priority).toBeUndefined();
   });
@@ -854,7 +711,7 @@ describe('priority', () => {
 
   it('a lone "!!" input keeps itself as the title', () => {
     expect(fields('!!')).toEqual({ title: '!!', priority: 'urgent' });
-    expect(fields('!')).toEqual({ title: '!', priority: 'high' });
+    expect(fields('!')).toEqual({ title: '!' });
   });
 });
 
@@ -864,18 +721,12 @@ describe('recurrence', () => {
   it.each([
     ['כל שבוע', 'weekly'],
     ['פעם בשבוע', 'weekly'],
-    ['שבועי', 'weekly'],
-    ['שבועית', 'weekly'],
     ['בכל שבוע', 'weekly'],
     ['וכל שבוע', 'weekly'],
     ['כל חודש', 'monthly'],
     ['פעם בחודש', 'monthly'],
-    ['חודשי', 'monthly'],
-    ['חודשית', 'monthly'],
     ['כל שנה', 'yearly'],
-    ['פעם בשנה', 'yearly'],
-    ['שנתי', 'yearly'],
-    ['שנתית', 'yearly']
+    ['פעם בשנה', 'yearly']
   ])('%s', (phrase, freq) => {
     expect(fields(`להשקות עציצים ${phrase}`)).toEqual({
       title: 'להשקות עציצים',
@@ -885,6 +736,21 @@ describe('recurrence', () => {
       title: 'להשקות עציצים',
       recurrence: { freq }
     });
+  });
+
+  it.each([
+    ['שבועי', 'weekly'],
+    ['שבועית', 'weekly'],
+    ['חודשי', 'monthly'],
+    ['חודשית', 'monthly'],
+    ['שנתי', 'yearly'],
+    ['שנתית', 'yearly']
+  ])('adjective %s: at the start or after punctuation, not right after a noun', (word, freq) => {
+    const expected = { title: 'להשקות עציצים', recurrence: { freq } };
+    expect(fields(`${word} להשקות עציצים`)).toEqual(expected);
+    expect(fields(`להשקות עציצים - ${word}`)).toEqual(expected);
+    expect(fields(`להשקות עציצים, ${word}`)).toEqual(expected);
+    expect(fields(`להשקות עציצים ${word}`)).toEqual({ title: `להשקות עציצים ${word}` });
   });
 
   it('does not read "every two weeks" as weekly', () => {
@@ -936,9 +802,12 @@ describe('lexicon', () => {
 
 describe('categories', () => {
   const keywords: [CategoryId, string[]][] = [
-    ['returns', ['להחזיר', 'להחליף', 'החזרה', 'החלפה', 'זיכוי']],
-    ['car', ['רכב', 'מוסך', 'טסט', 'צמיג', 'צמיגים', 'מצבר', 'שמן', "פנצ'ר", 'פנצר', 'ביטוח רכב']],
-    ['health', ['רופא', 'רופאת', 'תור', 'בדיקה', 'מרפאה', 'שיניים', 'תרופה', 'מרשם', 'קופת חולים']],
+    ['returns', ['להחזיר', 'להחליף', 'החזרה', 'החלפה', 'החלפת', 'החזרת', 'זיכוי']],
+    ['car', ['רכב', 'מוסך', 'טסט', 'צמיג', 'צמיגים', 'מצבר', "פנצ'ר", 'פנצר', 'ביטוח רכב']],
+    [
+      'health',
+      ['רופא', 'רופאה', 'רופאת', 'בדיקה', 'מרפאה', 'שיניים', 'תרופה', 'מרשם', 'קופת חולים']
+    ],
     [
       'finance',
       [
@@ -957,7 +826,19 @@ describe('categories', () => {
     ],
     [
       'home',
-      ['לתקן', 'תיקון', 'נזילה', 'אינסטלטור', 'חשמלאי', 'מזגן', 'נורה', 'דוד', 'צבע', 'הדברה']
+      [
+        'לתקן',
+        'תיקון',
+        'נזילה',
+        'אינסטלטור',
+        'חשמלאי',
+        'מזגן',
+        'נורה',
+        'דוד שמש',
+        'דוד חשמל',
+        'צבע',
+        'הדברה'
+      ]
     ],
     ['shopping', ['לקנות', 'לרכוש', 'להזמין', 'סופר', 'קניות']],
     ['family', ['יום הולדת', 'מתנה', 'אירוע', 'חתונה', 'ברית']]
@@ -971,10 +852,19 @@ describe('categories', () => {
     expect(fields(`${word} משהו`)).toEqual({ title: `${word} משהו`, categoryId: id });
   });
 
+  it('conditional keywords need their context (M2): שמן, תור, דוד', () => {
+    expect(fields('שמן משהו').categoryId).toBeUndefined();
+    expect(fields('שמן מנוע').categoryId).toBe('car');
+    expect(fields('תור משהו').categoryId).toBeUndefined();
+    expect(fields('תור לבדיקה').categoryId).toBe('health');
+    expect(fields('דוד משהו').categoryId).toBeUndefined();
+    expect(fields('נזילה בדוד').categoryId).toBe('home');
+  });
+
   it('keeps the keyword in the title and reports it as a "category" match', () => {
     const r = parse('לקחת את האוטו למוסך');
     expect(r.title).toBe('לקחת את האוטו למוסך');
-    expect(r.matches).toEqual([{ kind: 'category', start: 14, end: 19, text: 'למוסך' }]);
+    expect(r.matches).toMatchObject([{ kind: 'category', start: 14, end: 19, text: 'למוסך' }]);
   });
 
   it('accepts Hebrew prefixes on keywords', () => {
@@ -994,7 +884,9 @@ describe('categories', () => {
     expect(fields('לקנות מתנה לדנה').categoryId).toBe('shopping'); // shopping before family
     expect(fields('מתנה לקנות').categoryId).toBe('shopping');
     expect(fields('לשלם תיקון לרכב').categoryId).toBe('car'); // car before finance and home
-    expect(fields('להחזיר מצבר').categoryId).toBe('returns'); // returns first of all
+    // a returns verb is weak: a specific noun from another category wins (M2)
+    expect(fields('להחזיר מצבר').categoryId).toBe('car');
+    expect(fields('להחזיר חולצה').categoryId).toBe('returns'); // ...unless a store word backs it
     expect(fields('תיקון נזילה בדוד').categoryId).toBe('home');
     expect(fields('ביטוח רכב').categoryId).toBe('car');
     expect(fields('ביטוח').categoryId).toBe('finance');
@@ -1085,8 +977,7 @@ describe('title tidy-up', () => {
   it('never drops words the user typed, even "עד" or a letter such as the vitamin ב', () => {
     expect(fields('לקנות ויטמין ב').title).toBe('לקנות ויטמין ב');
     expect(fields('לקנות ויטמין ב!')).toEqual({
-      title: 'לקנות ויטמין ב',
-      priority: 'high',
+      title: 'לקנות ויטמין ב!',
       categoryId: 'shopping'
     });
     expect(fields('לחכות עד').title).toBe('לחכות עד');
@@ -1100,7 +991,9 @@ describe('title tidy-up', () => {
     expect(fields('Netflix - לבטל מנוי עד סוף החודש').title).toBe('Netflix - לבטל מנוי');
     expect(fields('להתקשר ל-HOT מחר').title).toBe('להתקשר ל-HOT');
     expect(fields('Call mom tomorrow').title).toBe('Call mom tomorrow');
-    expect(fields('WiFi 6E router 3/1').title).toBe('WiFi 6E router');
+    // a number right after a Latin word is a model or version, not a date (C1a)
+    expect(fields('WiFi 6E router 3/1').title).toBe('WiFi 6E router 3/1');
+    expect(fields('WiFi 6E router ב-3/1').title).toBe('WiFi 6E router');
   });
 
   it('keeps niqqud and bidi marks that are not part of a match', () => {
@@ -1139,7 +1032,7 @@ describe('multiple fields in one input', () => {
   });
 
   it('soft date + time + high priority + category', () => {
-    expect(fields('מחר ב-17:30 לקחת את הילדים לרופא שיניים !')).toEqual({
+    expect(fields('מחר ב-17:30 לקחת את הילדים לרופא שיניים - חשוב')).toEqual({
       title: 'לקחת את הילדים לרופא שיניים',
       scheduledFor: '2026-10-05',
       dueTime: '17:30',
@@ -1212,7 +1105,7 @@ describe('matches: offsets into the ORIGINAL input', () => {
     const input = 'לקחת את האוטו למוסך מחר';
     const iCat = input.indexOf('למוסך');
     const iDate = input.indexOf('מחר');
-    expect(parse(input).matches).toEqual([
+    expect(parse(input).matches).toMatchObject([
       { kind: 'category', start: iCat, end: iCat + 'למוסך'.length, text: 'למוסך' },
       { kind: 'date', start: iDate, end: iDate + 3, text: 'מחר' }
     ]);
@@ -1221,7 +1114,7 @@ describe('matches: offsets into the ORIGINAL input', () => {
   it('the "עד" phrase is one "due" match', () => {
     const input = 'להחזיר מכנסיים עד יום חמישי';
     const i = input.indexOf('עד');
-    expect(parse(input).matches).toEqual([
+    expect(parse(input).matches).toMatchObject([
       { kind: 'category', start: 0, end: 6, text: 'להחזיר' },
       { kind: 'due', start: i, end: input.length, text: 'עד יום חמישי' }
     ]);
@@ -1316,9 +1209,9 @@ const REQUIRED_INPUTS: [string][] = [
   ['  לקנות   חלב    ב-מחר   ']
 ];
 
-// ───────────────────────────── removeMatch / rebuildTitle ─────────────────────────────
+// ───────────────────────────── deletePhraseFromInput / rebuildTitle ─────────────────────────────
 
-describe('removeMatch', () => {
+describe('deletePhraseFromInput (deprecated alias: removeMatch)', () => {
   it('removes the phrase and tidies what is left', () => {
     const cases: [string, MatchKindName, string][] = [
       ['לקחת את האוטו למוסך מחר', 'date', 'לקחת את האוטו למוסך'],
@@ -1334,7 +1227,7 @@ describe('removeMatch', () => {
     for (const [input, kind, expected] of cases) {
       const m = parse(input).matches.find((x) => x.kind === kind);
       expect(m, `${input} / ${kind}`).toBeDefined();
-      if (m) expect(removeMatch(input, m)).toBe(expected);
+      if (m) expect(deletePhraseFromInput(input, m)).toBe(expected);
     }
   });
 
@@ -1342,36 +1235,24 @@ describe('removeMatch', () => {
     const input = 'לקחת את האוטו למוסך מחר';
     const m = parse(input).matches.find((x) => x.kind === 'category');
     expect(m).toBeDefined();
-    if (m) expect(removeMatch(input, m)).toBe('לקחת את האוטו מחר');
+    if (m) expect(deletePhraseFromInput(input, m)).toBe('לקחת את האוטו מחר');
   });
 
-  it('round-trips: re-parsing the result drops exactly that field', () => {
-    const fieldOf: Record<string, keyof ParseResult> = {
-      date: 'scheduledFor',
-      due: 'dueDate',
-      time: 'dueTime',
-      priority: 'priority',
-      category: 'categoryId',
-      recurrence: 'recurrence'
-    };
+  it('round-trips: re-parsing the result drops exactly that chip and keeps the others', () => {
     let checked = 0;
     for (const [input] of REQUIRED_INPUTS) {
       const before = parse(input);
       for (const m of before.matches) {
-        const after = parse(removeMatch(input, m));
-        const key = fieldOf[m.kind] as keyof ParseResult;
-        // (a category keyword is only one of possibly several, so its field may legitimately stay)
-        if (m.kind !== 'category') expect(after[key], `${input} minus ${m.kind}`).toBeUndefined();
-        // every OTHER field is untouched
-        for (const other of [
-          'scheduledFor',
-          'dueDate',
-          'dueTime',
-          'priority',
-          'categoryId'
-        ] as const) {
-          if (other !== key)
-            expect(after[other], `${input} minus ${m.kind}`).toEqual(before[other]);
+        const after = parse(deletePhraseFromInput(input, m));
+        const keys = after.matches.map((x) => x.key);
+        // the deleted chip is gone...
+        expect(keys, `${input} minus ${m.key}`).not.toContain(m.key);
+        // ...and every other chip survives with the SAME key, although its offsets moved
+        // (a category keyword is only one of possibly several, so the category may switch keyword)
+        for (const other of before.matches) {
+          if (other !== m && other.kind !== 'category' && m.kind !== 'category') {
+            expect(keys, `${input} minus ${m.key}`).toContain(other.key);
+          }
         }
         checked++;
       }
@@ -1384,7 +1265,7 @@ describe('removeMatch', () => {
     const due = parse(input).matches.find((m) => m.kind === 'due');
     expect(due).toBeDefined();
     if (due) {
-      const after = parse(removeMatch(input, due));
+      const after = parse(deletePhraseFromInput(input, due));
       expect(after.hardDeadline).toBeUndefined();
       expect(after.dueDate).toBeUndefined();
       expect(after.categoryId).toBe('returns');
@@ -1392,6 +1273,7 @@ describe('removeMatch', () => {
   });
 
   it('locates a stale match by its text, and degrades to a plain tidy when it is gone', () => {
+    expect(removeMatch).toBe(deletePhraseFromInput);
     expect(removeMatch('לקנות חלב מחר', { start: 0, end: 3, text: 'מחר' })).toBe('לקנות חלב');
     expect(removeMatch('  לקנות חלב  ', { start: 0, end: 3, text: 'מחר' })).toBe('לקנות חלב');
     expect(removeMatch('לקנות חלב', { start: 3, end: 3, text: '' })).toBe('לקנות חלב');
@@ -1402,7 +1284,7 @@ describe('removeMatch', () => {
   it('can return an empty string when the match was the whole input', () => {
     const m = parse('מחר').matches[0];
     expect(m).toBeDefined();
-    if (m) expect(removeMatch('מחר', m)).toBe('');
+    if (m) expect(deletePhraseFromInput('מחר', m)).toBe('');
   });
 });
 
@@ -1569,7 +1451,7 @@ function assertSane(input: string, r: ParseResult): void {
     }
   }
   for (const iso of [r.scheduledFor, r.dueDate]) {
-    if (iso !== undefined && parseISO(iso) === null) fail('invalid date');
+    if (iso !== undefined && !isValidISO(iso)) fail('invalid date');
   }
   if (r.dueTime !== undefined && !/^([01]\d|2[0-3]):[0-5]\d$/.test(r.dueTime)) fail('invalid time');
   if (r.hardDeadline !== undefined && r.hardDeadline !== true)
@@ -1586,7 +1468,7 @@ describe('robustness', () => {
       assertSane(input, r);
       // the chip operations must not throw either, and must stay sane
       for (const m of r.matches) {
-        const without = removeMatch(input, m);
+        const without = deletePhraseFromInput(input, m);
         assertSane(without, parseQuickAdd(without, NOW));
       }
       rebuildTitle(input, r.matches.slice(1));
