@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesQuery, normalizeHebrew, searchDoneTasks, tokenize } from './search';
+import { matchesQuery, normalizeHebrew, scoreQuery, searchDoneTasks, tokenize } from './search';
 import type { Task } from './types';
 
 describe('normalizeHebrew', () => {
@@ -41,12 +41,33 @@ describe('normalizeHebrew', () => {
   });
 
   it('removes invisible bidi marks that sneak in from copy/paste', () => {
-    expect(normalizeHebrew('‏מצבר‎')).toBe('מצבר');
-    expect(normalizeHebrew('⁧מצבר⁩')).toBe('מצבר');
+    expect(normalizeHebrew('\u200Fמצבר\u200E')).toBe('מצבר'); // RLM, LRM
+    expect(normalizeHebrew('\u2067מצבר\u2069')).toBe('מצבר'); // RLI ... PDI
+    expect(normalizeHebrew('מצ\u202Bבר\u202C')).toBe('מצבר'); // RLE ... PDF inside a word
+  });
+
+  it('turns zero-width characters into spaces (they separate words in pasted text)', () => {
+    expect(normalizeHebrew('מצבר\u200Bמוסך')).toBe('מצבר מוסכ'); // zero-width space
+    expect(normalizeHebrew('מצבר\u200Cמוסך\u200Dשמן')).toBe('מצבר מוסכ שמנ'); // ZWNJ, ZWJ
+    expect(normalizeHebrew('\uFEFFמצבר\u2060מוסך')).toBe('מצבר מוסכ'); // BOM, word joiner
+  });
+
+  it('folds hyphens inside digit and Latin runs: 050-1234567 = 0501234567, Wi-Fi = wifi', () => {
+    expect(normalizeHebrew('050-1234567')).toBe('0501234567');
+    expect(normalizeHebrew('050\u20131234567')).toBe('0501234567'); // en dash
+    expect(normalizeHebrew('03\u2011555\u20101234')).toBe('035551234'); // non-breaking hyphen, hyphen
+    expect(normalizeHebrew('Wi-Fi')).toBe('wifi');
+    expect(normalizeHebrew('a-b-c 4-x')).toBe('abc 4x');
+  });
+
+  it('keeps hyphens that touch Hebrew or spaces (they still split words)', () => {
+    expect(normalizeHebrew('בית-ספר')).toBe('בית-ספר');
+    expect(normalizeHebrew('050 - 1234567')).toBe('050 - 1234567');
+    expect(normalizeHebrew('ת-5')).toBe('ת-5');
   });
 
   it('normalizes to NFC', () => {
-    expect(normalizeHebrew('é')).toBe('é'); // e + combining acute -> é
+    expect(normalizeHebrew('e\u0301')).toBe('\u00E9'); // e + combining acute -> é
   });
 
   it('is idempotent and handles the empty string', () => {
@@ -68,6 +89,15 @@ describe('tokenize', () => {
 
   it('splits hyphenated words', () => {
     expect(tokenize('בית-ספר')).toEqual(['בית', 'ספר']);
+  });
+
+  it('keeps hyphenated phone numbers and Latin words in one token', () => {
+    expect(tokenize('משה 050-1234567')).toEqual(['משה', '0501234567']);
+    expect(tokenize('סיסמת Wi-Fi')).toEqual(['סיסמת', 'wifi']);
+  });
+
+  it('splits on zero-width spaces', () => {
+    expect(tokenize('מצבר\u200Bמוסך')).toEqual(['מצבר', 'מוסכ']);
   });
 
   it('gives no tokens for empty or punctuation-only input', () => {
@@ -121,7 +151,9 @@ describe('matchesQuery', () => {
     expect(matchesQuery('החלפת מצבר', 'החלפ')).toBe(true);
     expect(matchesQuery('החלפת מצבר', 'מ')).toBe(true);
     expect(matchesQuery('החלפת במצבר', 'מצ')).toBe(true); // partial typing against a prefixed word
-    expect(matchesQuery('מצבר', 'במצ')).toBe(true); // prefix letter plus partial typing
+    expect(matchesQuery('מצבר', 'במצב')).toBe(true); // prefix letter plus partial typing
+    // ...but a prefix letter is only peeled when 3+ letters remain, so "במצ" is not "ב" + "מצ"
+    expect(matchesQuery('מצבר', 'במצ')).toBe(false);
   });
 
   it('does NOT match the middle of a word', () => {
@@ -134,14 +166,99 @@ describe('matchesQuery', () => {
     expect(matchesQuery('', 'מצבר')).toBe(false);
   });
 
-  it('DECISION: no shared-root matching, so "החלפנו" does not match "החלפת"', () => {
-    // Different inflections of החלפה (we replaced / replacement of) are different words here.
-    expect(matchesQuery('החלפת מצבר', 'החלפנו')).toBe(false);
-    expect(matchesQuery('החלפת מצבר', 'החלפנו מצבר')).toBe(false);
-    // The noun the user actually wants still finds it, with or without the verb they remember:
-    expect(matchesQuery('החלפת מצבר', 'מצבר')).toBe(true);
-    // ...and typing the stem finds it (partial typing, not root matching):
-    expect(matchesQuery('החלפת מצבר', 'החלפ מצבר')).toBe(true);
+  it('peels a prefix letter only when at least 3 letters remain (precision)', () => {
+    expect(matchesQuery('לבטל מנוי', 'שמן')).toBe(false); // not ש + "מנ"
+    expect(matchesQuery('ספר על בישול', 'כסף')).toBe(false); // not כ + "סף"
+    expect(matchesQuery('לשתול בחממה', 'לחם')).toBe(false); // not ל + "חם"
+    expect(matchesQuery('ימי הולדת', 'מים')).toBe(false); // not מ + "ים"
+    expect(matchesQuery('החלפת שמן', 'שמן')).toBe(true);
+    expect(matchesQuery('להביא מים', 'במים')).toBe(true); // ב + "מים" keeps 3 letters
+    expect(matchesQuery('בחממה', 'חממה')).toBe(true); // haystack side: ב + "חממה"
+  });
+
+  describe('suffix and construct-state fold (query tokens of 4+ letters)', () => {
+    it('"החלפנו" (we replaced) finds "החלפת" (replacement of): both are החלפ-', () => {
+      expect(matchesQuery('החלפת מצבר', 'החלפנו')).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'החלפנו מצבר')).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'החלפתי')).toBe(true);
+    });
+
+    it('construct state and plurals: בדיקה ~ בדיקת, צמיגים ~ צמיג, מסעדות ~ מסעדה', () => {
+      expect(matchesQuery('בדיקת דם', 'בדיקה')).toBe(true);
+      expect(matchesQuery('בדיקת דם', 'בדיקות')).toBe(true);
+      expect(matchesQuery('החלפת צמיג', 'צמיגים')).toBe(true);
+      expect(matchesQuery('מסעדה איטלקית', 'מסעדות')).toBe(true);
+      expect(matchesQuery('תיקון ברז', 'תיקונים')).toBe(true);
+    });
+
+    it('applies to prefixed query words too', () => {
+      expect(matchesQuery('בדיקת דם', 'בבדיקות')).toBe(true);
+    });
+
+    it('never folds below 3 letters, and never folds 3-letter words', () => {
+      expect(matchesQuery('ספר', 'ספה')).toBe(false); // ספה is not folded to "ספ"
+      expect(matchesQuery('שמש', 'שמה')).toBe(false);
+    });
+
+    it('a 3-letter stem only matches the same word with one of the suffixes, not any longer word', () => {
+      expect(matchesQuery('החלפת מתנע', 'מתנה')).toBe(false); // מתנ- is not מתנע
+      expect(matchesQuery('תיקון מנוע', 'מנוי')).toBe(false); // מנו- is not מנוע
+      expect(matchesQuery('מתנות לחג', 'מתנה')).toBe(true); // מתנ + ות
+      expect(matchesQuery('קניות לשבת', 'קניה')).toBe(true); // קני + ות
+    });
+
+    it('never drops haystack words as stopwords (האחרון stays searchable content)', () => {
+      expect(matchesQuery('הטיפול האחרון', 'האחרונים')).toBe(true);
+    });
+  });
+
+  describe('stopwords (dropped from the query, never from the haystack)', () => {
+    const stopwords = [
+      'מתי',
+      'איפה',
+      'איזה',
+      'איזו',
+      'אילו',
+      'מי',
+      'מה',
+      'כמה',
+      'למה',
+      'של',
+      'את',
+      'עם',
+      'על',
+      'גם',
+      'כבר',
+      'פעם',
+      'האחרון',
+      'האחרונה'
+    ];
+
+    it('ignores Hebrew question and function words in the query', () => {
+      for (const w of stopwords) expect(matchesQuery('החלפת מצבר', `${w} מצבר`)).toBe(true);
+    });
+
+    it('recognises them behind prefix letters: ובאיזה, ומתי, בפעם, וכבר', () => {
+      for (const w of ['ובאיזה', 'ומתי', 'בפעם', 'וכבר', 'והאחרונה']) {
+        expect(matchesQuery('החלפת מצבר', `מצבר ${w}`)).toBe(true);
+      }
+    });
+
+    it('recognises a two-letter stopword behind ו: ומה, ומי, ועם, ושל', () => {
+      for (const w of ['ומה', 'ומי', 'ועם', 'ושל']) {
+        expect(matchesQuery('החלפת מצבר', `מצבר ${w}`)).toBe(true);
+      }
+    });
+
+    it('keeps real words that only look like prefix + stopword (בעל, העם)', () => {
+      expect(matchesQuery('החלפת מצבר', 'מצבר בעל')).toBe(false);
+      expect(matchesQuery('שיחה עם בעל הבית', 'בעל')).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'מצבר העם')).toBe(false);
+    });
+
+    it('a query of stopwords only matches everything, like an empty query', () => {
+      expect(matchesQuery('החלפת מצבר', 'מתי? איפה?')).toBe(true);
+    });
   });
 
   it('matches Latin words case-insensitively', () => {
@@ -157,6 +274,41 @@ describe('matchesQuery', () => {
     expect(matchesQuery('החלפת מצבר', '')).toBe(true);
     expect(matchesQuery('החלפת מצבר', '  ?? ')).toBe(true);
     expect(matchesQuery('', '')).toBe(true);
+  });
+});
+
+describe('scoreQuery (0 = no match; higher = better)', () => {
+  it('scores each query token: exact 3, prefix (partial typing) 2, peeled or folded 1', () => {
+    expect(scoreQuery('החלפת מצבר', 'מצבר')).toBe(3);
+    expect(scoreQuery('מצברים לרכב', 'מצבר')).toBe(2);
+    expect(scoreQuery('מוסך השרון', 'במוסך')).toBe(1); // the query lost its ב
+    expect(scoreQuery('החלפת מצבר', 'החלפנו')).toBe(1); // folded
+  });
+
+  it("treats the haystack's own prefix letters as transparent (still exact)", () => {
+    expect(scoreQuery('ביקור במוסך', 'מוסך')).toBe(3);
+    expect(scoreQuery('ביקור במוסכים', 'מוסך')).toBe(2);
+  });
+
+  it('adds the token scores up, and is 0 as soon as one token does not match', () => {
+    expect(scoreQuery('החלפת מצבר', 'מצבר החלפ')).toBe(5);
+    expect(scoreQuery('החלפת מצבר', 'מתי החלפנו מצבר')).toBe(4); // stopword ignored
+    expect(scoreQuery('החלפת מצבר', 'מצבר שמן')).toBe(0);
+  });
+
+  it('is positive for an empty (or stopword-only) query', () => {
+    expect(scoreQuery('', '')).toBeGreaterThan(0);
+    expect(scoreQuery('משהו', 'מתי')).toBeGreaterThan(0);
+  });
+
+  it('agrees with matchesQuery', () => {
+    for (const [hay, q] of [
+      ['החלפת מצבר', 'מצבר'],
+      ['ספר', 'כסף'],
+      ['מוסך השרון', 'במוסך']
+    ] as const) {
+      expect(matchesQuery(hay, q)).toBe(scoreQuery(hay, q) > 0);
+    }
   });
 });
 
@@ -201,7 +353,7 @@ describe('searchDoneTasks', () => {
     completion: {
       note: 'סוף סוף הוחלף',
       cost: 450,
-      place: 'מוסך השרון',
+      place: 'מוסך השרון, כפר סבא',
       contact: 'יוסי',
       photoIds: []
     }
@@ -252,8 +404,33 @@ describe('searchDoneTasks', () => {
     expect(ids(searchDoneTasks(all, 'בישול'))).toEqual([gift.id]); // task notes
   });
 
-  it('DECISION: "החלפנו מצבר" finds nothing because החלפנו is not החלפת', () => {
-    expect(searchDoneTasks(all, 'החלפנו מצבר')).toEqual([]);
+  it('ACCEPTANCE: "מתי החלפנו מצבר ובאיזה מוסך?" finds the battery replacement', () => {
+    expect(ids(searchDoneTasks(all, 'מתי החלפנו מצבר ובאיזה מוסך?'))).toEqual([battery.id]);
+    expect(ids(searchDoneTasks(all, 'החלפנו מצבר'))).toEqual([battery.id]);
+  });
+
+  it('precision: short words do not match by peeling off a "prefix" (כסף is not כ + ספר)', () => {
+    expect(searchDoneTasks(all, 'כסף')).toEqual([]); // gift notes say "ספר"
+    expect(searchDoneTasks(all, 'שמן')).toEqual([]);
+  });
+
+  describe('ranking: match quality first, then newest completion', () => {
+    const exactOld = done({ title: 'לא לשכוח לשים בחשבון', completedAt: 1_000 });
+    const prefixMid = done({ title: 'סידור בחשבונות', completedAt: 2_000 });
+    const peeledNew = done({ title: 'חשבון חשמל', completedAt: 3_000 });
+    const peeledNewest = done({ title: 'חשבון מים', completedAt: 4_000 });
+
+    it('exact > prefix > peeled/folded, newest first within a tier', () => {
+      expect(
+        ids(searchDoneTasks([peeledNew, prefixMid, peeledNewest, exactOld], 'בחשבון'))
+      ).toEqual([exactOld.id, prefixMid.id, peeledNewest.id, peeledNew.id]);
+    });
+
+    it('an older exact match outranks a newer partial one', () => {
+      const exact = done({ title: 'החלפת מצבר', completedAt: 1_000 });
+      const partial = done({ title: 'מצברים במבצע', completedAt: 9_000 });
+      expect(ids(searchDoneTasks([partial, exact], 'מצבר'))).toEqual([exact.id, partial.id]);
+    });
   });
 
   it('matches across fields: each token may hit a different field', () => {

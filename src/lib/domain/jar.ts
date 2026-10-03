@@ -32,8 +32,13 @@ export function applyReopen(jar: TreatJar | null): TreatJar | null {
 }
 
 /** The treat was redeemed: the surplus (if any) carries over, the round advances, the clock restarts. */
-export function applyRedeem(jar: TreatJar | null, now: Millis): TreatJar | null {
+export function applyRedeem(jar: TreatJar | null, now: Date | Millis): TreatJar | null {
   return jar === null
     ? null
-    : { ...jar, count: Math.max(0, jar.count - jar.target), round: jar.round + 1, startedAt: now };
+    : {
+        ...jar,
+        count: Math.max(0, jar.count - jar.target),
+        round: jar.round + 1,
+        startedAt: typeof now === 'number' ? now : now.getTime()
+      };
 }

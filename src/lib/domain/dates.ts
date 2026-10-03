@@ -85,6 +85,32 @@ export function todayISO(now: Date | number, tz: string = DEFAULT_TZ): ISODate {
   return toISO(p.year, p.month, p.day);
 }
 
+/** The calendar date of any instant in `tz`: the same function as `todayISO`, named for non-"now" uses. */
+export const isoDateAt: (instant: Date | number, tz?: string) => ISODate = todayISO;
+
+/** Longest real time between two local midnights (a 25-hour fall-back day) plus a safety margin. */
+const ROLLOVER_SEARCH_MS = 50 * 3_600_000;
+
+/**
+ * Milliseconds from `now` until the local calendar date in `tz` next changes (normally 00:00), for a
+ * timer that rolls "today" over. Always > 0: at exactly midnight it is the time to the NEXT midnight.
+ * Correct on DST nights (23/25-hour days) and in zones where midnight itself is skipped (the day then
+ * starts at 01:00). Found by binary search over the instant, so it never assumes a fixed offset.
+ */
+export function msUntilNextLocalMidnight(now: Date | number, tz: string = DEFAULT_TZ): number {
+  const start = typeof now === 'number' ? now : now.getTime();
+  const today = todayISO(start, tz);
+  // Invariant: the date at `lo` is still today, the date at `hi` is not.
+  let lo = start;
+  let hi = start + ROLLOVER_SEARCH_MS;
+  while (hi - lo > 1) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (todayISO(mid, tz) === today) lo = mid;
+    else hi = mid;
+  }
+  return hi - start;
+}
+
 /** Wall-clock hour (0-23), minute and weekday (0 = Sunday) at instant `now` in `tz`. */
 export function localTimeParts(
   now: Date | number,

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildNextInstance, nextOccurrence, nextTaskId } from './recurrence';
+import { addDays } from './dates';
+import { buildNextInstance, ensureAnchor, nextOccurrence, nextTaskId } from './recurrence';
+import { snoozePatch } from './snooze';
 import type { RecurrenceFreq, Task } from './types';
 
 function task(over: Partial<Task> = {}): Task {
@@ -137,6 +139,50 @@ describe('nextOccurrence', () => {
     });
   });
 
+  describe('with an anchor', () => {
+    const anchored = (freq: RecurrenceFreq, anchor: string, over: Partial<Task>) =>
+      task({ recurrence: { freq, anchor }, ...over });
+
+    it('advances from the anchor, not from a clamped instance date (no drift to the 28th)', () => {
+      expect(
+        nextOccurrence(anchored('monthly', '2026-01-31', { dueDate: '2026-02-28' }), '2026-02-28')
+      ).toBe('2026-03-31');
+      expect(
+        nextOccurrence(anchored('monthly', '2026-01-31', { dueDate: '2026-04-30' }), '2026-04-30')
+      ).toBe('2026-05-31');
+    });
+
+    it('is strictly after the instance date even when completed early', () => {
+      expect(
+        nextOccurrence(
+          anchored('weekly', '2026-10-04', { scheduledFor: '2026-10-11' }),
+          '2026-10-06'
+        )
+      ).toBe('2026-10-18');
+    });
+
+    it('is strictly after the completion date when completed late', () => {
+      expect(
+        nextOccurrence(
+          anchored('weekly', '2026-10-04', { scheduledFor: '2026-10-11' }),
+          '2026-10-25'
+        )
+      ).toBe('2026-11-01');
+    });
+
+    it('uses the completion date as the floor for an undated instance', () => {
+      expect(nextOccurrence(anchored('monthly', '2026-01-31', {}), '2026-06-10')).toBe(
+        '2026-06-30'
+      );
+    });
+
+    it('an off-series instance date (snoozed or edited) does not move the series', () => {
+      expect(
+        nextOccurrence(anchored('monthly', '2026-10-15', { dueDate: '2026-11-20' }), '2026-11-20')
+      ).toBe('2026-12-15');
+    });
+  });
+
   it('returns null for a task that does not recur', () => {
     expect(
       nextOccurrence(task({ recurrence: null, dueDate: '2026-10-08' }), '2026-10-08')
@@ -186,7 +232,7 @@ describe('buildNextInstance', () => {
       dueDate: '2026-10-15',
       dueTime: '17:30',
       hardDeadline: true,
-      recurrence: { freq: 'weekly' },
+      recurrence: { freq: 'weekly', anchor: '2026-10-08' },
       seriesId: 'root1',
       status: 'open',
       snoozeCount: 0,
@@ -282,12 +328,16 @@ describe('buildNextInstance', () => {
     expect(next).toMatchObject({
       id: 'm__2026-02-28',
       dueDate: '2026-02-28',
-      recurrence: { freq: 'monthly' }
+      recurrence: { freq: 'monthly', anchor: '2026-01-31' }
     });
   });
 
   it('does not share the recurrence object with the source, and does not carry client-only flags', () => {
-    const source = task({ dueDate: '2026-10-08', pending: true });
+    const source = task({
+      dueDate: '2026-10-08',
+      recurrence: { freq: 'weekly', anchor: '2026-10-01' },
+      pending: true
+    });
     const next = buildNextInstance(source, '2026-10-08', NOW, 'u1');
     expect(next?.recurrence).toEqual(source.recurrence);
     expect(next?.recurrence).not.toBe(source.recurrence);
@@ -303,5 +353,181 @@ describe('buildNextInstance', () => {
 
   it('returns null for a task that does not recur', () => {
     expect(buildNextInstance(task({ recurrence: null }), '2026-10-08', NOW, 'u1')).toBeNull();
+  });
+
+  it('accepts a Date for now and stores epoch millis', () => {
+    const next = buildNextInstance(
+      task({ dueDate: '2026-10-08' }),
+      '2026-10-08',
+      new Date(NOW),
+      'u1'
+    );
+    expect(next).toMatchObject({ createdAt: NOW, updatedAt: NOW });
+  });
+
+  describe('priority of the next instance', () => {
+    const nextPriority = (priority: Task['priority']) =>
+      buildNextInstance(task({ priority, dueDate: '2026-10-08' }), '2026-10-08', NOW, 'u1')
+        ?.priority;
+
+    it("urgent becomes normal (this month's emergency is not next month's)", () => {
+      expect(nextPriority('urgent')).toBe('normal');
+    });
+
+    it('high and normal are copied', () => {
+      expect(nextPriority('high')).toBe('high');
+      expect(nextPriority('normal')).toBe('normal');
+    });
+  });
+
+  describe('the anchor', () => {
+    it('a series without an anchor is anchored at the instance date...', () => {
+      const next = buildNextInstance(task({ scheduledFor: '2026-10-06' }), '2026-10-06', NOW, 'u1');
+      expect(next?.recurrence).toEqual({ freq: 'weekly', anchor: '2026-10-06' });
+    });
+
+    it('...or, with no date at all, at its first completion', () => {
+      const next = buildNextInstance(task(), '2026-10-04', NOW, 'u1');
+      expect(next?.recurrence).toEqual({ freq: 'weekly', anchor: '2026-10-04' });
+    });
+
+    it('an existing anchor is carried unchanged, generation after generation', () => {
+      const first = task({
+        id: 's',
+        recurrence: { freq: 'monthly', anchor: '2026-01-15' },
+        dueDate: '2026-03-15'
+      });
+      const second = buildNextInstance(first, '2026-03-15', NOW, 'u1') as Task;
+      const third = buildNextInstance(second, '2026-04-15', NOW, 'u1') as Task;
+      expect(second.recurrence).toEqual({ freq: 'monthly', anchor: '2026-01-15' });
+      expect(third.recurrence).toEqual({ freq: 'monthly', anchor: '2026-01-15' });
+    });
+  });
+});
+
+describe('multi-generation series (anchor = series base date)', () => {
+  /** Completes `t` on `completionISO` (default: its own date) and returns the next instance. */
+  const complete = (t: Task, completionISO?: string): Task =>
+    buildNextInstance(
+      t,
+      completionISO ?? ((t.dueDate ?? t.scheduledFor) as string),
+      1,
+      'u1'
+    ) as Task;
+
+  /** The dates of `n` generations after `first`, each completed on its own date (or by `when`). */
+  function generations(first: Task, n: number, when?: (t: Task) => string): string[] {
+    const out: string[] = [];
+    let current = first;
+    for (let i = 0; i < n; i++) {
+      current = complete(current, when?.(current));
+      out.push((current.dueDate ?? current.scheduledFor) as string);
+    }
+    return out;
+  }
+
+  it('the 31st, monthly, over 6 generations: back on the 31st whenever the month has one', () => {
+    const first = task({ id: 'rent', ...rec('monthly'), dueDate: '2026-01-31' });
+    expect(generations(first, 6)).toEqual([
+      '2026-02-28',
+      '2026-03-31',
+      '2026-04-30',
+      '2026-05-31',
+      '2026-06-30',
+      '2026-07-31'
+    ]);
+  });
+
+  it('Feb 29, yearly: Feb 28 in common years, back to Feb 29 in the next leap year', () => {
+    const first = task({ id: 'leap', ...rec('yearly'), dueDate: '2028-02-29' });
+    expect(generations(first, 4)).toEqual(['2029-02-28', '2030-02-28', '2031-02-28', '2032-02-29']);
+  });
+
+  it('weekly keeps its weekday over many generations', () => {
+    const first = task({ id: 'w', scheduledFor: '2026-10-06' }); // a Tuesday
+    expect(generations(first, 3)).toEqual(['2026-10-13', '2026-10-20', '2026-10-27']);
+  });
+
+  it('on-time and late completions stay on the same series (late skips the missed dates)', () => {
+    const first = task({ id: 'rent', ...rec('monthly'), dueDate: '2026-01-31' });
+    const onTime = generations(first, 4);
+    // every instance finished 5 days after its date
+    const late = generations(first, 4, (t) => addDays(t.dueDate as string, 5));
+    expect(onTime).toEqual(['2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31']);
+    expect(late).toEqual(['2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31']);
+    // finished very late (after the next date had passed): that month is skipped, the day is kept
+    const feb = complete(first); // 2026-02-28
+    expect(complete(feb, '2026-04-02').dueDate).toBe('2026-04-30');
+  });
+
+  it('completing early still moves to the next date after the instance date', () => {
+    const feb = task({
+      id: 'rent',
+      recurrence: { freq: 'monthly', anchor: '2026-01-31' },
+      dueDate: '2026-02-28'
+    });
+    expect(complete(feb, '2026-02-20').dueDate).toBe('2026-03-31');
+  });
+
+  it('a snoozed instance does not shift the series', () => {
+    const TODAY = '2026-11-15';
+    const instance = task({
+      id: 'bill',
+      recurrence: { freq: 'monthly', anchor: '2026-10-15' },
+      dueDate: '2026-11-15'
+    });
+    // a soft due date moves with the snooze (scheduledFor and dueDate become 11-20)...
+    const snoozed: Task = { ...instance, ...snoozePatch(instance, '2026-11-20', 5, TODAY) };
+    expect(snoozed).toMatchObject({ dueDate: '2026-11-20', scheduledFor: '2026-11-20' });
+    expect(snoozed.recurrence).toEqual(instance.recurrence);
+    // ...but the next instance is still on the 15th, whether finished on the new date or before it
+    expect(complete(snoozed, '2026-11-20')).toMatchObject({
+      dueDate: '2026-12-15',
+      recurrence: { freq: 'monthly', anchor: '2026-10-15' }
+    });
+    expect(complete(snoozed, '2026-11-17').dueDate).toBe('2026-12-15');
+  });
+
+  it('a series snoozed past its next date skips that date instead of doubling up', () => {
+    const instance = task({
+      id: 'w',
+      recurrence: { freq: 'weekly', anchor: '2026-10-04' },
+      scheduledFor: '2026-10-11'
+    });
+    const snoozed: Task = { ...instance, ...snoozePatch(instance, '2026-10-20', 5, '2026-10-11') };
+    expect(complete(snoozed, '2026-10-20').scheduledFor).toBe('2026-10-25');
+  });
+});
+
+describe('ensureAnchor (adapters call it on create, and on an edit of the date or frequency)', () => {
+  it('anchors a dated series at its own date (dueDate ?? scheduledFor)', () => {
+    expect(
+      ensureAnchor(task({ ...rec('monthly'), dueDate: '2026-10-31', scheduledFor: '2026-10-20' }))
+    ).toEqual({
+      freq: 'monthly',
+      anchor: '2026-10-31'
+    });
+    expect(ensureAnchor(task({ scheduledFor: '2026-10-06' }))).toEqual({
+      freq: 'weekly',
+      anchor: '2026-10-06'
+    });
+  });
+
+  it('keeps an existing anchor (a snooze or a later instance never re-anchors)', () => {
+    expect(
+      ensureAnchor(
+        task({ recurrence: { freq: 'monthly', anchor: '2026-01-31' }, dueDate: '2026-04-30' })
+      )
+    ).toEqual({ freq: 'monthly', anchor: '2026-01-31' });
+  });
+
+  it('leaves an undated series unanchored: the anchor is set at its first completion', () => {
+    expect(ensureAnchor(task())).toEqual({ freq: 'weekly' });
+  });
+
+  it('returns null for a task that does not recur, and never returns the input object', () => {
+    expect(ensureAnchor(task({ recurrence: null, dueDate: '2026-10-08' }))).toBeNull();
+    const source = task({ recurrence: { freq: 'yearly', anchor: '2026-03-01' } });
+    expect(ensureAnchor(source)).not.toBe(source.recurrence);
   });
 });

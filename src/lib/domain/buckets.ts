@@ -1,13 +1,16 @@
 // Bucketing, attention/waiting grouping, ordering and counts for the Home screen
-// (Blueprint §3 "Domain rules", §7 Home). Pure functions over open tasks and an ISODate `today`.
+// (Blueprint §3 "Domain rules" + 1.2 QA amendments, §7 Home). Pure functions over open tasks and an
+// ISODate `today`. Bucketing is DATE-ONLY: a task due today at 09:00 stays in "today" all day (the
+// time-aware chip lives in i18n/format whenChip).
 //
 // Vocabulary
 //   effective date  eff = min(dueDate, scheduledFor), ignoring nulls (null when the task has neither)
+//   week horizon    the last day of "this week": Saturday, or NEXT Saturday on Friday and Saturday
 //   bucket          overdue | today | week | later, see bucketOf
-//   attention       overdue OR priority 'urgent': the "needs a look right now" spotlight
-//   waiting         nobody owns it yet (ownerId === null), see groupTasks
+//   attention       overdue, OR urgent and not planned for a later day (see needsAttention)
+//   waiting         nobody (or a former member) owns it, see groupTasks
 
-import { endOfWeek, minISO } from './dates';
+import { addDays, endOfWeek, minISO, weekday } from './dates';
 import type { Bucket, ISODate, Priority, Task } from './types';
 
 /** The fields of a Task that bucketing reads. */
@@ -17,11 +20,23 @@ export function effectiveDate(task: Dated): ISODate | null {
   return minISO(task.dueDate, task.scheduledFor);
 }
 
+const FRIDAY = 5;
+
+/**
+ * The last day of the "week" bucket: the Saturday of this week (weeks run Sunday-Saturday), but on
+ * Friday and Saturday the NEXT Saturday, because Israeli families plan the coming week on the
+ * weekend (otherwise the week tab would be empty on Saturday and tomorrow would read as "later").
+ */
+export function weekHorizon(today: ISODate): ISODate {
+  const saturday = endOfWeek(today);
+  return weekday(today) >= FRIDAY ? addDays(saturday, 7) : saturday;
+}
+
 /**
  * Which time bucket a task belongs in:
  *   dueDate < today                 -> overdue   (a missed *deadline*; a missed soft plan alone is not)
  *   eff <= today                    -> today     (a missed soft plan stays here, see plannedFromPast)
- *   eff <= Saturday of this week    -> week      (week = Sunday-Saturday; on a Saturday this is empty)
+ *   eff <= weekHorizon(today)       -> week
  *   otherwise, or no dates at all   -> later
  */
 export function bucketOf(task: Dated, today: ISODate): Bucket {
@@ -29,13 +44,14 @@ export function bucketOf(task: Dated, today: ISODate): Bucket {
   const eff = effectiveDate(task);
   if (eff === null) return 'later';
   if (eff <= today) return 'today';
-  if (eff <= endOfWeek(today)) return 'week';
+  if (eff <= weekHorizon(today)) return 'week';
   return 'later';
 }
 
 /**
- * The bucket plus the "מתוכנן מאתמול" hint flag: true when the task sits in `today` only because its
- * soft plan (scheduledFor) was missed. Overdue tasks never carry it (they already shout louder).
+ * The bucket plus the "planned from the past" hint flag: true when the task sits in `today` only
+ * because its soft plan (scheduledFor) was missed. Overdue tasks never carry it (they already shout
+ * louder). The hint's copy is plannedFromLabel in i18n/format ("מתוכננת מאתמול").
  */
 export function bucketInfo(
   task: Dated,
@@ -48,9 +64,13 @@ export function bucketInfo(
   };
 }
 
-/** Overdue OR urgent. */
+/**
+ * Overdue, OR urgent AND (no plan, or planned for today or earlier). Snoozing an urgent task (which
+ * sets scheduledFor, see snooze.ts) therefore takes it out of attention until its new date.
+ */
 export function needsAttention(task: Dated & Pick<Task, 'priority'>, today: ISODate): boolean {
-  return task.priority === 'urgent' || bucketOf(task, today) === 'overdue';
+  if (bucketOf(task, today) === 'overdue') return true;
+  return task.priority === 'urgent' && (task.scheduledFor === null || task.scheduledFor <= today);
 }
 
 const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, normal: 2 };
@@ -77,9 +97,9 @@ export function sortTasks<T extends Dated & Pick<Task, 'priority' | 'createdAt'>
 }
 
 export interface GroupedTasks {
-  /** Overdue or urgent, owned or not. */
+  /** needsAttention: overdue, or urgent and not planned for later. Owned or not. */
   attention: Task[];
-  /** Unowned tasks that are not already in `attention`. */
+  /** Unowned tasks (or a former member's) that are not already in `attention`. */
   waiting: Task[];
   today: Task[];
   week: Task[];
@@ -90,18 +110,27 @@ export interface GroupedTasks {
  * Splits open tasks into the Home screen's sections, each sorted with `sortTasks`.
  *
  * THE RULE (chosen for the "clear picture in one second"):
- *  1. `attention` is a spotlight that REMOVES tasks from everything else. A task that is overdue or
- *     urgent is shown there once and nowhere below, so the same alarming card never appears twice
- *     and attention + today + week + later always add up to every open task.
- *  2. `waiting` is a call-out for "someone please take this", limited to tasks that are NOT already
- *     in attention. So a task is in at most one of attention / waiting (an unowned overdue task is
- *     attention; the take / request buttons live on its card there).
- *  3. `waiting` does NOT remove a task from its time bucket. today / week / later answer "what is on
- *     when?" for everyone, and an unowned task due today must not vanish from today (otherwise the
- *     empty state would say "הכל סגור להיום" while work is waiting). Unowned cards show the dashed
- *     "?" avatar there. The Pulse numerals follow the lists, see pulseCounts.
+ *  1. `attention` is a spotlight that REMOVES tasks from everything else: an attention task is shown
+ *     there once and in no other list, so attention + today + week + later is every open task
+ *     exactly once.
+ *  2. `waiting` ("someone please take this") holds the unowned tasks that are NOT in attention, so a
+ *     task is in at most one of attention / waiting (an unowned overdue task is attention; the take /
+ *     request buttons live on its card there).
+ *  3. `waiting` does NOT remove a task from its time bucket: an unowned task due today appears in
+ *     BOTH waiting and today (today / week / later answer "what is on when?", and the today list must
+ *     not look done while work is waiting). The overlap is deliberate; the Home screen (3.2)
+ *     de-emphasises unowned cards in the time lists. pulseCounts follows the lists, so its today and
+ *     waiting numbers can count the same task.
+ *
+ * Defensive: tasks whose status is not 'open' are ignored. When `memberIds` is given, a task owned
+ * by someone who is not in it (a member who left the household) is treated as unowned.
  */
-export function groupTasks(openTasks: readonly Task[], today: ISODate): GroupedTasks {
+export function groupTasks(
+  openTasks: readonly Task[],
+  today: ISODate,
+  memberIds?: readonly string[]
+): GroupedTasks {
+  const members = memberIds === undefined ? null : new Set(memberIds);
   const attention: Task[] = [];
   const waiting: Task[] = [];
   const today_: Task[] = [];
@@ -109,12 +138,13 @@ export function groupTasks(openTasks: readonly Task[], today: ISODate): GroupedT
   const later: Task[] = [];
 
   for (const t of openTasks) {
-    const bucket = bucketOf(t, today);
-    if (bucket === 'overdue' || t.priority === 'urgent') {
+    if (t.status !== 'open') continue;
+    if (needsAttention(t, today)) {
       attention.push(t);
       continue;
     }
-    if (t.ownerId === null) waiting.push(t);
+    if (t.ownerId === null || (members !== null && !members.has(t.ownerId))) waiting.push(t);
+    const bucket = bucketOf(t, today);
     if (bucket === 'today') today_.push(t);
     else if (bucket === 'week') week.push(t);
     else later.push(t);
@@ -129,23 +159,30 @@ export function groupTasks(openTasks: readonly Task[], today: ISODate): GroupedT
   };
 }
 
-/** The three Pulse-card numerals: באיחור/דחוף, להיום, מחכות שמישהו ייקח. */
+/**
+ * The three Pulse-card numerals (באיחור/דחוף, להיום, מחכות שמישהו ייקח), counted exactly as
+ * groupTasks lists them (same `memberIds` handling; non-open tasks ignored).
+ */
 export function pulseCounts(
   openTasks: readonly Task[],
-  today: ISODate
+  today: ISODate,
+  memberIds?: readonly string[]
 ): { attention: number; today: number; waiting: number } {
-  const g = groupTasks(openTasks, today);
+  const g = groupTasks(openTasks, today, memberIds);
   return { attention: g.attention.length, today: g.today.length, waiting: g.waiting.length };
 }
 
-/** Open tasks per member (every id in `memberIds` is present, 0 when idle). Unowned tasks are not counted. */
+/**
+ * Open tasks per member (every id in `memberIds` is present, 0 when idle). Unowned tasks, owners who
+ * are not in `memberIds`, and tasks whose status is not 'open' are not counted.
+ */
 export function openCountsByMember(
-  openTasks: readonly Pick<Task, 'ownerId'>[],
+  openTasks: readonly Pick<Task, 'ownerId' | 'status'>[],
   memberIds: readonly string[]
 ): Record<string, number> {
   const counts = new Map(memberIds.map((id) => [id, 0]));
-  for (const { ownerId } of openTasks) {
-    if (ownerId === null) continue;
+  for (const { ownerId, status } of openTasks) {
+    if (ownerId === null || status !== 'open') continue;
     const n = counts.get(ownerId);
     if (n !== undefined) counts.set(ownerId, n + 1);
   }
