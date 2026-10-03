@@ -36,3 +36,4 @@
   - (f) "סוף השבוע" on Friday means today in the parser ("this weekend" said on Friday). The snooze sheet's "סוף השבוע" on Friday means next Friday. The snooze label shows the date, so the difference is transparent.
 - [1.2] Round-2 step assessment folded into the Phase 1 Council Assessment: the surgeon's report was exhaustive and test-backed (100% coverage, 480 tests), and the council reviews all Phase 1 outputs anyway.
 - Phase 2 steps 2.3 (rules) and 2.1 (demo adapter) started before the Phase 1 council: they depend only on frozen contracts and merged domain logic. 2.2 waits for 2.3's docs/firestore-schema.md.
+- 5.2 notifier started early (Phase 5) because its files are disjoint from the app (scripts/notify/**, notify.yml) and it depends only on the Firestore schema in Blueprint §4; will be cross-checked against docs/firestore-schema.md from 2.3 at merge.
