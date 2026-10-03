@@ -1,7 +1,22 @@
 <script lang="ts">
   // App root (1.1 → 2.4). Route outlet + FAB + bottom nav + sheet / snackbar hosts + update prompt.
-  // Step 2.4 adds boot gating (adapter selection, auth, onboarding/setup redirects) only.
+  // Step 2.4: boot gating. The session's phase decides which routes may render (session.svelte.ts
+  // routeAllowed / gateTarget):
+  //   booting       → splash (brand mark on cream, no text; an error + retry if boot failed)
+  //   setup         → #/setup                       signed-out → #/welcome
+  //   no-household  → #/onboarding/household, or #/join/:code for an invite opened while signed out
+  //   ready         → every app route; #/setup, #/welcome, #/onboarding/household, #/join → #/
+  // A disallowed route never renders (the splash stands in for the frame before the redirect).
+  import { untrack } from 'svelte';
   import { router } from '$lib/router/router.svelte';
+  import { he } from '$lib/i18n/he';
+  import {
+    gateTarget,
+    rememberPendingInvite,
+    routeAllowed,
+    session,
+    takePendingInvite
+  } from '$lib/state/session.svelte';
   import HomeScreen from './screens/Home/HomeScreen.svelte';
   import MemoryScreen from './screens/Memory/MemoryScreen.svelte';
   import JarScreen from './screens/Jar/JarScreen.svelte';
@@ -15,7 +30,9 @@
   import NotificationsStep from './screens/Onboarding/NotificationsStep.svelte';
   import JoinScreen from './screens/Join/JoinScreen.svelte';
   import SetupScreen from './screens/Setup/SetupScreen.svelte';
+  import AppMark from '$components/illustrations/AppMark.svelte';
   import BottomNav from '$components/shell/BottomNav.svelte';
+  import DemoBanner from '$components/shell/DemoBanner.svelte';
   import FabHost from '$components/shell/FabHost.svelte';
   import SheetHost from '$components/shell/SheetHost.svelte';
   import SnackbarHost from '$components/shell/SnackbarHost.svelte';
@@ -28,58 +45,98 @@
       ? () => import('./screens/DevGallery/DevGalleryScreen.svelte')
       : null;
 
+  const phase = $derived(session.phase);
   const route = $derived(router.route);
-  const tab = $derived(router.meta.tab);
-  const fab = $derived(router.meta.fab);
+  const allowed = $derived(routeAllowed(phase, route.name));
+  const ready = $derived(phase === 'ready');
+  const tab = $derived(ready ? router.meta.tab : undefined);
+  const fab = $derived(ready && router.meta.fab);
+  const demoBanner = $derived(session.mode === 'demo' && route.name !== 'devGallery');
+
+  // Redirect a route the phase does not allow (replace: the wrong screen never enters history).
+  $effect(() => {
+    if (allowed || phase === 'booting') return;
+    const current = route;
+    untrack(() => {
+      if (phase === 'signed-out' && current.name === 'join') {
+        rememberPendingInvite(current.params.code); // back to #/join/:code after signing in
+      }
+      const target = gateTarget(
+        phase,
+        current,
+        phase === 'no-household' ? takePendingInvite() : null
+      );
+      if (target) router.navigate(target, { replace: true });
+    });
+  });
 </script>
 
-<div class="app" class:with-nav={tab !== undefined}>
-  <main>
-    {#if route.name === 'home' || route.name === 'new'}
-      <HomeScreen />
-    {:else if route.name === 'memory'}
-      <MemoryScreen />
-    {:else if route.name === 'jar'}
-      <JarScreen />
-    {:else if route.name === 'household'}
-      <HouseholdScreen />
-    {:else if route.name === 'settings'}
-      <SettingsScreen />
-    {:else if route.name === 'task'}
-      {#key route.params.id}
-        <TaskDetailScreen id={route.params.id} />
-      {/key}
-    {:else if route.name === 'welcome'}
-      <WelcomeStep />
-    {:else if route.name === 'onboardingProfile'}
-      <ProfileStep />
-    {:else if route.name === 'onboardingHousehold'}
-      <HouseholdStep />
-    {:else if route.name === 'onboardingInstall'}
-      <InstallStep />
-    {:else if route.name === 'onboardingNotifications'}
-      <NotificationsStep />
-    {:else if route.name === 'join'}
-      <JoinScreen code={route.params.code} />
-    {:else if route.name === 'setup'}
-      <SetupScreen />
-    {:else if route.name === 'devGallery' && loadDevGallery}
-      {#await loadDevGallery() then gallery}
-        <gallery.default />
-      {/await}
+{#if phase === 'booting' || !allowed}
+  <div class="splash" data-phase={phase}>
+    <AppMark size={88} />
+    {#if session.error}
+      <div class="boot-error" role="alert">
+        <p>{he.errors.generic}</p>
+        <button type="button" onclick={() => location.reload()}>{he.common.retry}</button>
+      </div>
     {/if}
-  </main>
+  </div>
+{:else}
+  <div class="app" class:with-nav={tab !== undefined} data-phase={phase}>
+    {#if demoBanner}
+      <DemoBanner />
+    {/if}
 
-  {#if fab}
-    <FabHost />
+    <main>
+      {#if route.name === 'home' || route.name === 'new'}
+        <HomeScreen />
+      {:else if route.name === 'memory'}
+        <MemoryScreen />
+      {:else if route.name === 'jar'}
+        <JarScreen />
+      {:else if route.name === 'household'}
+        <HouseholdScreen />
+      {:else if route.name === 'settings'}
+        <SettingsScreen />
+      {:else if route.name === 'task'}
+        {#key route.params.id}
+          <TaskDetailScreen id={route.params.id} />
+        {/key}
+      {:else if route.name === 'welcome'}
+        <WelcomeStep />
+      {:else if route.name === 'onboardingProfile'}
+        <ProfileStep />
+      {:else if route.name === 'onboardingHousehold'}
+        <HouseholdStep />
+      {:else if route.name === 'onboardingInstall'}
+        <InstallStep />
+      {:else if route.name === 'onboardingNotifications'}
+        <NotificationsStep />
+      {:else if route.name === 'join'}
+        <JoinScreen code={route.params.code} />
+      {:else if route.name === 'setup'}
+        <SetupScreen />
+      {:else if route.name === 'devGallery' && loadDevGallery}
+        {#await loadDevGallery() then gallery}
+          <gallery.default />
+        {/await}
+      {/if}
+    </main>
+
+    {#if fab}
+      <FabHost />
+    {/if}
+
+    {#if tab !== undefined}
+      <BottomNav active={tab} />
+    {/if}
+  </div>
+
+  {#if ready}
+    <SheetHost />
   {/if}
+{/if}
 
-  {#if tab !== undefined}
-    <BottomNav active={tab} />
-  {/if}
-</div>
-
-<SheetHost />
 <SnackbarHost />
 <UpdatePrompt />
 
@@ -95,5 +152,37 @@
 
   .with-nav main {
     padding-block-end: calc(var(--nav-h) + var(--safe-bottom));
+  }
+
+  .splash {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: var(--s6);
+    min-block-size: 100dvh;
+    padding: var(--safe-top) var(--screen-pad) var(--safe-bottom);
+    background: var(--bg);
+  }
+
+  .boot-error {
+    display: grid;
+    justify-items: center;
+    gap: var(--s3);
+    text-align: center;
+  }
+
+  .boot-error p {
+    font: var(--font-callout);
+    color: var(--ink-2);
+  }
+
+  .boot-error button {
+    min-block-size: var(--tap-min);
+    padding-inline: var(--s5);
+    border-radius: var(--r-pill);
+    background: var(--accent-strong);
+    color: var(--ink-on-accent);
+    font: var(--font-callout);
+    font-weight: 600;
   }
 </style>
