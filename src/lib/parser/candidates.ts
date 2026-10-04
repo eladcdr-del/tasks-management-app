@@ -8,18 +8,25 @@ import {
   addMonths,
   diffDays,
   endOfMonth,
+  endOfWeek,
   nextWeekday,
   startOfWeek,
-  toISO
+  toISO,
+  weekday
 } from '$lib/domain/dates';
 import type { ISODate, Priority, RecurrenceFreq } from '$lib/domain/types';
 import {
   ADVERB_LEAD,
-  AFTERNOON_BEFORE_HOUR,
+  AMBIGUOUS_HOURS,
   BARE_DAY_VETO_NEXT,
+  BEFORE_OFFSET_WORDS,
+  BEFORE_WORD,
   BETWEEN_WORD,
+  CONDITION_WORD,
+  CONTRAST_WORDS,
   DATE_DAY_PARTS,
   DATE_WORD,
+  DAY_LIKE_WORDS,
   DAY_MODIFIERS,
   DAY_NAME_VETO_NEXT,
   DAY_PARTS,
@@ -34,7 +41,10 @@ import {
   IN_WORD,
   INTENSIFIERS_AFTER,
   INTENSIFIERS_BEFORE,
+  LAMED_DAY_NAMES,
+  LAMED_DAY_VETO_BEFORE,
   MAX_BARE_DATE_DAYS_AHEAD,
+  MAX_BET_DOTTED_DAYS_AHEAD,
   MINUTE_WORDS,
   MONTHS,
   NEGATION_WORD,
@@ -48,6 +58,7 @@ import {
   PAST_GRACE_DAYS,
   PERIOD_MODIFIERS,
   PERIOD_PHRASES,
+  PM_UNTIL_HOUR,
   PREFIX_LETTERS,
   PRIORITY_PREFIX_LETTERS,
   PRIORITY_WORDS,
@@ -55,10 +66,13 @@ import {
   RECURRENCE_PHRASES,
   RELATIVE_DAYS,
   RANGE_WORD,
+  SATURDAY_NIGHT_PHRASES,
   SCORE_WORDS,
+  SHIN_WORDS_NOT_CLAUSE,
   STARTING_WORD,
   STREET_WORDS,
   THIS_WEEK_PHRASE,
+  TIME_CUES,
   UNIT_WORDS,
   UNTIL_WORD,
   WEEKDAYS,
@@ -74,6 +88,7 @@ import {
   ATTACHED,
   PFX,
   PFX_CAPTURE,
+  anywhereRe,
   group,
   lastWordRe,
   lookback,
@@ -81,7 +96,8 @@ import {
   rxg,
   scan,
   type Hit,
-  type Normalized
+  type Normalized,
+  type Span
 } from './text';
 import {
   dayOfMonthDate,
@@ -112,11 +128,21 @@ export interface Cand {
   end: number;
   /** date, due; recurrence: the first date of "כל יום שלישי". */
   iso?: ISODate;
-  /** due only: introduced by "עד" / "לא יאוחר מ" (until) or by "מועד אחרון" (hard). */
+  /** due only: introduced by "עד" / "לא יאוחר מ" / "לפני" (until) or by "מועד אחרון" (hard). */
   intro?: 'until' | 'hard';
   /** date, due, recurrence: a part-of-day word consumed with the phrase ("מחר בבוקר"). */
   dayPart?: DayPart;
+  /** date only: a week plan ("השבוע" / "בשבוע הבא"); `iso` is the Saturday that ends it. */
+  week?: 'this' | 'next';
+  /**
+   * date, due: a phrase that is no date but must not let its parts be read alone, e.g. a weekday
+   * and a date that disagree ("ביום חמישי 16/10") or "שבוע לפני 15/10". It wins overlaps like any
+   * candidate, then sets nothing and consumes nothing.
+   */
+  void?: boolean;
   clock?: ClockParts;
+  /** time only: the end of a range ("בין 8 ל-12"), carried on the chip label. */
+  endClock?: ClockParts;
   priority?: Exclude<Priority, 'normal'>;
   freq?: RecurrenceFreq;
 }
