@@ -100,11 +100,22 @@ export default defineConfig({
       // Registration lives in UpdatePrompt (virtual:pwa-register). Production and E2E builds
       // register the SW; the dev server never does (devOptions off).
       injectRegister: false,
+      // The manifest icons are matched by globPatterns already (no duplicate precache entries).
+      includeManifestIcons: false,
       injectManifest: {
-        globPatterns: ['**/*.{js,css,html,woff2,svg,png,ico,webmanifest}'],
-        // The Firebase SDK chunks stay out of the precache: demo / setup users never need them.
-        // The SW caches them at runtime (CacheFirst) on first use instead (src/sw.ts).
-        globIgnores: ['**/firebaseRepository-*.js', '**/messaging-*.js', '**/firebase-sdk-*.js'],
+        // The plugin adds manifest.webmanifest to the precache itself.
+        globPatterns: ['**/*.{js,css,html,woff2,svg,png,ico}'],
+        globIgnores: [
+          // The Firebase SDK chunks stay out of the precache: demo / setup users never need them.
+          // The SW caches them at runtime (CacheFirst) on first use instead (src/sw.ts).
+          // `index.esm-*` is the SDK core shared by the repository and messaging chunks.
+          '**/firebaseRepository-*.js',
+          '**/messaging-*.js',
+          '**/index.esm-*.js',
+          // Icon sources (scripts/generate-icons.mjs); the app never requests them.
+          'icons/source-maskable.svg',
+          'icons/badge.svg'
+        ],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024
       },
       manifest: {
@@ -117,12 +128,12 @@ export default defineConfig({
         start_url: `${base}#/`,
         scope: base,
         display: 'standalone',
-        orientation: 'portrait',
         background_color: '#FBF6EF',
         theme_color: '#FBF6EF',
         categories: ['productivity', 'lifestyle'],
-        // public/icons/: PNGs rendered from source.svg (AppMark tile) and source-maskable.svg
-        // (AppMark fullBleed); badge-96.png is the monochrome status-bar badge (notifications).
+        // public/icons/ (scripts/generate-icons.mjs): PNGs rendered from source.svg (AppMark tile)
+        // and source-maskable.svg (AppMark fullBleed); badge-96.png is the monochrome status-bar
+        // badge for notifications, apple-touch-180.png and the favicons are linked in index.html.
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },

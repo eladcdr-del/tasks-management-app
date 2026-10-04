@@ -12,5 +12,6 @@ export const onboardingNotifications = {
   ],
   enable: 'הפעלה',
   later: 'אחר כך',
+  continue: 'המשך',
   laterHint: 'אפשר להפעיל בכל רגע מההגדרות'
 } as const;

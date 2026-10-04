@@ -14,7 +14,11 @@
 //                 a visible app window receives the payload in Firebase's own envelope (so
 //                 `onMessage` in the page fires and shows a snackbar), otherwise we show the
 //                 notification ourselves (RTL, Hebrew, icon, badge, tag, deep link).
-import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
+import {
+  cleanupOutdatedCaches,
+  createHandlerBoundToURL,
+  precacheAndRoute
+} from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
 import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';

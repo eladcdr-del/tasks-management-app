@@ -15,7 +15,12 @@
 
 import type { FirebaseApp } from 'firebase/app';
 import type { Repository } from '$lib/data/repository';
-import { configLooksComplete, safeLocalStorage, type AppMode, type StorageLike } from '$lib/data/select';
+import {
+  configLooksComplete,
+  safeLocalStorage,
+  type AppMode,
+  type StorageLike
+} from '$lib/data/select';
 import { deviceId as newDeviceId } from '$lib/domain/ids';
 import { he } from '$lib/i18n/he';
 import { router } from '$lib/router/router.svelte';
@@ -24,7 +29,8 @@ import { ui } from '$lib/state/ui.svelte';
 import { firebaseConfig, vapidKey as configVapidKey } from '../../../firebase-config';
 import type { ForegroundMessage } from '$lib/data/firebase/messaging';
 
-export type PushSupport = 'unsupported' | 'demo' | 'not-configured' | 'default' | 'granted' | 'denied';
+export type PushSupport =
+  'unsupported' | 'demo' | 'not-configured' | 'default' | 'granted' | 'denied';
 
 export type EnableResult = 'enabled' | 'denied' | 'default' | 'unavailable' | 'error';
 

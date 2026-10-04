@@ -23,6 +23,7 @@
   import { he } from '$lib/i18n/he';
   import { exitDemo, isDemoRepository } from '$lib/data/select';
   import { installState, onInstallChange, promptInstall } from '$lib/platform/install';
+  import { disablePush } from '$lib/platform/push';
   import { router } from '$lib/router/router.svelte';
   import { household } from '$lib/state/household.svelte';
   import { prefs } from '$lib/state/prefs.svelte';
@@ -49,6 +50,8 @@
 
   async function signOut() {
     try {
+      // While still signed in: remove this device's push registration (5.1, bounded, never throws).
+      await disablePush();
       await session.signOut();
     } catch (e) {
       ui.pushError(e);
