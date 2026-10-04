@@ -177,10 +177,10 @@ describe('matchesQuery', () => {
   });
 
   describe('suffix and construct-state fold (query tokens of 4+ letters)', () => {
-    it('"החלפנו" (we replaced) finds "החלפת" (replacement of): both are החלפ-', () => {
-      expect(matchesQuery('החלפת מצבר', 'החלפנו')).toBe(true);
-      expect(matchesQuery('החלפת מצבר', 'החלפנו מצבר')).toBe(true);
+    it('"החלפתי" (I replaced) finds "החלפת" (replacement of): both are החלפ-', () => {
       expect(matchesQuery('החלפת מצבר', 'החלפתי')).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'החלפתי מצבר')).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'החלפתם')).toBe(true);
     });
 
     it('construct state and plurals: בדיקה ~ בדיקת, צמיגים ~ צמיג, מסעדות ~ מסעדה', () => {
@@ -208,7 +208,8 @@ describe('matchesQuery', () => {
     });
 
     it('never drops haystack words as stopwords (האחרון stays searchable content)', () => {
-      expect(matchesQuery('הטיפול האחרון', 'האחרונים')).toBe(true);
+      expect(matchesQuery('הטיפול האחרון', 'אחרונים')).toBe(true);
+      expect(matchesQuery('הטיפול הקודם', 'אחרונים')).toBe(false);
     });
   });
 
@@ -231,11 +232,48 @@ describe('matchesQuery', () => {
       'כבר',
       'פעם',
       'האחרון',
-      'האחרונה'
+      'האחרונה',
+      'האחרונים',
+      'האחרונות',
+      'זה',
+      'זאת',
+      'לנו'
+    ];
+    // Past-tense verbs that natural questions open with ("כמה שילמנו על...", "מי תיקן את...").
+    const questionVerbs = [
+      'שילמנו',
+      'שילם',
+      'שילמה',
+      'עשינו',
+      'עשה',
+      'תיקן',
+      'תיקנה',
+      'תיקנו',
+      'החלפנו',
+      'החליף',
+      'קנינו',
+      'קנה',
+      'החזרנו',
+      'היה',
+      'הייתה',
+      'היו',
+      'עלה',
+      'עלתה',
+      'עלו',
+      'אמר',
+      'אמרה',
+      'הגיע',
+      'הגיעה'
     ];
 
     it('ignores Hebrew question and function words in the query', () => {
       for (const w of stopwords) expect(matchesQuery('החלפת מצבר', `${w} מצבר`)).toBe(true);
+    });
+
+    it('ignores the past-tense question verbs (also behind prefix letters)', () => {
+      for (const w of questionVerbs) expect(matchesQuery('החלפת מצבר', `${w} מצבר`)).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'כשהחלפנו מצבר')).toBe(true);
+      expect(matchesQuery('החלפת מצבר', 'ושילמנו על מצבר')).toBe(true);
     });
 
     it('recognises them behind prefix letters: ובאיזה, ומתי, בפעם, וכבר', () => {
@@ -261,6 +299,49 @@ describe('matchesQuery', () => {
     });
   });
 
+  describe('peel budget: a loose match strips at most 2 prefix letters in total (both sides)', () => {
+    it('"בלמים" (brakes) is not "ב" + "למים" inside "משלמים" ("מש" + "למים")', () => {
+      expect(matchesQuery('הוראת הקבע לא עובדת, משלמים באתר העירייה', 'בלמים')).toBe(false);
+      expect(matchesQuery('משלמים', 'הבלמים')).toBe(false);
+      expect(matchesQuery('הוחלפו רפידות בלמים קדמיות', 'בלמים')).toBe(true);
+      expect(matchesQuery('הוחלפו רפידות בלמים קדמיות', 'הבלמים')).toBe(true);
+    });
+
+    it('one prefix letter on each side still matches: "ברכב" finds "לרכב", "הדוד" finds "בדוד"', () => {
+      expect(matchesQuery('טיפול 30,000 לרכב', 'ברכב')).toBe(true);
+      expect(matchesQuery('תיקון נזילה בדוד השמש', 'הדוד')).toBe(true);
+      expect(matchesQuery('אבי האינסטלטור', 'לאינסטלטור')).toBe(true);
+    });
+
+    it('a folded stem of the whole query word may still look behind 2 haystack prefix letters', () => {
+      expect(matchesQuery('ובבדיקת הדם', 'בדיקות')).toBe(true);
+    });
+  });
+
+  describe('synonyms (רכב = אוטו = מכונית), in both directions', () => {
+    it('finds רכב for אוטו / מכונית, with or without prefix letters', () => {
+      expect(matchesQuery('טיפול 30,000 לרכב', 'אוטו')).toBe(true);
+      expect(matchesQuery('טיפול 30,000 לרכב', 'לאוטו')).toBe(true);
+      expect(matchesQuery('הרכב לא הניע הבוקר', 'מכונית')).toBe(true);
+      expect(matchesQuery('הרכב לא הניע הבוקר', 'במכונית')).toBe(true);
+    });
+
+    it('finds אוטו / מכונית (and their plurals) for רכב', () => {
+      expect(matchesQuery('לשטוף את האוטו', 'רכב')).toBe(true);
+      expect(matchesQuery('ניקוי מכוניות', 'הרכב')).toBe(true);
+    });
+
+    it('a synonym is a whole word: רכב does not find "אוטובוס" by partial typing', () => {
+      expect(matchesQuery('הסעה באוטובוס', 'רכב')).toBe(false);
+      expect(matchesQuery('הסעה באוטובוס', 'אוטו')).toBe(true); // the typed word itself still does
+    });
+
+    it('scores a synonym hit below an exact hit of the typed word', () => {
+      expect(scoreQuery('לשטוף את האוטו', 'אוטו')).toBe(3);
+      expect(scoreQuery('לשטוף את הרכב', 'אוטו')).toBe(2);
+    });
+  });
+
   it('matches Latin words case-insensitively', () => {
     expect(matchesQuery('Netflix לבטל מנוי', 'netflix')).toBe(true);
     expect(matchesQuery('netflix', 'NETFL')).toBe(true);
@@ -282,7 +363,7 @@ describe('scoreQuery (0 = no match; higher = better)', () => {
     expect(scoreQuery('החלפת מצבר', 'מצבר')).toBe(3);
     expect(scoreQuery('מצברים לרכב', 'מצבר')).toBe(2);
     expect(scoreQuery('מוסך השרון', 'במוסך')).toBe(1); // the query lost its ב
-    expect(scoreQuery('החלפת מצבר', 'החלפנו')).toBe(1); // folded
+    expect(scoreQuery('החלפת מצבר', 'החלפתי')).toBe(1); // folded
   });
 
   it("treats the haystack's own prefix letters as transparent (still exact)", () => {
@@ -292,7 +373,8 @@ describe('scoreQuery (0 = no match; higher = better)', () => {
 
   it('adds the token scores up, and is 0 as soon as one token does not match', () => {
     expect(scoreQuery('החלפת מצבר', 'מצבר החלפ')).toBe(5);
-    expect(scoreQuery('החלפת מצבר', 'מתי החלפנו מצבר')).toBe(4); // stopword ignored
+    expect(scoreQuery('החלפת מצבר', 'מתי החלפנו מצבר')).toBe(3); // מתי and the verb החלפנו ignored
+    expect(scoreQuery('החלפת מצבר', 'מתי החלפתי מצבר')).toBe(4); // 1 (folded) + 3 (exact)
     expect(scoreQuery('החלפת מצבר', 'מצבר שמן')).toBe(0);
   });
 
@@ -507,5 +589,221 @@ describe('searchDoneTasks', () => {
     const input = [leak, battery];
     searchDoneTasks(input, '');
     expect(ids(input)).toEqual([leak.id, battery.id]);
+  });
+
+  describe('fallback: when no task matches every token, rank by how many tokens match', () => {
+    it('ranks by the number of matched tokens, then score, then newest completion', () => {
+      // nobody did "חשמלאי": the boiler matches 2 of the tokens, the leak 1
+      const boiler = done({
+        title: 'תיקון נזילה בדוד השמש',
+        completedAt: 500,
+        completion: { note: '', cost: 350, place: '', contact: 'אבי האינסטלטור', photoIds: [] }
+      });
+      expect(ids(searchDoneTasks([leak, boiler, battery], 'אינסטלטור דוד חשמלאי'))).toEqual([
+        boiler.id,
+        leak.id
+      ]);
+    });
+
+    it('is not used when some task matches every token', () => {
+      const service = done({
+        title: 'טיפול לרכב',
+        completion: { note: '', cost: null, place: 'מוסך השרון', contact: '', photoIds: [] }
+      });
+      expect(ids(searchDoneTasks([service, battery], 'מצבר מוסך'))).toEqual([battery.id]);
+    });
+
+    it('needs a meaningful token: single letters and stopwords never carry it', () => {
+      expect(searchDoneTasks(all, 'מתי ב 2031')).toEqual([]);
+      expect(searchDoneTasks(all, 'שמן כסף')).toEqual([]);
+    });
+
+    it('respects the filters and still ignores open tasks', () => {
+      expect(ids(searchDoneTasks(all, 'מצבר חשמלאי', { categoryId: 'car' }))).toEqual([
+        battery.id
+      ]);
+      expect(searchDoneTasks(all, 'מצבר חשמלאי', { categoryId: 'home' })).toEqual([]);
+      expect(searchDoneTasks(all, 'נוסף חשמלאי')).toEqual([]); // only the open task says נוסף
+    });
+  });
+});
+
+describe('house memory: natural questions over a seed-like history (council B-M6)', () => {
+  let n = 0;
+  function done(
+    title: string,
+    completedAt: number,
+    over: Partial<Task> = {},
+    doc: Partial<NonNullable<Task['completion']>> = {}
+  ): Task {
+    n += 1;
+    return {
+      id: `h${n}`,
+      title,
+      notes: '',
+      categoryId: null,
+      priority: 'normal',
+      ownerId: 'u1',
+      requestedBy: null,
+      requestedAt: null,
+      createdBy: 'u1',
+      createdAt: 0,
+      updatedBy: 'u1',
+      updatedAt: 0,
+      scheduledFor: null,
+      weekPlan: false,
+      dueDate: null,
+      dueTime: null,
+      hardDeadline: false,
+      recurrence: null,
+      seriesId: null,
+      status: 'done',
+      snoozeCount: 0,
+      lastSnoozedAt: null,
+      completedAt,
+      completedBy: 'u1',
+      completion: { note: '', cost: null, place: '', contact: '', photoIds: [], ...doc },
+      ...over
+    };
+  }
+
+  // Mirrors the documented done tasks of src/lib/data/demo/seed.ts, oldest first.
+  const arnonaFields: Partial<Task> = {
+    notes: 'הוראת הקבע לא עובדת, משלמים באתר העירייה',
+    categoryId: 'finance'
+  };
+  const carService = done(
+    'טיפול 30,000 לרכב',
+    10,
+    { categoryId: 'car' },
+    {
+      note: 'הוחלפו רפידות בלמים קדמיות ושמן',
+      cost: 1250,
+      place: 'מוסך השרון, כפר סבא',
+      contact: 'יוסי · 050-1234567'
+    }
+  );
+  const acCleaning = done(
+    'ניקוי מזגנים לפני הקיץ',
+    20,
+    {},
+    { note: 'ניקו את שלושת המזגנים, הכל תקין', cost: 450, contact: 'קירור השרון · 09-7654321' }
+  );
+  const boiler = done(
+    'תיקון נזילה בדוד השמש',
+    30,
+    {},
+    {
+      note: 'הוחלפו ברז ואטם. לבדוק שוב לפני החורף',
+      cost: 350,
+      contact: 'אבי האינסטלטור · 052-7654321'
+    }
+  );
+  const bloodTests = done(
+    'בדיקות דם שנתיות',
+    40,
+    {},
+    { note: 'התוצאות תקינות. לחזור על הבדיקה בעוד שנה', place: 'קופת חולים, סניף ויצמן' }
+  );
+  const taxRefund = done(
+    'להגיש בקשה להחזר מס על תרומות',
+    50,
+    {},
+    { note: 'הוגש באתר רשות המסים. הקבלות בתיקייה הירוקה' }
+  );
+  const shoes = done(
+    'להחזיר את הנעליים לחנות',
+    60,
+    {},
+    { note: 'קיבלנו זיכוי לחנות, בתוקף לשנה', place: 'קניון ערים, כפר סבא' }
+  );
+  const battery = done(
+    'החלפת מצבר',
+    70,
+    { notes: 'הרכב לא הניע הבוקר', categoryId: 'car' },
+    {
+      note: 'מצבר 70 אמפר, אחריות לשנתיים',
+      cost: 650,
+      place: 'מוסך השרון, כפר סבא',
+      contact: 'יוסי · 050-1234567'
+    }
+  );
+  const arnona1 = done('לשלם ארנונה', 75, arnonaFields, { note: 'שולם באתר העירייה', cost: 486 });
+  const barMitzvah = done('מתנה לבר המצווה של עומר', 80, {}, { note: 'שובר לחנות ספורט', cost: 400 });
+  const arnona2 = done('לשלם ארנונה', 85, arnonaFields, { note: 'שולם באתר העירייה', cost: 486 });
+  const pest = done(
+    'הדברה בבית',
+    90,
+    {},
+    {
+      note: 'אחריות לשלושה חודשים. לא לשטוף את הרצפה יומיים',
+      cost: 280,
+      contact: 'הדברה ירוקה · 054-3322110'
+    }
+  );
+  const tire = done('תיקון פנצ׳ר בגלגל הקדמי', 100, {}, { cost: 80, place: 'פנצ׳רייה באזור התעשייה' });
+  const groceries = done(
+    'הזמנת קניות לשבת',
+    110,
+    {},
+    { note: 'ההזמנה הגיעה, חסרו רק עגבניות שרי', cost: 735 }
+  );
+  const doorHandle = done(
+    'תיקון הידית בדלת המרפסת',
+    120,
+    {},
+    { note: 'ידית חדשה ממתכת', cost: 60, place: 'ACE כפר סבא' }
+  );
+  const history = [
+    carService,
+    acCleaning,
+    boiler,
+    bloodTests,
+    taxRefund,
+    shoes,
+    battery,
+    arnona1,
+    barMitzvah,
+    arnona2,
+    pest,
+    tire,
+    groceries,
+    doorHandle
+  ];
+  const ids = (ts: Task[]) => ts.map((t) => t.id);
+  const ask = (q: string) => ids(searchDoneTasks(history, q));
+
+  it.each([
+    ['כמה שילמנו על הארנונה?', [arnona2, arnona1]],
+    ['כמה שילמנו ארנונה בפעם האחרונה', [arnona2, arnona1]],
+    ['מתי תיקנו את דוד השמש?', [boiler]],
+    ['מי תיקן את הדוד?', [boiler]],
+    ['מה הטלפון של האינסטלטור?', [boiler]],
+    ['כמה שילמנו לאינסטלטור', [boiler]],
+    ['מתי עשינו בדיקות דם?', [bloodTests]],
+    ['איפה עשינו את בדיקת הדם', [bloodTests]],
+    ['כמה עלתה ההדברה?', [pest]],
+    ['מי עשה הדברה ומה הטלפון שלו', [pest]],
+    ['מתי החזרנו את הנעליים?', [shoes]],
+    ['מי תיקן את הידית?', [doorHandle]],
+    ['כמה עלה הטיפול לאוטו?', [carService]],
+    ['מתי עשינו טיפול למכונית', [carService]],
+    ['מה קנינו בקניות לשבת?', [groceries]],
+    ['כמה עלו הקניות', [groceries]],
+    ['כמה שילמנו על המתנה לבר המצווה?', [barMitzvah]],
+    ['מתי החלפנו מצבר ובאיזה מוסך?', [battery]],
+    ['איפה תיקנו את הפנצ׳ר', [tire]]
+  ])('"%s"', (q, expected) => {
+    expect(ask(q)).toEqual(ids(expected));
+  });
+
+  it('"מה עשינו עם האוטו?" finds both car jobs through the synonym, newest first', () => {
+    expect(ask('מה עשינו עם האוטו?')).toEqual([battery.id, carService.id]);
+  });
+
+  it('"בלמים" finds the brake pads, never the ארנונה note "משלמים"', () => {
+    expect(ask('בלמים')).toEqual([carService.id]);
+    expect(searchDoneTasks([arnona1, arnona2], 'בלמים')).toEqual([]);
+    expect(searchDoneTasks([arnona1, arnona2], 'מתי החלפנו בלמים?')).toEqual([]);
   });
 });
