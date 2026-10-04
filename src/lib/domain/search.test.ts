@@ -640,9 +640,7 @@ describe('searchDoneTasks', () => {
     });
 
     it('respects the filters and still ignores open tasks', () => {
-      expect(ids(searchDoneTasks(all, 'מצבר חשמלאי', { categoryId: 'car' }))).toEqual([
-        battery.id
-      ]);
+      expect(ids(searchDoneTasks(all, 'מצבר חשמלאי', { categoryId: 'car' }))).toEqual([battery.id]);
       expect(searchDoneTasks(all, 'מצבר חשמלאי', { categoryId: 'home' })).toEqual([]);
       expect(searchDoneTasks(all, 'נוסף חשמלאי')).toEqual([]); // only the open task says נוסף
     });
@@ -750,7 +748,12 @@ describe('house memory: natural questions over a seed-like history (council B-M6
     }
   );
   const arnona1 = done('לשלם ארנונה', 75, arnonaFields, { note: 'שולם באתר העירייה', cost: 486 });
-  const barMitzvah = done('מתנה לבר המצווה של עומר', 80, {}, { note: 'שובר לחנות ספורט', cost: 400 });
+  const barMitzvah = done(
+    'מתנה לבר המצווה של עומר',
+    80,
+    {},
+    { note: 'שובר לחנות ספורט', cost: 400 }
+  );
   const arnona2 = done('לשלם ארנונה', 85, arnonaFields, { note: 'שולם באתר העירייה', cost: 486 });
   const pest = done(
     'הדברה בבית',
@@ -762,7 +765,12 @@ describe('house memory: natural questions over a seed-like history (council B-M6
       contact: 'הדברה ירוקה · 054-3322110'
     }
   );
-  const tire = done('תיקון פנצ׳ר בגלגל הקדמי', 100, {}, { cost: 80, place: 'פנצ׳רייה באזור התעשייה' });
+  const tire = done(
+    'תיקון פנצ׳ר בגלגל הקדמי',
+    100,
+    {},
+    { cost: 80, place: 'פנצ׳רייה באזור התעשייה' }
+  );
   const groceries = done(
     'הזמנת קניות לשבת',
     110,

@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  ageDays,
-  ageDaysFrom,
-  ageLabel,
-  ageStart,
-  isStuck,
-  STUCK_AGE_DAYS,
-  STUCK_SNOOZE_COUNT
-} from './age';
+import { ageDays, ageDaysFrom, ageStart, isStuck, STUCK_AGE_DAYS, STUCK_SNOOZE_COUNT } from './age';
 import { addDays } from './dates';
 import { buildNextInstance } from './recurrence';
 import type { Task } from './types';
@@ -133,40 +125,6 @@ describe('ageDays (from ageStart)', () => {
   });
 });
 
-describe('ageLabel (copy from i18n/format ageLabelText)', () => {
-  const label = (days: number) => ageLabel(t({ createdAt: created(days) }), NOW);
-
-  it('is "חדשה" for the first two days', () => {
-    expect(label(0)).toBe('חדשה');
-    expect(label(1)).toBe('חדשה');
-  });
-
-  it('counts days, then weeks, then calendar months, then years', () => {
-    expect(label(2)).toBe('פתוחה יומיים');
-    expect(label(6)).toBe('פתוחה 6 ימים');
-    expect(label(7)).toBe('פתוחה שבוע');
-    expect(label(14)).toBe('פתוחה שבועיים');
-    expect(label(21)).toBe('פתוחה 3 שבועות');
-    expect(label(29)).toBe('פתוחה 4 שבועות'); // Sep 5 -> Oct 4: a day short of a month
-    expect(label(30)).toBe('פתוחה חודש'); // Sep 4 -> Oct 4
-    expect(label(60)).toBe('פתוחה חודש'); // Aug 5: a day short of two months
-    expect(label(61)).toBe('פתוחה חודשיים'); // Aug 4
-    expect(label(364)).toBe('פתוחה 11 חודשים');
-    expect(label(365)).toBe('פתוחה שנה');
-    expect(label(731)).toBe('פתוחה שנתיים');
-  });
-
-  it('a monthly ארנונה instance due in 10 days reads "חדשה" even though it was created weeks ago', () => {
-    const arnona = t({ seriesId: 'arnona', createdAt: created(25), dueDate: '2026-10-14' });
-    expect(ageLabel(arnona, NOW)).toBe('חדשה');
-  });
-
-  it('accepts a Date and an explicit tz', () => {
-    expect(ageLabel(t({ createdAt: created(14) }), new Date(NOW))).toBe('פתוחה שבועיים');
-    expect(ageLabel(t({ createdAt: created(14) }), NOW, 'Asia/Jerusalem')).toBe('פתוחה שבועיים');
-  });
-});
-
 describe('isStuck', () => {
   it('exposes its thresholds', () => {
     expect(STUCK_AGE_DAYS).toBe(21);
@@ -238,7 +196,7 @@ describe('isStuck', () => {
     it('a yearly instance created ~11 months ago, due next month: new, not stuck', () => {
       const yearly = t({ seriesId: 'test', createdAt: created(335), dueDate: '2026-11-04' });
       expect(isStuck(yearly, NOW)).toBe(false);
-      expect(ageLabel(yearly, NOW)).toBe('חדשה');
+      expect(ageDays(yearly, NOW)).toBe(0); // its date is still ahead: the badge says חדשה
     });
 
     it('a series completed late: the next instance is fresh from its own date', () => {
@@ -274,8 +232,8 @@ describe('isStuck', () => {
       const next = buildNextInstance(source, '2026-10-11', finishedAt, 'u1') as Task;
       expect(next.dueDate).toBe('2026-10-15');
       const on = (iso: string) => Date.parse(`${iso}T09:00:00+03:00`);
-      expect(ageLabel(next, on('2026-10-13'))).toBe('חדשה'); // before its date
-      expect(ageLabel(next, on('2026-10-18'))).toBe('פתוחה 3 ימים'); // counted from 10-15, not 10-11
+      expect(ageDays(next, on('2026-10-13'))).toBe(0); // before its date
+      expect(ageDays(next, on('2026-10-18'))).toBe(3); // counted from 10-15, not 10-11
       expect(isStuck(next, on('2026-11-04'))).toBe(false); // 20 days after its date
       expect(isStuck(next, on('2026-11-05'))).toBe(true);
     });

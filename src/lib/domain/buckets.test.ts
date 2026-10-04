@@ -49,6 +49,7 @@ function task(over: Partial<Task> = {}): Task {
   };
 }
 const ids = (ts: Task[]) => ts.map((t) => t.id);
+const MEMBERS = ['u1', 'u2'];
 
 describe('effectiveDate', () => {
   it('is the earlier of dueDate and scheduledFor', () => {
@@ -236,6 +237,36 @@ describe('needsAttention (overdue, OR urgent and not planned for later)', () => 
     expect(needsAttention(task({ scheduledFor: '2026-10-01' }), TODAY)).toBe(false); // missed plan only
     expect(needsAttention(task(), TODAY)).toBe(false);
   });
+
+  describe('a hard deadline on its last day or the day before (council B-M7)', () => {
+    // The seed's shirt: "להחליף את החולצה בקניון", hard deadline 3 days after 2026-10-04.
+    const shirt = task({ dueDate: '2026-10-07', hardDeadline: true });
+
+    it('shouts from the day before the deadline: 10-06 and 10-07, not 10-05', () => {
+      expect(needsAttention(shirt, '2026-10-04')).toBe(false);
+      expect(needsAttention(shirt, '2026-10-05')).toBe(false);
+      expect(needsAttention(shirt, '2026-10-06')).toBe(true);
+      expect(needsAttention(shirt, '2026-10-07')).toBe(true);
+      expect(needsAttention(shirt, '2026-10-08')).toBe(true); // missed: overdue
+    });
+
+    it('even while it is snoozed (planned for a later day): the deadline itself does not move', () => {
+      expect(needsAttention({ ...shirt, scheduledFor: '2026-10-09' }, '2026-10-06')).toBe(true);
+    });
+
+    it('a soft due date the next day is not attention', () => {
+      expect(needsAttention(task({ dueDate: '2026-10-07' }), '2026-10-06')).toBe(false);
+      expect(needsAttention(task({ dueDate: '2026-10-07' }), '2026-10-07')).toBe(false);
+    });
+
+    it('moves the shirt from the week list to attention on 10-06', () => {
+      expect(ids(groupTasks([shirt], '2026-10-05', ['u1']).week)).toEqual([shirt.id]);
+      const g = groupTasks([shirt], '2026-10-06', ['u1']);
+      expect(ids(g.attention)).toEqual([shirt.id]);
+      expect(g.week).toEqual([]);
+      expect(g.today).toEqual([]);
+    });
+  });
 });
 
 describe('sortTasks', () => {
@@ -313,7 +344,7 @@ describe('groupTasks', () => {
     laterMine,
     laterUnowned
   ];
-  const g = groupTasks(all, TODAY);
+  const g = groupTasks(all, TODAY, MEMBERS);
 
   it('attention holds every overdue or urgent task, owned or not', () => {
     expect(new Set(ids(g.attention))).toEqual(
@@ -373,28 +404,28 @@ describe('groupTasks', () => {
   it('puts high priority ahead of normal inside a bucket', () => {
     const normal = task({ dueDate: '2026-10-05' });
     const high = task({ dueDate: '2026-10-09', priority: 'high' });
-    expect(ids(groupTasks([normal, high], TODAY).week)).toEqual([high.id, normal.id]);
+    expect(ids(groupTasks([normal, high], TODAY, MEMBERS).week)).toEqual([high.id, normal.id]);
   });
 
   it('does not mutate its input', () => {
     const input = [laterMine, overdueMine, todayMine];
     const snapshot = [...input];
-    groupTasks(input, TODAY);
+    groupTasks(input, TODAY, MEMBERS);
     expect(input).toEqual(snapshot);
   });
 
   it('an urgent task snoozed to next week leaves attention for its time bucket', () => {
     const snoozed = task({ priority: 'urgent', scheduledFor: '2026-10-11', snoozeCount: 1 });
-    const out = groupTasks([snoozed], TODAY);
+    const out = groupTasks([snoozed], TODAY, MEMBERS);
     expect(out.attention).toEqual([]);
     expect(ids(out.later)).toEqual([snoozed.id]);
-    expect(ids(groupTasks([snoozed], '2026-10-09').week)).toEqual([snoozed.id]); // Friday: next week shows
-    expect(ids(groupTasks([snoozed], '2026-10-11').attention)).toEqual([snoozed.id]); // its day comes
+    expect(ids(groupTasks([snoozed], '2026-10-09', MEMBERS).week)).toEqual([snoozed.id]); // Friday: next week shows
+    expect(ids(groupTasks([snoozed], '2026-10-11', MEMBERS).attention)).toEqual([snoozed.id]); // its day comes
   });
 
   it('ignores tasks that are not open (defensive: callers should pass open tasks only)', () => {
     const doneTask = task({ status: 'done', dueDate: '2026-10-01', ownerId: null });
-    const out = groupTasks([doneTask, todayMine], TODAY);
+    const out = groupTasks([doneTask, todayMine], TODAY, MEMBERS);
     expect(out).toEqual({ attention: [], waiting: [], today: [todayMine], week: [], later: [] });
   });
 
@@ -403,24 +434,28 @@ describe('groupTasks', () => {
     const formerOverdue = task({ dueDate: '2026-10-01', ownerId: 'gone' });
 
     it('a task owned by someone who left goes to waiting (and stays in its time bucket)', () => {
-      const out = groupTasks([formerMemberTask, weekMine], TODAY, ['u1', 'u2']);
+      const out = groupTasks([formerMemberTask, weekMine], TODAY, MEMBERS);
       expect(ids(out.waiting)).toEqual([formerMemberTask.id]);
       expect(ids(out.week)).toEqual([weekMine.id, formerMemberTask.id]);
     });
 
     it('attention still wins over waiting', () => {
-      const out = groupTasks([formerOverdue], TODAY, ['u1', 'u2']);
+      const out = groupTasks([formerOverdue], TODAY, MEMBERS);
       expect(ids(out.attention)).toEqual([formerOverdue.id]);
       expect(out.waiting).toEqual([]);
     });
 
-    it('without memberIds the owner id is trusted as-is', () => {
-      expect(groupTasks([formerMemberTask], TODAY).waiting).toEqual([]);
+    it('memberIds undefined (membership not loaded yet): the owner id is trusted as-is', () => {
+      expect(groupTasks([formerMemberTask], TODAY, undefined).waiting).toEqual([]);
+    });
+
+    it('an empty member list makes every owned task waiting', () => {
+      expect(ids(groupTasks([weekMine], TODAY, []).waiting)).toEqual([weekMine.id]);
     });
   });
 
   it('returns five empty lists for no tasks', () => {
-    expect(groupTasks([], TODAY)).toEqual({
+    expect(groupTasks([], TODAY, MEMBERS)).toEqual({
       attention: [],
       waiting: [],
       today: [],
@@ -440,11 +475,11 @@ describe('pulseCounts', () => {
       task({ dueDate: '2026-10-08', ownerId: null }), // week + waiting
       task({ dueDate: '2026-11-01' }) // later
     ];
-    expect(pulseCounts(open, TODAY)).toEqual({ attention: 2, today: 2, waiting: 2 });
+    expect(pulseCounts(open, TODAY, MEMBERS)).toEqual({ attention: 2, today: 2, waiting: 2 });
   });
 
   it('is all zeros for an empty list', () => {
-    expect(pulseCounts([], TODAY)).toEqual({ attention: 0, today: 0, waiting: 0 });
+    expect(pulseCounts([], TODAY, MEMBERS)).toEqual({ attention: 0, today: 0, waiting: 0 });
   });
 
   it('ignores tasks that are not open, and honours memberIds like groupTasks', () => {
@@ -452,7 +487,7 @@ describe('pulseCounts', () => {
       task({ dueDate: '2026-10-02', status: 'done' }), // ignored
       task({ dueDate: TODAY, ownerId: 'gone' }) // today, and waiting once memberIds is known
     ];
-    expect(pulseCounts(open, TODAY)).toEqual({ attention: 0, today: 1, waiting: 0 });
+    expect(pulseCounts(open, TODAY, undefined)).toEqual({ attention: 0, today: 1, waiting: 0 });
     expect(pulseCounts(open, TODAY, ['u1'])).toEqual({ attention: 0, today: 1, waiting: 1 });
   });
 });

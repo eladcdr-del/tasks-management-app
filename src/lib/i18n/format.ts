@@ -1,12 +1,16 @@
 // Hebrew formatting helpers (Blueprint §3, §7): dates, relative days, date chips, plurals, numbers,
 // age and expiry copy, greeting. Pure and locale-explicit. The wording is deterministic (own tables,
 // not Intl's Hebrew calendar names) so it cannot drift with the ICU version of the user's browser.
-// UI strings that are not computed live in he.ts; user-entered text is rendered with dir="auto".
+// UI strings that are not computed live in he.ts; user-entered text is never formatted here.
+// Layering: this module maps the domain's keys and dates to Hebrew; domain/* never imports from here.
 //
 // MALFORMED-DATE POLICY: formatters never throw. Given an invalid ISODate (or an invalid epoch
 // value), a formatter that returns `string` returns '' and one that returns `T | null` returns null.
 
+import { ageStart } from '../domain/age';
+import { bucketInfo, weekHorizon } from '../domain/buckets';
 import {
+  addDays,
   addMonths,
   DEFAULT_TZ,
   diffDays,
@@ -15,8 +19,13 @@ import {
   todayISO,
   weekday
 } from '../domain/dates';
-import type { SnoozeKey } from '../domain/snooze';
-import type { ISODate, Millis, Task } from '../domain/types';
+import {
+  snoozeOptions,
+  type SnoozeBlockedReason,
+  type SnoozeKey,
+  type SnoozeOption
+} from '../domain/snooze';
+import type { ISODate, Millis, Priority, RecurrenceFreq, Task } from '../domain/types';
 
 /** Table lookup for an index that is known to be in range (validated dates only). */
 const at = <T>(table: readonly T[], i: number): T => table[i] as T;
@@ -120,13 +129,18 @@ function calendarMonths(from: ISODate, to: ISODate): number {
   return addMonths(from, months) > to ? months - 1 : months;
 }
 
+/** The span scale switches from weeks to calendar months at this many days ("8 שבועות" is the last). */
+const WEEKS_UNTIL_DAYS = 60;
+
 /**
  * The span from `from` to `to` in Hebrew, on one scale shared by the age badge and the lateness chip:
- *   0-6 days                     יום / יומיים / 3 ימים ... 6 ימים   (0 gives "0 ימים")
- *   7 days up to a calendar month  שבוע / שבועיים / 3 שבועות / 4 שבועות
- *   1-11 calendar months         חודש / חודשיים / 3 חודשים ... 11 חודשים
- *   12+ calendar months          שנה / שנתיים / 3 שנים ...
- * A month is counted on the same day of the month (clamped: Jan 31 -> Feb 28), not as 30 days.
+ *   0-6 days                 יום / יומיים / 3 ימים ... 6 ימים   (0 gives "0 ימים")
+ *   7-59 days                שבוע / שבועיים / 3 שבועות ... 8 שבועות   (whole weeks)
+ *   60 days to 11 months     חודשיים / 3 חודשים ... 11 חודשים   (calendar months, at least 2)
+ *   12+ calendar months      שנה / שנתיים / 3 שנים ...
+ * A month is counted on the same day of the month (clamped: Jan 31 -> Feb 28), not as 30 days. At
+ * 60 days the calendar count can still be 1 (Jul 31 -> Sep 29), so it is floored at 2: the scale
+ * never steps back from "8 שבועות" to "חודש".
  * '' when `to` is before `from` or either date is malformed.
  */
 export function elapsedText(from: ISODate, to: ISODate): string {
@@ -134,8 +148,8 @@ export function elapsedText(from: ISODate, to: ISODate): string {
   const days = diffDays(to, from);
   if (days < 0) return '';
   if (days < 7) return pluralDays(days);
-  const months = calendarMonths(from, to);
-  if (months < 1) return pluralWeeks(Math.floor(days / 7));
+  if (days < WEEKS_UNTIL_DAYS) return pluralWeeks(Math.floor(days / 7));
+  const months = Math.max(2, calendarMonths(from, to));
   if (months < 12) return pluralMonths(months);
   return pluralYears(Math.floor(months / 12));
 }
@@ -148,6 +162,18 @@ export function elapsedText(from: ISODate, to: ISODate): string {
 export function ageLabelText(start: ISODate, today: ISODate): string {
   if (!isValidISO(start) || !isValidISO(today)) return '';
   return diffDays(today, start) < 2 ? 'חדשה' : `פתוחה ${elapsedText(start, today)}`;
+}
+
+/**
+ * The age badge text for `task` at instant `now`: ageLabelText(ageStart(task), today in `tz`). A
+ * recurring instance counts from its own date (domain/age ageStart), so next month's bill is "חדשה".
+ */
+export function ageLabel(
+  task: Pick<Task, 'createdAt' | 'seriesId' | 'dueDate' | 'scheduledFor'>,
+  now: Millis | Date,
+  tz: string = DEFAULT_TZ
+): string {
+  return ageLabelText(ageStart(task, tz), todayISO(now, tz));
 }
 
 // ── Dates ─────────────────────────────────────────────────────────────────────
@@ -227,17 +253,35 @@ export function relativeDayLabel(iso: ISODate, today: ISODate): string {
 }
 
 /**
- * The "missed soft plan" hint (feminine, the subject is משימה): "מתוכננת מאתמול", a weekday within
- * the last 6 days ("מתוכננת מיום ה׳", "מתוכננת משבת"), else "מתוכננת מ-27/9". '' unless
- * `scheduledFor` is before `today`.
+ * The "missed soft plan" hint (feminine past, the subject is משימה): "תוכננה לאתמול", a weekday
+ * within the last 6 days ("תוכננה ליום ה׳", "תוכננה לשבת"), else "תוכננה ל-27/9". '' unless
+ * `scheduledFor` is before `today`. A day plan only: see planHint for week plans.
  */
 export function plannedFromLabel(scheduledFor: ISODate, today: ISODate): string {
   if (!isValidISO(scheduledFor) || !isValidISO(today)) return '';
   const ago = diffDays(today, scheduledFor);
   if (ago < 1) return '';
-  if (ago === 1) return 'מתוכננת מאתמול';
-  if (ago <= 6) return `מתוכננת מ${at(WEEKDAY_SHORT, weekday(scheduledFor))}`;
-  return `מתוכננת מ-${numericDay(scheduledFor, today)}`;
+  if (ago === 1) return 'תוכננה לאתמול';
+  if (ago <= 6) return `תוכננה ל${at(WEEKDAY_SHORT, weekday(scheduledFor))}`;
+  return `תוכננה ל-${numericDay(scheduledFor, today)}`;
+}
+
+/** The missed-week-plan copy (Task.weekPlan whose Saturday has passed). */
+const MISSED_WEEK = 'תוכננה לשבוע שעבר';
+
+/**
+ * The "missed plan" line on a card, aware of week plans: '' unless the task sits in Today only
+ * because its plan was missed (bucketInfo.plannedFromPast: an overdue task already shouts louder).
+ * Then "תוכננה לשבוע שעבר" for a week plan, plannedFromLabel ("תוכננה לאתמול") for a day plan.
+ */
+export function planHint(
+  task: Pick<Task, 'scheduledFor' | 'dueDate'> & { weekPlan?: boolean },
+  today: ISODate
+): string {
+  const { scheduledFor } = task;
+  if (scheduledFor === null || !isValidISO(scheduledFor) || !isValidISO(today)) return '';
+  if (!bucketInfo(task, today).plannedFromPast) return '';
+  return task.weekPlan === true ? MISSED_WEEK : plannedFromLabel(scheduledFor, today);
 }
 
 // ── Date chips ────────────────────────────────────────────────────────────────
@@ -257,24 +301,51 @@ function timeMinutes(hhmm: string | null): number | null {
 }
 
 /**
+ * A week plan's chip (Task.weekPlan, no dueDate; `scheduledFor` is the Saturday ending the week):
+ *   Saturday passed                       "תוכננה לשבוע שעבר"  (today: it sits in Today)
+ *   the Saturday is today                 "סוף השבוע"          (today)
+ *   up to weekHorizon(today)              "השבוע"              (normal)
+ *   the week right after the horizon      "בשבוע הבא"          (normal)
+ *   later                                 "שבוע של 24/10"      (normal: the week ending that Saturday)
+ */
+function weekPlanChip(saturday: ISODate, today: ISODate): WhenChip {
+  if (saturday < today) return { text: MISSED_WEEK, tone: 'today' };
+  if (saturday === today) return { text: 'סוף השבוע', tone: 'today' };
+  const horizon = weekHorizon(today);
+  if (saturday <= horizon) return { text: 'השבוע', tone: 'normal' };
+  if (saturday <= addDays(horizon, 7)) return { text: 'בשבוע הבא', tone: 'normal' };
+  return { text: `שבוע של ${numericDay(saturday, today)}`, tone: 'normal' };
+}
+
+/** The fields whenChip reads. `weekPlan` is optional (absent = a day plan). */
+export type WhenFields = Pick<Task, 'dueDate' | 'scheduledFor' | 'dueTime'> & {
+  weekPlan?: boolean;
+};
+
+/**
  * The date chip on a task card. It uses `dueDate` when there is one ("עד ..."), else `scheduledFor`
  * (no "עד"), and appends `dueTime` when set:
  *   "עד היום 17:30" (today)  "מחר 17:30" / "עד יום ג׳" (soon: the next 2 days)  "יום ד׳" / "עד 15/10" (normal)
  *   overdue due date        "באיחור של יום / יומיים / 3 ימים / שבוע / 3 שבועות / חודשיים"  (late)
- *   due today, time passed  "היום 09:00 · עבר"  (late; needs `now`, the local wall clock)
- *   missed soft plan        "מתוכננת מאתמול" (today; a missed plan is not overdue, see bucketOf)
+ *   due today, time passed  "היום 09:00 · הזמן עבר"  (late; needs `now`, the local wall clock)
+ *   missed soft plan        "תוכננה לאתמול" (today; a missed plan is not overdue, see bucketOf)
+ *   planned today (or a missed plan) with a LATER due date: both, "היום · עד 14/10" /
+ *                           "תוכננה לאתמול · עד מחר" (today: it is in Today because of the plan)
+ *   week plan, no due date  "השבוע" / "סוף השבוע" / "בשבוע הבא" / "שבוע של 24/10" /
+ *                           "תוכננה לשבוע שעבר" (see weekPlanChip; a week has no time of day)
  * null when the task has no date (or the date is malformed).
  * Only the tone and text are time-aware: BUCKETING STAYS DATE-ONLY (a task due today at 09:00 is in
  * "today" all day, and becomes overdue at midnight, not at 09:01).
  */
 export function whenChip(
-  task: Pick<Task, 'dueDate' | 'scheduledFor' | 'dueTime'>,
+  task: WhenFields,
   today: ISODate,
   now?: { hour: number; minute: number }
 ): WhenChip | null {
   const isDue = task.dueDate !== null;
   const date = task.dueDate ?? task.scheduledFor;
   if (date === null || !isValidISO(date) || !isValidISO(today)) return null;
+  if (!isDue && task.weekPlan === true) return weekPlanChip(date, today);
 
   const ahead = diffDays(date, today);
   if (ahead < 0) {
@@ -285,10 +356,23 @@ export function whenChip(
 
   const minutes = timeMinutes(task.dueTime);
   const time = minutes === null ? '' : ` ${formatTime(task.dueTime as string)}`;
+  const plan = task.scheduledFor;
+  if (isDue && ahead > 0 && plan !== null && isValidISO(plan) && plan <= today) {
+    const planned =
+      task.weekPlan === true
+        ? plan === today
+          ? 'סוף השבוע'
+          : MISSED_WEEK
+        : plan === today
+          ? 'היום'
+          : plannedFromLabel(plan, today);
+    return { text: `${planned} · עד ${relativeDayLabel(date, today)}${time}`, tone: 'today' };
+  }
+
   const prefix = isDue ? 'עד ' : '';
   if (ahead === 0) {
     if (minutes !== null && now !== undefined && now.hour * 60 + now.minute > minutes) {
-      return { text: `היום${time} · עבר`, tone: 'late' };
+      return { text: `היום${time} · הזמן עבר`, tone: 'late' };
     }
     return { text: `${prefix}היום${time}`, tone: 'today' };
   }
@@ -296,6 +380,19 @@ export function whenChip(
     text: `${prefix}${relativeDayLabel(date, today)}${time}`,
     tone: ahead <= 2 ? 'soon' : 'normal'
   };
+}
+
+/**
+ * The hard-deadline badge: "מועד אחרון: יום ד׳" (relativeDayLabel: היום / מחר / יום ד׳ / שבת /
+ * 15/10). null unless the task has a hard deadline with a valid dueDate.
+ */
+export function deadlineLabel(
+  task: Pick<Task, 'dueDate' | 'hardDeadline'>,
+  today: ISODate
+): string | null {
+  if (!task.hardDeadline || task.dueDate === null) return null;
+  const day = relativeDayLabel(task.dueDate, today);
+  return day === '' ? null : `מועד אחרון: ${day}`;
 }
 
 /**
@@ -345,6 +442,43 @@ export const SNOOZE_LABELS: Readonly<Record<SnoozeKey, string>> = {
   weekend: 'סוף השבוע',
   nextWeek: 'שבוע הבא',
   month: 'בעוד חודש'
+};
+
+/** The snooze sheet's quick options (domain snoozeOptions: deduped, sorted, capped) with labels. */
+export function labeledSnoozeOptions(
+  task: Pick<Task, 'dueDate' | 'hardDeadline'>,
+  today: ISODate
+): (SnoozeOption & { label: string })[] {
+  return snoozeOptions(task, today).map((o) => ({
+    key: o.key,
+    label: SNOOZE_LABELS[o.key],
+    date: o.date
+  }));
+}
+
+const SNOOZE_BLOCKED_TEXT: Readonly<Record<SnoozeBlockedReason, string>> = {
+  'deadline-today': 'היום המועד האחרון, אי אפשר לדחות'
+};
+
+/** Why the snooze sheet offers nothing (domain snoozeBlockedReason), in Hebrew. */
+export function snoozeBlockedText(reason: SnoozeBlockedReason): string {
+  return SNOOZE_BLOCKED_TEXT[reason];
+}
+
+// ── Static labels ─────────────────────────────────────────────────────────────
+
+/** Priority names (the card shows high and urgent; the edit sheet names all three). */
+export const PRIORITY_LABELS: Readonly<Record<Priority, string>> = {
+  normal: 'רגילה',
+  high: 'חשוב',
+  urgent: 'דחוף'
+};
+
+/** Recurrence names. */
+export const RECURRENCE_LABELS: Readonly<Record<RecurrenceFreq, string>> = {
+  weekly: 'כל שבוע',
+  monthly: 'כל חודש',
+  yearly: 'כל שנה'
 };
 
 // ── Time of day ───────────────────────────────────────────────────────────────

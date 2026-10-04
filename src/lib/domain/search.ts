@@ -313,7 +313,9 @@ interface Hit {
 }
 
 const byRank = (a: Hit, b: Hit): number =>
-  b.matched - a.matched || b.score - a.score || (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0);
+  b.matched - a.matched ||
+  b.score - a.score ||
+  (b.task.completedAt ?? 0) - (a.task.completedAt ?? 0);
 
 /**
  * Searches completed tasks over title, notes and the documentation (completion note, place,

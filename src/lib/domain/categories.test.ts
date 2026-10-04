@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { CATEGORY_ORDER, DEFAULT_CATEGORIES, getCategory } from './categories';
+import {
+  CATEGORY_ORDER,
+  categoryLabel,
+  categoryShort,
+  DEFAULT_CATEGORIES,
+  getCategory
+} from './categories';
 import type { CategoryId } from './types';
 
 describe('DEFAULT_CATEGORIES', () => {
@@ -109,5 +115,33 @@ describe('getCategory', () => {
 
   it('falls back to "other" for an id it does not know (bad stored data)', () => {
     expect(getCategory('spaceship' as CategoryId).id).toBe('other');
+  });
+});
+
+describe('categoryLabel / categoryShort', () => {
+  it('give the full label and the compact card label (Phase 1 council: Category.short)', () => {
+    expect(CATEGORY_ORDER.map((id) => categoryShort(id))).toEqual([
+      'רכב',
+      'קניות',
+      'בית',
+      'בריאות',
+      'כספים',
+      'החזרות',
+      'משפחה',
+      'אחר'
+    ]);
+    expect(categoryLabel('home')).toBe('בית ותיקונים');
+    expect(categoryLabel('family')).toBe('משפחה ואירועים');
+  });
+
+  it('every short label fits a card meta row (at most 8 characters)', () => {
+    for (const c of DEFAULT_CATEGORIES) expect(c.short.length).toBeLessThanOrEqual(8);
+  });
+
+  it('are empty for "no category" and fall back to "אחר" for an unknown id', () => {
+    expect(categoryLabel(null)).toBe('');
+    expect(categoryShort(undefined)).toBe('');
+    expect(categoryLabel('spaceship' as CategoryId)).toBe('אחר');
+    expect(categoryShort('spaceship' as CategoryId)).toBe('אחר');
   });
 });
