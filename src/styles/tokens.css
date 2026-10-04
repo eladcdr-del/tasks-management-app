@@ -1,10 +1,43 @@
 /*
  * HomeCare design tokens (Blueprint §8). CONTRACT — owned by step 1.1; step 7.2 may adjust values.
+ * Phase 1 council round (design system surgeon): semantic state, selection, control, field,
+ * inverse and icon-size tokens; member terracotta moved off the brand accent.
  *
  * Theme selection (set on <html>):
  *   no data-theme / data-theme="system" → follows prefers-color-scheme
  *   data-theme="light" | "dark"          → forced
- * The two dark blocks below are generated to be identical; keep them in sync.
+ * The two dark blocks below must stay IDENTICAL (src/styles/tokens.test.ts enforces it, and checks
+ * every contrast pair listed here).
+ *
+ * ── Colour semantics (Blueprint §3 "Phase 1 council amendments"; binding) ───────────────────────
+ *   overdue / urgent   solid --danger-solid fill, --on-danger (white) text and icon
+ *   due today          neutral sand badge: --due-bg + --due-edge ring, --due-fg text, ink icon
+ *   hard deadline      the same sand badge with the LockClock icon (--deadline-*)
+ *   selection          ink: --select-bg (ink) fill with --select-fg (bg) text, or a --select-ring
+ *   brand + parsed     --accent / --accent-soft only (never state, never selection)
+ *   members            their own palette; terracotta is a deeper clay, ΔE2000 ≥ 10 from --accent
+ *
+ * ── Measured contrast (WCAG 2.x; light / dark) ────────────────────────────────────────────────
+ *   text ≥ 4.5:1
+ *     --ink on --bg                       14.2 / 15.2
+ *     --ink-2 on --surface-2               5.3 /  7.3
+ *     --on-danger on --danger-solid        5.9 /  5.2
+ *     --select-fg on --select-bg          14.2 / 15.2
+ *     --due-fg on --due-bg                13.0 / 12.4
+ *     --placeholder on --surface           5.2 /  5.5
+ *     --inverse-ink on --inverse-surface  14.2 / 13.1
+ *     --inverse-accent on --inverse-surf.  7.4 /  5.2
+ *     --warn-ink on --warn-soft            5.6 /  8.2
+ *     --sage-ink on --success-soft         4.9 /  6.0
+ *     --danger on --danger-soft            4.7 /  5.5
+ *     --accent-ink on --accent-soft        4.9 /  6.0   (parsed tokens)
+ *     member -ink on -soft (worst of six)  4.7 /  6.8
+ *   non-text ≥ 3:1
+ *     --control-off (switch track, off) on --surface / --bg      3.7 / 3.5  ·  3.8 / 4.2
+ *     --field-edge (input boundary) on --surface / --bg          3.4 / 3.1  ·  3.4 / 3.7
+ *     --progress-fill on --progress-track                        4.0  ·  4.8
+ *     --danger-solid (badge shape) on --surface                   5.9  ·  3.1
+ *     --focus-ring on --bg / --surface                            4.3 / 4.6  ·  6.9 / 6.2
  */
 
 :root {
@@ -17,17 +50,56 @@
   --line: #eadfd2; /* hairlines */
   --ink: #2b2420; /* primary text */
   --ink-2: #6b5f57; /* secondary text (AA on bg) */
-  --ink-3: #998b80; /* icons / placeholder only: >= 3:1 on --bg / --surface only, NOT on --surface-2 */
-  --accent: #d9774b; /* fills, FAB, jar (not text, not the focus ring: 2.9:1 on --bg) */
+  --ink-3: #998b80; /* icons only: >= 3:1 on --bg / --surface only, NOT on --surface-2 */
+  --accent: #d9774b; /* brand fills, FAB, jar (not text, not the focus ring: 2.9:1 on --bg) */
   --accent-strong: #b85a2c; /* primary button bg */
   --ink-on-accent: #ffffff; /* text on --accent-strong (4.6:1 light / 8:1 dark) */
   --accent-ink: #a04822; /* accent text / links */
-  --accent-soft: #f6e2d6; /* selected chip bg */
+  --accent-soft: #f6e2d6; /* RESERVED: brand moments and parsed quick-add tokens only */
   --sage: #8ba888; /* secondary fills, success */
   --sage-ink: #4f6b4d; /* success text */
-  --danger: #b23b2a; /* overdue / urgent text */
-  --danger-soft: #f8e1dc; /* danger tint */
+  --danger: #b23b2a; /* overdue / urgent TEXT and icons */
+  --danger-soft: #f8e1dc; /* error tint (field errors, danger banner); not a task state */
   --focus-ring: #b85a2c; /* :focus-visible outline (= --accent-strong): 4.3:1 on --bg, >= 3:1 everywhere */
+
+  /* State treatments (see the colour-semantics table above). */
+  --danger-solid: #b23b2a; /* overdue / urgent badge fill */
+  --on-danger: #ffffff; /* text + icon on --danger-solid */
+  --due-bg: #f4ece1; /* = --surface-2 */
+  --due-edge: #ddcfbf; /* ring around the due badge (defines the pill on cream and on sand) */
+  --due-fg: #2b2420; /* = --ink */
+  --due-icon: #2b2420;
+  --deadline-bg: #f4ece1;
+  --deadline-edge: #ddcfbf;
+  --deadline-fg: #2b2420;
+  --deadline-icon: #2b2420; /* LockClock */
+  --warn-soft: #f6ead0;
+  --warn-ink: #76570f;
+  --info-soft: #f4ece1;
+  --info-ink: #2b2420;
+  --success-soft: #e5ece5;
+
+  /* Selection: ink-based (filter chips, selectable chips, member filter, radios, swatches). */
+  --select-bg: #2b2420; /* = --ink */
+  --select-fg: #fbf6ef; /* = --bg */
+  --select-ring: #2b2420;
+  --select-soft: #f0eeed; /* faint ink wash behind a ringed selection */
+
+  /* Surfaces & controls */
+  --surface-raised: #ffffff; /* segmented thumb, stepper buttons: one step above --surface-2 */
+  --surface-raised-edge: transparent;
+  --inverse-surface: #2b2420; /* snackbar: dark on light */
+  --inverse-ink: #fbf6ef;
+  --inverse-accent: #f0a27c; /* action text on --inverse-surface */
+  --inverse-success: #b5ccb2; /* icon on --inverse-surface */
+  --inverse-edge: transparent;
+  --progress-track: #f4ece1;
+  --progress-fill: #b85a2c; /* 4.0:1 on the track (--accent alone is 2.7:1) */
+  --control-off: #8f8277; /* switch track, off */
+  --control-thumb: #ffffff;
+  --field-edge: #968a80; /* text-field boundary */
+  --placeholder: #776a61;
+  --hairline-strong: #ddcfbf; /* outlined chips / pickers at rest */
 
   /*
    * Member palette: -base (fills, rings), -soft (bg tint), -ink (AA text on soft/surface),
@@ -35,10 +107,12 @@
    * AA pairing for avatars, chips and member labels: text/initials use --m-on (= --m-ink) on a
    * --m-soft fill, with a --m-base ring. Ink on soft is >= 4.7:1 for every member in light and dark.
    * Never put white (or --ink-on-accent) text on --m-base: 2.6–4.3:1 fails AA.
+   * Terracotta is a deeper clay than the brand accent (ΔE2000 11 from --accent, 11 from --danger),
+   * so "Mom's colour" never reads as the brand, a parsed token or a state.
    */
-  --member-terracotta-base: #d9774b;
-  --member-terracotta-soft: #f6e2d6;
-  --member-terracotta-ink: #a04822;
+  --member-terracotta-base: #b26450;
+  --member-terracotta-soft: #f2dfd9;
+  --member-terracotta-ink: #8c4330;
   --member-terracotta-on: var(--member-terracotta-ink);
   --member-sage-base: #7e9e7b;
   --member-sage-soft: #e3ece1;
@@ -65,14 +139,21 @@
   --sh-1: 0 1px 2px rgba(74, 44, 24, 0.06), 0 2px 8px rgba(74, 44, 24, 0.05);
   --sh-2: 0 6px 24px rgba(74, 44, 24, 0.1);
   --sh-sheet: 0 -8px 32px rgba(74, 44, 24, 0.14);
+  --sh-raised: 0 1px 2px rgba(74, 44, 24, 0.08), 0 2px 6px rgba(74, 44, 24, 0.06);
+  --sh-inverse: 0 8px 28px rgba(43, 36, 32, 0.22), 0 2px 6px rgba(43, 36, 32, 0.12);
   --edge: 1px solid transparent; /* card/sheet border: invisible in light, --line in dark */
   --scrim: rgba(43, 36, 32, 0.32); /* sheet / dialog backdrop */
 
-  /* ── Spacing: 4-pt scale ────────────────────────────────────────────────── */
+  /* ── Spacing: 4-pt scale, plus 2-pt half steps for optical tweaks ───────── */
+  --s0-5: 2px;
   --s1: 4px;
+  --s1-5: 6px;
   --s2: 8px;
+  --s2-5: 10px;
   --s3: 12px;
+  --s3-5: 14px;
   --s4: 16px;
+  --s4-5: 18px;
   --s5: 20px;
   --s6: 24px;
   --s7: 32px;
@@ -83,11 +164,21 @@
   --card-pad: var(--s4); /* 16 */
 
   /* ── Radii ──────────────────────────────────────────────────────────────── */
+  --r-xs: 8px; /* badges, count pills inside chips */
   --r-sm: 10px;
-  --r-md: 16px; /* chips, inputs */
-  --r-lg: 22px; /* cards */
-  --r-xl: 28px; /* sheet top */
+  --r-control-sm: 12px; /* small buttons, segmented thumb, icon tiles */
+  --r-control: 14px; /* medium buttons */
+  --r-md: 16px; /* chips, inputs, large buttons */
+  --r-lg: 22px; /* cards, FAB */
+  --r-xl: 28px; /* sheet top, dialogs */
   --r-pill: 999px;
+
+  /* ── Icons: sized in em so they grow with the text next to them ─────────── */
+  --icon-xs: 1em;
+  --icon-sm: 1.125em; /* badges, chips, buttons (13–17px text → 15–19px icons) */
+  --icon-md: 1.25em; /* list-row leading icons, fields */
+  --icon-lg: 1.5em;
+  --icon-stroke: 1.75; /* every Lucide icon (= ICON_STROKE in components/ui/types.ts) */
 
   /* ── Type: Rubik, rem-based (honours the system font scale) ─────────────── */
   --font-sans:
@@ -213,10 +304,46 @@
   --danger-soft: #4a2420;
   --focus-ring: #e58a5f; /* = dark --accent: 6.9:1 on --bg */
 
+  --danger-solid: #c0402c; /* --danger is a light coral for text here; the fill carries white */
+  --on-danger: #ffffff;
+  --due-bg: #302823;
+  --due-edge: #4a3f37;
+  --due-fg: #f4ece3;
+  --due-icon: #f4ece3;
+  --deadline-bg: #302823;
+  --deadline-edge: #4a3f37;
+  --deadline-fg: #f4ece3;
+  --deadline-icon: #f4ece3;
+  --warn-soft: #3a3020;
+  --warn-ink: #e8cb8c;
+  --info-soft: #302823;
+  --info-ink: #f4ece3;
+  --success-soft: #404138;
+
+  --select-bg: #f4ece3;
+  --select-fg: #1c1714;
+  --select-ring: #f4ece3;
+  --select-soft: #36302c;
+
+  --surface-raised: #43382f;
+  --surface-raised-edge: #4d4037;
+  --inverse-surface: #f4ece3; /* truly inverse: a light snackbar on the dark app */
+  --inverse-ink: #2b2420;
+  --inverse-accent: #a04822;
+  --inverse-success: #4f6b4d;
+  --inverse-edge: transparent;
+  --progress-track: #3d332d;
+  --progress-fill: #e58a5f;
+  --control-off: #857870;
+  --control-thumb: #f4ece3;
+  --field-edge: #7d7067;
+  --placeholder: #a3958a;
+  --hairline-strong: #4a3f37;
+
   /* Member palette: see the light block for the AA pairing rule (--m-on on --m-soft). */
-  --member-terracotta-base: #e58a5f;
-  --member-terracotta-soft: #4a2e21;
-  --member-terracotta-ink: #f0a27c;
+  --member-terracotta-base: #cf8f78;
+  --member-terracotta-soft: #40302a;
+  --member-terracotta-ink: #e9b8a5;
   --member-terracotta-on: var(--member-terracotta-ink);
   --member-sage-base: #9db89a;
   --member-sage-soft: #2e3a2d;
@@ -242,6 +369,8 @@
   --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
   --sh-2: 0 6px 24px rgba(0, 0, 0, 0.4);
   --sh-sheet: 0 -8px 32px rgba(0, 0, 0, 0.4);
+  --sh-raised: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+  --sh-inverse: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
   --edge: 1px solid var(--line);
   --scrim: rgba(0, 0, 0, 0.55);
 }
@@ -269,10 +398,46 @@
     --danger-soft: #4a2420;
     --focus-ring: #e58a5f; /* = dark --accent: 6.9:1 on --bg */
 
+    --danger-solid: #c0402c; /* --danger is a light coral for text here; the fill carries white */
+    --on-danger: #ffffff;
+    --due-bg: #302823;
+    --due-edge: #4a3f37;
+    --due-fg: #f4ece3;
+    --due-icon: #f4ece3;
+    --deadline-bg: #302823;
+    --deadline-edge: #4a3f37;
+    --deadline-fg: #f4ece3;
+    --deadline-icon: #f4ece3;
+    --warn-soft: #3a3020;
+    --warn-ink: #e8cb8c;
+    --info-soft: #302823;
+    --info-ink: #f4ece3;
+    --success-soft: #404138;
+
+    --select-bg: #f4ece3;
+    --select-fg: #1c1714;
+    --select-ring: #f4ece3;
+    --select-soft: #36302c;
+
+    --surface-raised: #43382f;
+    --surface-raised-edge: #4d4037;
+    --inverse-surface: #f4ece3; /* truly inverse: a light snackbar on the dark app */
+    --inverse-ink: #2b2420;
+    --inverse-accent: #a04822;
+    --inverse-success: #4f6b4d;
+    --inverse-edge: transparent;
+    --progress-track: #3d332d;
+    --progress-fill: #e58a5f;
+    --control-off: #857870;
+    --control-thumb: #f4ece3;
+    --field-edge: #7d7067;
+    --placeholder: #a3958a;
+    --hairline-strong: #4a3f37;
+
     /* Member palette: see the light block for the AA pairing rule (--m-on on --m-soft). */
-    --member-terracotta-base: #e58a5f;
-    --member-terracotta-soft: #4a2e21;
-    --member-terracotta-ink: #f0a27c;
+    --member-terracotta-base: #cf8f78;
+    --member-terracotta-soft: #40302a;
+    --member-terracotta-ink: #e9b8a5;
     --member-terracotta-on: var(--member-terracotta-ink);
     --member-sage-base: #9db89a;
     --member-sage-soft: #2e3a2d;
@@ -298,6 +463,8 @@
     --sh-1: 0 1px 2px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.4);
     --sh-2: 0 6px 24px rgba(0, 0, 0, 0.4);
     --sh-sheet: 0 -8px 32px rgba(0, 0, 0, 0.4);
+    --sh-raised: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.2);
+    --sh-inverse: 0 8px 28px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
     --edge: 1px solid var(--line);
     --scrim: rgba(0, 0, 0, 0.55);
   }
