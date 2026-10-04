@@ -109,6 +109,17 @@ export function dueOne(task: ReminderTask): Copy {
   };
 }
 
+/**
+ * Due-day morning, one TIMED PLAN (no due date, a time, planned for today): "היום ב-17:30: {title}".
+ * A plan is not a deadline, so there is no "עד השעה".
+ */
+export function planOne(task: ReminderTask & { dueTime: string }): Copy {
+  return {
+    title: `היום ב-${task.dueTime}: ${cleanTitle(task.title)}`,
+    body: task.ownerId === null ? 'עוד לא נלקחה' : 'מחכה ברשימה של היום'
+  };
+}
+
 /** Due-day morning, coalesced: "3 משימות להיום". */
 export function dueMany(taskTitles: string[]): Copy {
   return { title: `${taskTitles.length} משימות להיום`, body: titleList(taskTitles) };

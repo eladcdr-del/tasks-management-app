@@ -74,6 +74,8 @@ export interface Task {
   updatedBy: string;
   updatedAt: Millis;
   scheduledFor: ISODate | null;
+  /** true: scheduledFor is the Saturday ending a planned week ("השבוע"), not a day. */
+  weekPlan: boolean;
   dueDate: ISODate | null;
   dueTime: string | null; // 'HH:mm'
   hardDeadline: boolean;

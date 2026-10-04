@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { bucketOf, needsAttention } from './buckets';
-import { snoozeOptions, snoozePatch, snoozeTargets } from './snooze';
+import {
+  snoozeBlockedReason,
+  snoozeMaxDate,
+  snoozeOptions,
+  snoozePatch,
+  snoozeTargets
+} from './snooze';
 import type { Task } from './types';
 
 // Fixture clock: Sunday 2026-10-04 (the week runs Sun 10-04 .. Sat 10-10).
@@ -80,13 +86,13 @@ describe('snoozeTargets', () => {
 
 describe('snoozeOptions', () => {
   const all = [
-    { key: 'tomorrow', label: 'מחר', date: '2026-10-05' },
-    { key: 'weekend', label: 'סוף השבוע', date: '2026-10-09' },
-    { key: 'nextWeek', label: 'שבוע הבא', date: '2026-10-11' },
-    { key: 'month', label: 'בעוד חודש', date: '2026-11-04' }
+    { key: 'tomorrow', date: '2026-10-05' },
+    { key: 'weekend', date: '2026-10-09' },
+    { key: 'nextWeek', date: '2026-10-11' },
+    { key: 'month', date: '2026-11-04' }
   ];
 
-  it('offers all four, labelled, for a plan-only or undated task', () => {
+  it('offers all four keys (the labels live in i18n/format) for a plan-only or undated task', () => {
     expect(snoozeOptions(task(), TODAY)).toEqual(all);
     expect(snoozeOptions(task({ scheduledFor: TODAY }), TODAY)).toEqual(all);
   });
@@ -109,12 +115,89 @@ describe('snoozeOptions', () => {
   it('a MISSED hard deadline offers everything (snoozing turns it into a moved date)', () => {
     expect(snoozeOptions(task({ dueDate: '2026-10-01', hardDeadline: true }), TODAY)).toEqual(all);
   });
+
+  it('never offers the same date twice: the earlier key in מחר > סוף השבוע > שבוע הבא wins', () => {
+    // Thursday: tomorrow is the coming Friday
+    expect(snoozeOptions(task(), '2026-10-08')).toEqual([
+      { key: 'tomorrow', date: '2026-10-09' },
+      { key: 'nextWeek', date: '2026-10-11' },
+      { key: 'month', date: '2026-11-08' }
+    ]);
+    // Saturday: tomorrow is next Sunday
+    expect(snoozeOptions(task(), '2026-10-10')).toEqual([
+      { key: 'tomorrow', date: '2026-10-11' },
+      { key: 'weekend', date: '2026-10-16' },
+      { key: 'month', date: '2026-11-10' }
+    ]);
+  });
+
+  it('sorts by date: on Friday "שבוע הבא" (Sunday) comes before "סוף השבוע" (next Friday)', () => {
+    expect(snoozeOptions(task(), '2026-10-09')).toEqual([
+      { key: 'tomorrow', date: '2026-10-10' },
+      { key: 'nextWeek', date: '2026-10-11' },
+      { key: 'weekend', date: '2026-10-16' },
+      { key: 'month', date: '2026-11-09' }
+    ]);
+  });
+
+  it('every day of a year: dates strictly ascending, unique, after today, within a month', () => {
+    let day = '2026-01-01';
+    for (let i = 0; i < 366; i++) {
+      const dates = snoozeOptions(task(), day).map((o) => o.date);
+      expect(dates.length).toBeGreaterThanOrEqual(3);
+      dates.forEach((d, j) => {
+        expect(d > day).toBe(true);
+        if (j > 0) expect(d > (dates[j - 1] as string)).toBe(true);
+      });
+      expect(dates.at(-1)).toBe(snoozeTargets(day).month);
+      day = snoozeTargets(day).tomorrow;
+    }
+  });
+});
+
+describe('snoozeMaxDate / snoozeBlockedReason', () => {
+  it('caps at a hard deadline that is today or ahead', () => {
+    expect(snoozeMaxDate(task({ dueDate: '2026-10-09', hardDeadline: true }), TODAY)).toBe(
+      '2026-10-09'
+    );
+    expect(snoozeMaxDate(task({ dueDate: TODAY, hardDeadline: true }), TODAY)).toBe(TODAY);
+  });
+
+  it('has no cap without a hard deadline, or once it was missed (it then moves)', () => {
+    expect(snoozeMaxDate(task(), TODAY)).toBeNull();
+    expect(snoozeMaxDate(task({ dueDate: '2026-10-09' }), TODAY)).toBeNull();
+    expect(snoozeMaxDate(task({ dueDate: '2026-10-01', hardDeadline: true }), TODAY)).toBeNull();
+    expect(snoozeMaxDate(task({ hardDeadline: true }), TODAY)).toBeNull(); // a flag without a date
+  });
+
+  it('blocks snoozing only on the last day of a hard deadline', () => {
+    expect(snoozeBlockedReason(task({ dueDate: TODAY, hardDeadline: true }), TODAY)).toBe(
+      'deadline-today'
+    );
+    expect(snoozeBlockedReason(task({ dueDate: '2026-10-05', hardDeadline: true }), TODAY)).toBe(
+      null
+    );
+    expect(snoozeBlockedReason(task({ dueDate: TODAY }), TODAY)).toBeNull();
+    expect(snoozeBlockedReason(task({ dueDate: '2026-10-01', hardDeadline: true }), TODAY)).toBe(
+      null
+    );
+    expect(snoozeBlockedReason(task(), TODAY)).toBeNull();
+  });
+
+  it('agrees with snoozeOptions: blocked means no options, a cap keeps only dates up to it', () => {
+    const blocked = task({ dueDate: TODAY, hardDeadline: true });
+    expect(snoozeOptions(blocked, TODAY)).toEqual([]);
+    const capped = task({ dueDate: '2026-10-07', hardDeadline: true });
+    const max = snoozeMaxDate(capped, TODAY) as string;
+    expect(snoozeOptions(capped, TODAY).every((o) => o.date <= max)).toBe(true);
+  });
 });
 
 describe('snoozePatch', () => {
-  it('always sets scheduledFor, bumps snoozeCount and stamps lastSnoozedAt', () => {
+  it('always sets scheduledFor (a day: weekPlan false), bumps snoozeCount, stamps lastSnoozedAt', () => {
     expect(snoozePatch(task({ snoozeCount: 2 }), '2026-10-09', NOW, TODAY)).toEqual({
       scheduledFor: '2026-10-09',
+      weekPlan: false,
       snoozeCount: 3,
       lastSnoozedAt: NOW
     });
@@ -122,13 +205,30 @@ describe('snoozePatch', () => {
 
   it('plan-only: moves the plan and touches nothing else', () => {
     const patch = snoozePatch(task({ scheduledFor: '2026-10-03' }), '2026-10-05', NOW, TODAY);
-    expect(patch).toEqual({ scheduledFor: '2026-10-05', snoozeCount: 1, lastSnoozedAt: NOW });
+    expect(patch).toEqual({
+      scheduledFor: '2026-10-05',
+      weekPlan: false,
+      snoozeCount: 1,
+      lastSnoozedAt: NOW
+    });
     expect(patch).not.toHaveProperty('dueDate');
+    expect(patch).not.toHaveProperty('hardDeadline');
+  });
+
+  it('a week plan becomes a day plan (snooze targets are days)', () => {
+    const weekPlan = task({ scheduledFor: '2026-10-10', weekPlan: true });
+    expect(snoozePatch(weekPlan, '2026-10-11', NOW, TODAY)).toEqual({
+      scheduledFor: '2026-10-11',
+      weekPlan: false,
+      snoozeCount: 1,
+      lastSnoozedAt: NOW
+    });
   });
 
   it('a soft due date moves with the snooze', () => {
     expect(snoozePatch(task({ dueDate: '2026-10-06' }), '2026-10-11', NOW, TODAY)).toEqual({
       scheduledFor: '2026-10-11',
+      weekPlan: false,
       dueDate: '2026-10-11',
       snoozeCount: 1,
       lastSnoozedAt: NOW
@@ -146,8 +246,14 @@ describe('snoozePatch', () => {
       NOW,
       TODAY
     );
-    expect(ahead).toEqual({ scheduledFor: '2026-10-05', snoozeCount: 1, lastSnoozedAt: NOW });
+    expect(ahead).toEqual({
+      scheduledFor: '2026-10-05',
+      weekPlan: false,
+      snoozeCount: 1,
+      lastSnoozedAt: NOW
+    });
     expect(ahead).not.toHaveProperty('dueDate');
+    expect(ahead).not.toHaveProperty('hardDeadline');
     const dueToday = snoozePatch(
       task({ dueDate: TODAY, hardDeadline: true }),
       '2026-10-05',
@@ -157,15 +263,27 @@ describe('snoozePatch', () => {
     expect(dueToday).not.toHaveProperty('dueDate');
   });
 
-  it('a MISSED hard deadline becomes a moved date', () => {
-    expect(
-      snoozePatch(task({ dueDate: '2026-10-01', hardDeadline: true }), '2026-10-05', NOW, TODAY)
-    ).toEqual({
+  it('a MISSED hard deadline becomes a moved, SOFT date (council A-M1)', () => {
+    const missed = task({ dueDate: '2026-10-01', hardDeadline: true });
+    const patch = snoozePatch(missed, '2026-10-05', NOW, TODAY);
+    expect(patch).toEqual({
       scheduledFor: '2026-10-05',
+      weekPlan: false,
       dueDate: '2026-10-05',
+      hardDeadline: false,
       snoozeCount: 1,
       lastSnoozedAt: NOW
     });
+    // no fake lock-clock afterwards: it is neither attention-worthy as a hard deadline nor capped
+    const after = { ...missed, ...patch };
+    expect(needsAttention(after, '2026-10-04')).toBe(false);
+    expect(snoozeMaxDate(after, TODAY)).toBeNull();
+  });
+
+  it('a soft due date never gains a hardDeadline key', () => {
+    expect(
+      snoozePatch(task({ dueDate: '2026-10-01' }), '2026-10-05', NOW, TODAY)
+    ).not.toHaveProperty('hardDeadline');
   });
 
   it('has a visible effect: the task leaves today / overdue for the target bucket', () => {
@@ -208,7 +326,8 @@ describe('snoozePatch', () => {
       'dueDate',
       'lastSnoozedAt',
       'scheduledFor',
-      'snoozeCount'
+      'snoozeCount',
+      'weekPlan'
     ]);
     expect(recurring).toEqual(snapshot);
   });

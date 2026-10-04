@@ -7,7 +7,8 @@
 //   effective date  eff = min(dueDate, scheduledFor), ignoring nulls (null when the task has neither)
 //   week horizon    the last day of "this week": Saturday, or NEXT Saturday on Friday and Saturday
 //   bucket          overdue | today | week | later, see bucketOf
-//   attention       overdue, OR urgent and not planned for a later day (see needsAttention)
+//   attention       overdue, OR urgent and not planned for a later day, OR a hard deadline today or
+//                   tomorrow (see needsAttention)
 //   waiting         nobody (or a former member) owns it, see groupTasks
 
 import { addDays, endOfWeek, minISO, weekday } from './dates';
@@ -51,7 +52,7 @@ export function bucketOf(task: Dated, today: ISODate): Bucket {
 /**
  * The bucket plus the "planned from the past" hint flag: true when the task sits in `today` only
  * because its soft plan (scheduledFor) was missed. Overdue tasks never carry it (they already shout
- * louder). The hint's copy is plannedFromLabel in i18n/format ("מתוכננת מאתמול").
+ * louder). The hint's copy is planHint in i18n/format ("תוכננה לאתמול", "תוכננה לשבוע שעבר").
  */
 export function bucketInfo(
   task: Dated,
@@ -65,11 +66,19 @@ export function bucketInfo(
 }
 
 /**
- * Overdue, OR urgent AND (no plan, or planned for today or earlier). Snoozing an urgent task (which
- * sets scheduledFor, see snooze.ts) therefore takes it out of attention until its new date.
+ * A task needs attention when it is:
+ *  - overdue (dueDate < today), or
+ *  - urgent AND (no plan, or planned for today or earlier): snoozing an urgent task (which sets
+ *    scheduledFor, see snooze.ts) therefore takes it out of attention until its new date, or
+ *  - a hard deadline on its last day or the day before (dueDate <= today + 1), whatever its plan:
+ *    a snooze cannot move a hard deadline that is still ahead, so it keeps shouting.
  */
-export function needsAttention(task: Dated & Pick<Task, 'priority'>, today: ISODate): boolean {
+export function needsAttention(
+  task: Dated & Pick<Task, 'priority' | 'hardDeadline'>,
+  today: ISODate
+): boolean {
   if (bucketOf(task, today) === 'overdue') return true;
+  if (task.hardDeadline && task.dueDate !== null && task.dueDate <= addDays(today, 1)) return true;
   return task.priority === 'urgent' && (task.scheduledFor === null || task.scheduledFor <= today);
 }
 
@@ -97,7 +106,7 @@ export function sortTasks<T extends Dated & Pick<Task, 'priority' | 'createdAt'>
 }
 
 export interface GroupedTasks {
-  /** needsAttention: overdue, or urgent and not planned for later. Owned or not. */
+  /** needsAttention: overdue, urgent and not planned for later, or a hard deadline today/tomorrow. */
   attention: Task[];
   /** Unowned tasks (or a former member's) that are not already in `attention`. */
   waiting: Task[];
@@ -105,6 +114,12 @@ export interface GroupedTasks {
   week: Task[];
   later: Task[];
 }
+
+/**
+ * The household's current member uids, REQUIRED so no caller forgets former members. `undefined`
+ * means "not known yet" (the household document is still loading): owners are then trusted as-is.
+ */
+export type MemberIds = readonly string[] | undefined;
 
 /**
  * Splits open tasks into the Home screen's sections, each sorted with `sortTasks`.
@@ -122,13 +137,14 @@ export interface GroupedTasks {
  *     de-emphasises unowned cards in the time lists. pulseCounts follows the lists, so its today and
  *     waiting numbers can count the same task.
  *
- * Defensive: tasks whose status is not 'open' are ignored. When `memberIds` is given, a task owned
- * by someone who is not in it (a member who left the household) is treated as unowned.
+ * Defensive: tasks whose status is not 'open' are ignored. A task owned by someone who is not in
+ * `memberIds` (a member who left the household) is treated as unowned; with `memberIds` undefined
+ * (not loaded yet) every owner is trusted.
  */
 export function groupTasks(
   openTasks: readonly Task[],
   today: ISODate,
-  memberIds?: readonly string[]
+  memberIds: MemberIds
 ): GroupedTasks {
   const members = memberIds === undefined ? null : new Set(memberIds);
   const attention: Task[] = [];
@@ -166,7 +182,7 @@ export function groupTasks(
 export function pulseCounts(
   openTasks: readonly Task[],
   today: ISODate,
-  memberIds?: readonly string[]
+  memberIds: MemberIds
 ): { attention: number; today: number; waiting: number } {
   const g = groupTasks(openTasks, today, memberIds);
   return { attention: g.attention.length, today: g.today.length, waiting: g.waiting.length };

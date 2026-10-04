@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { addDays } from '../domain/dates';
 import {
+  ageLabel,
   ageLabelText,
   daysUntil,
+  deadlineLabel,
   dueChipLabel,
   elapsedText,
   formatCurrency,
@@ -11,7 +14,9 @@ import {
   formatNumber,
   formatTime,
   greeting,
+  labeledSnoozeOptions,
   monthKey,
+  planHint,
   plannedFromLabel,
   pluralDays,
   pluralMonths,
@@ -19,8 +24,11 @@ import {
   pluralTimes,
   pluralWeeks,
   pluralYears,
+  PRIORITY_LABELS,
+  RECURRENCE_LABELS,
   relativeDayLabel,
   SNOOZE_LABELS,
+  snoozeBlockedText,
   snoozedLabel,
   validForLabel,
   whenChip
@@ -135,7 +143,8 @@ describe('dueChipLabel', () => {
     expect(dueChipLabel(due('2026-10-02'), TODAY)).toBe('באיחור של יומיים');
     expect(dueChipLabel(due('2026-10-01'), TODAY)).toBe('באיחור של 3 ימים');
     expect(dueChipLabel(due('2026-09-29'), TODAY)).toBe('באיחור של 5 ימים');
-    expect(dueChipLabel(due('2026-08-24'), TODAY)).toBe('באיחור של חודש'); // same scale as age
+    expect(dueChipLabel(due('2026-08-24'), TODAY)).toBe('באיחור של 5 שבועות'); // same scale as age
+    expect(dueChipLabel(due('2026-07-24'), TODAY)).toBe('באיחור של חודשיים');
   });
 
   it('is null when the task has no due date (a soft plan alone has no deadline chip)', () => {
@@ -267,21 +276,27 @@ describe('elapsedText (the shared age / lateness scale, calendar-aware)', () => 
     expect(elapsedText(TODAY, TODAY)).toBe('0 ימים');
   });
 
-  it('counts whole weeks from 7 days until a calendar month has passed', () => {
+  it('counts whole weeks from 7 days up to 8 weeks (59 days)', () => {
     expect(elapsedText('2026-09-27', TODAY)).toBe('שבוע');
+    expect(elapsedText('2026-09-21', TODAY)).toBe('שבוע'); // 13 days
     expect(elapsedText('2026-09-20', TODAY)).toBe('שבועיים');
     expect(elapsedText('2026-09-13', TODAY)).toBe('3 שבועות');
-    expect(elapsedText('2026-09-05', TODAY)).toBe('4 שבועות'); // 29 days, a day short of a month
-    expect(elapsedText('2026-01-01', '2026-01-31')).toBe('4 שבועות'); // 30 days, still January
+    expect(elapsedText('2026-09-05', TODAY)).toBe('4 שבועות'); // 29 days
+    expect(elapsedText('2026-09-04', TODAY)).toBe('4 שבועות'); // 30 days: a calendar month, still weeks
+    expect(elapsedText('2026-02-01', '2026-03-01')).toBe('4 שבועות'); // a full February
+    expect(elapsedText('2026-08-23', TODAY)).toBe('6 שבועות'); // 42 days
+    expect(elapsedText('2026-08-16', TODAY)).toBe('7 שבועות'); // 49 days
+    expect(elapsedText('2026-08-09', TODAY)).toBe('8 שבועות'); // 56 days
+    expect(elapsedText('2026-08-06', TODAY)).toBe('8 שבועות'); // 59 days
   });
 
-  it('switches to months on the same day of the next month (calendar months, not 30-day blocks)', () => {
-    expect(elapsedText('2026-09-04', TODAY)).toBe('חודש');
-    expect(elapsedText('2026-02-01', '2026-03-01')).toBe('חודש'); // only 28 days, but a full month
-    expect(elapsedText('2026-01-31', '2026-02-28')).toBe('חודש'); // month end to month end
-    expect(elapsedText('2026-08-05', TODAY)).toBe('חודש'); // a day short of two months
+  it('switches to calendar months at 60 days, starting at חודשיים (never back to "חודש")', () => {
+    expect(elapsedText('2026-08-05', TODAY)).toBe('חודשיים'); // 60 days
+    expect(elapsedText('2026-07-31', '2026-09-29')).toBe('חודשיים'); // 60 days, 1 calendar month
     expect(elapsedText('2026-08-04', TODAY)).toBe('חודשיים');
-    expect(elapsedText('2026-07-04', TODAY)).toBe('3 חודשים');
+    expect(elapsedText('2026-07-05', TODAY)).toBe('חודשיים'); // a day short of three months
+    expect(elapsedText('2026-07-04', TODAY)).toBe('3 חודשים'); // same day of the month
+    expect(elapsedText('2026-01-31', '2026-04-30')).toBe('3 חודשים'); // month end, clamped
     expect(elapsedText('2025-10-05', TODAY)).toBe('11 חודשים'); // a day short of a year
   });
 
@@ -313,7 +328,8 @@ describe('ageLabelText (Hebrew copy for the age badge)', () => {
     expect(ageLabelText('2026-09-27', TODAY)).toBe('פתוחה שבוע');
     expect(ageLabelText('2026-09-13', TODAY)).toBe('פתוחה 3 שבועות');
     expect(ageLabelText('2026-09-05', TODAY)).toBe('פתוחה 4 שבועות');
-    expect(ageLabelText('2026-09-04', TODAY)).toBe('פתוחה חודש');
+    expect(ageLabelText('2026-09-04', TODAY)).toBe('פתוחה 4 שבועות');
+    expect(ageLabelText('2026-08-16', TODAY)).toBe('פתוחה 7 שבועות');
     expect(ageLabelText('2026-08-04', TODAY)).toBe('פתוחה חודשיים');
     expect(ageLabelText('2025-10-05', TODAY)).toBe('פתוחה 11 חודשים');
     expect(ageLabelText('2025-10-04', TODAY)).toBe('פתוחה שנה');
@@ -322,6 +338,61 @@ describe('ageLabelText (Hebrew copy for the age badge)', () => {
   it('is empty for malformed dates', () => {
     expect(ageLabelText('', TODAY)).toBe('');
     expect(ageLabelText(TODAY, '2026-13-01')).toBe('');
+  });
+});
+
+describe('ageLabel (the age badge of a task: ageLabelText from domain ageStart)', () => {
+  const NOW = Date.parse(`${TODAY}T09:00:00+03:00`);
+  /** createdAt `n` calendar days before NOW, same local time. */
+  const created = (n: number) => Date.parse(`${addDays(TODAY, -n)}T09:00:00+03:00`);
+  const oneOff = (createdAt: number) => ({
+    createdAt,
+    seriesId: null,
+    dueDate: null,
+    scheduledFor: null
+  });
+  const label = (days: number) => ageLabel(oneOff(created(days)), NOW);
+
+  it('is "חדשה" for the first two days', () => {
+    expect(label(0)).toBe('חדשה');
+    expect(label(1)).toBe('חדשה');
+  });
+
+  it('counts days, then weeks up to 8, then calendar months, then years', () => {
+    expect(label(2)).toBe('פתוחה יומיים');
+    expect(label(6)).toBe('פתוחה 6 ימים');
+    expect(label(7)).toBe('פתוחה שבוע');
+    expect(label(14)).toBe('פתוחה שבועיים');
+    expect(label(21)).toBe('פתוחה 3 שבועות');
+    expect(label(30)).toBe('פתוחה 4 שבועות');
+    expect(label(31)).toBe('פתוחה 4 שבועות'); // used to read "פתוחה חודש" (council B)
+    expect(label(59)).toBe('פתוחה 8 שבועות');
+    expect(label(60)).toBe('פתוחה חודשיים');
+    expect(label(61)).toBe('פתוחה חודשיים');
+    expect(label(364)).toBe('פתוחה 11 חודשים');
+    expect(label(365)).toBe('פתוחה שנה');
+    expect(label(731)).toBe('פתוחה שנתיים');
+  });
+
+  it('the seed AC task, created 49 days ago at 21:00, reads "פתוחה 7 שבועות"', () => {
+    const ac = oneOff(Date.parse('2026-08-16T21:00:00+03:00'));
+    expect(ageLabel(ac, NOW)).toBe('פתוחה 7 שבועות');
+  });
+
+  it('a monthly ארנונה instance due in 10 days reads "חדשה" even though it was created weeks ago', () => {
+    const arnona = { ...oneOff(created(25)), seriesId: 'arnona', dueDate: '2026-10-14' };
+    expect(ageLabel(arnona, NOW)).toBe('חדשה');
+    const lateArnona = { ...arnona, dueDate: '2026-09-27' };
+    expect(ageLabel(lateArnona, NOW)).toBe('פתוחה שבוע'); // from its own date, not from creation
+  });
+
+  it('accepts a Date and an explicit tz', () => {
+    expect(ageLabel(oneOff(created(14)), new Date(NOW))).toBe('פתוחה שבועיים');
+    expect(ageLabel(oneOff(created(14)), NOW, 'Asia/Jerusalem')).toBe('פתוחה שבועיים');
+    // 01:30 on 10-03 in Jerusalem is still 10-02 in UTC
+    const smallHours = oneOff(Date.parse('2026-10-03T01:30:00+03:00'));
+    expect(ageLabel(smallHours, NOW)).toBe('חדשה');
+    expect(ageLabel(smallHours, NOW, 'UTC')).toBe('פתוחה יומיים');
   });
 });
 
@@ -379,23 +450,108 @@ describe('whenChip (date + time chip with a tone)', () => {
     expect(late('2026-08-04')?.text).toBe('באיחור של חודשיים');
   });
 
-  it('a missed soft plan is not "late": it reads as planned-from and sits with today', () => {
+  it('a missed soft plan is not "late": it reads as planned-for and sits with today', () => {
     expect(chip({ scheduledFor: '2026-10-03' })).toEqual({
-      text: 'מתוכננת מאתמול',
+      text: 'תוכננה לאתמול',
       tone: 'today'
     });
   });
 
-  it('due today with the time already passed: "· עבר" and the late tone', () => {
+  it('due today with the time already passed: "· הזמן עבר" and the late tone', () => {
     const at = (hour: number, minute: number) =>
       chip({ dueDate: TODAY, dueTime: '09:00' }, { hour, minute });
-    expect(at(9, 1)).toEqual({ text: 'היום 09:00 · עבר', tone: 'late' });
-    expect(at(23, 59)).toEqual({ text: 'היום 09:00 · עבר', tone: 'late' });
+    expect(at(9, 1)).toEqual({ text: 'היום 09:00 · הזמן עבר', tone: 'late' });
+    expect(at(23, 59)).toEqual({ text: 'היום 09:00 · הזמן עבר', tone: 'late' });
     expect(at(9, 0)).toEqual({ text: 'עד היום 09:00', tone: 'today' }); // the due minute itself
     expect(at(8, 59)).toEqual({ text: 'עד היום 09:00', tone: 'today' });
     expect(chip({ scheduledFor: TODAY, dueTime: '09:00' }, { hour: 10, minute: 0 })).toEqual({
-      text: 'היום 09:00 · עבר',
+      text: 'היום 09:00 · הזמן עבר',
       tone: 'late'
+    });
+  });
+
+  describe('planned for today (or a missed plan) with a LATER due date: both facts', () => {
+    it('"היום · עד 14/10": the card in Today says why it is there and when it is due', () => {
+      expect(chip({ scheduledFor: TODAY, dueDate: '2026-10-14' })).toEqual({
+        text: 'היום · עד 14/10',
+        tone: 'today'
+      });
+      expect(chip({ scheduledFor: TODAY, dueDate: '2026-10-07', dueTime: '17:00' })).toEqual({
+        text: 'היום · עד יום ד׳ 17:00',
+        tone: 'today'
+      });
+    });
+
+    it('a missed plan with a later due date: "תוכננה לאתמול · עד מחר"', () => {
+      expect(chip({ scheduledFor: '2026-10-03', dueDate: '2026-10-05' })).toEqual({
+        text: 'תוכננה לאתמול · עד מחר',
+        tone: 'today'
+      });
+    });
+
+    it('due today or overdue keeps the deadline chip; a later plan does not change it', () => {
+      expect(chip({ scheduledFor: TODAY, dueDate: TODAY })?.text).toBe('עד היום');
+      expect(chip({ scheduledFor: '2026-10-03', dueDate: '2026-10-03' })?.text).toBe(
+        'באיחור של יום'
+      );
+      expect(chip({ scheduledFor: '2026-10-06', dueDate: '2026-10-14' })?.text).toBe('עד 14/10');
+    });
+  });
+
+  describe('week plans (weekPlan, no due date): a week, never a day', () => {
+    const week = (scheduledFor: string, today = TODAY) =>
+      whenChip({ dueDate: null, scheduledFor, dueTime: null, weekPlan: true }, today);
+
+    it('this week (up to the week horizon) is "השבוע"', () => {
+      expect(week('2026-10-10')).toEqual({ text: 'השבוע', tone: 'normal' }); // Sunday, this Saturday
+      expect(week('2026-10-10', '2026-10-08')).toEqual({ text: 'השבוע', tone: 'normal' });
+      // Friday: the horizon is next Saturday, so both Saturdays read as this week
+      expect(week('2026-10-10', '2026-10-09')).toEqual({ text: 'השבוע', tone: 'normal' });
+      expect(week('2026-10-17', '2026-10-09')).toEqual({ text: 'השבוע', tone: 'normal' });
+    });
+
+    it('on its last day (the Saturday itself) it is "סוף השבוע" with the today tone', () => {
+      expect(week('2026-10-10', '2026-10-10')).toEqual({ text: 'סוף השבוע', tone: 'today' });
+    });
+
+    it('the Saturday right after the horizon is "בשבוע הבא"; later weeks are dated', () => {
+      expect(week('2026-10-17')).toEqual({ text: 'בשבוע הבא', tone: 'normal' });
+      expect(week('2026-10-24', '2026-10-09')).toEqual({ text: 'בשבוע הבא', tone: 'normal' });
+      expect(week('2026-10-24')).toEqual({ text: 'שבוע של 24/10', tone: 'normal' });
+      expect(week('2027-01-09')).toEqual({ text: 'שבוע של 9/1/27', tone: 'normal' });
+    });
+
+    it('a missed week plan is "תוכננה לשבוע שעבר" and sits with today', () => {
+      expect(week('2026-10-03')).toEqual({ text: 'תוכננה לשבוע שעבר', tone: 'today' });
+      expect(week('2026-09-26')).toEqual({ text: 'תוכננה לשבוע שעבר', tone: 'today' });
+    });
+
+    it('ignores dueTime (a week has no hour) and yields to a due date', () => {
+      expect(
+        whenChip(
+          { dueDate: null, scheduledFor: '2026-10-10', dueTime: '17:00', weekPlan: true },
+          TODAY
+        )
+      ).toEqual({ text: 'השבוע', tone: 'normal' });
+      expect(
+        whenChip(
+          { dueDate: '2026-10-08', scheduledFor: '2026-10-10', dueTime: null, weekPlan: true },
+          TODAY
+        )?.text
+      ).toBe('עד יום ה׳');
+    });
+
+    it('a plain day plan on a Saturday still reads as the day', () => {
+      expect(
+        whenChip(
+          { dueDate: null, scheduledFor: '2026-10-10', dueTime: null, weekPlan: false },
+          TODAY
+        )
+      ).toEqual({ text: 'שבת', tone: 'normal' });
+    });
+
+    it('is null for a malformed week date', () => {
+      expect(week('2026-10-32')).toBeNull();
     });
   });
 
@@ -434,20 +590,21 @@ describe('pluralTimes / snoozedLabel', () => {
   });
 });
 
-describe('plannedFromLabel (feminine: the subject is משימה)', () => {
-  it('says מאתמול for yesterday', () => {
-    expect(plannedFromLabel('2026-10-03', TODAY)).toBe('מתוכננת מאתמול');
+describe('plannedFromLabel (feminine past: the subject is משימה)', () => {
+  it('says "תוכננה לאתמול" for yesterday', () => {
+    expect(plannedFromLabel('2026-10-03', TODAY)).toBe('תוכננה לאתמול');
   });
 
   it('names the weekday within the last 6 days (שבת without "יום")', () => {
-    expect(plannedFromLabel('2026-10-02', TODAY)).toBe('מתוכננת מיום ו׳'); // -2
-    expect(plannedFromLabel('2026-09-28', TODAY)).toBe('מתוכננת מיום ב׳'); // -6
-    expect(plannedFromLabel('2026-10-03', '2026-10-05')).toBe('מתוכננת משבת');
+    expect(plannedFromLabel('2026-10-02', TODAY)).toBe('תוכננה ליום ו׳'); // -2
+    expect(plannedFromLabel('2026-10-01', TODAY)).toBe('תוכננה ליום ה׳'); // -3
+    expect(plannedFromLabel('2026-09-28', TODAY)).toBe('תוכננה ליום ב׳'); // -6
+    expect(plannedFromLabel('2026-10-03', '2026-10-05')).toBe('תוכננה לשבת');
   });
 
-  it('uses a numeric date from a week back, with a hyphen after מ', () => {
-    expect(plannedFromLabel('2026-09-27', TODAY)).toBe('מתוכננת מ-27/9'); // -7: same weekday
-    expect(plannedFromLabel('2025-12-30', '2026-01-10')).toBe('מתוכננת מ-30/12/25');
+  it('uses a numeric date from a week back, with a hyphen after ל', () => {
+    expect(plannedFromLabel('2026-09-27', TODAY)).toBe('תוכננה ל-27/9'); // -7: same weekday
+    expect(plannedFromLabel('2025-12-30', '2026-01-10')).toBe('תוכננה ל-30/12/25');
   });
 
   it('is empty when the plan is today or ahead, or a date is malformed', () => {
@@ -517,7 +674,7 @@ describe('daysUntil / validForLabel (invite expiry)', () => {
   });
 });
 
-describe('SNOOZE_LABELS', () => {
+describe('SNOOZE_LABELS / labeledSnoozeOptions / snoozeBlockedText', () => {
   it('has the four Hebrew snooze labels', () => {
     expect(SNOOZE_LABELS).toEqual({
       tomorrow: 'מחר',
@@ -525,6 +682,73 @@ describe('SNOOZE_LABELS', () => {
       nextWeek: 'שבוע הבא',
       month: 'בעוד חודש'
     });
+  });
+
+  it('labels the domain options (deduped and sorted there) for the snooze sheet', () => {
+    const free = { dueDate: null, hardDeadline: false };
+    expect(labeledSnoozeOptions(free, '2026-10-09')).toEqual([
+      { key: 'tomorrow', label: 'מחר', date: '2026-10-10' },
+      { key: 'nextWeek', label: 'שבוע הבא', date: '2026-10-11' },
+      { key: 'weekend', label: 'סוף השבוע', date: '2026-10-16' },
+      { key: 'month', label: 'בעוד חודש', date: '2026-11-09' }
+    ]);
+    expect(labeledSnoozeOptions({ dueDate: TODAY, hardDeadline: true }, TODAY)).toEqual([]);
+  });
+
+  it('explains a blocked snooze', () => {
+    expect(snoozeBlockedText('deadline-today')).toBe('היום המועד האחרון, אי אפשר לדחות');
+  });
+});
+
+describe('planHint (the "missed plan" line on a card, week-plan aware)', () => {
+  const hint = (over: {
+    scheduledFor?: string | null;
+    dueDate?: string | null;
+    weekPlan?: boolean;
+  }) => planHint({ scheduledFor: null, dueDate: null, weekPlan: false, ...over }, TODAY);
+
+  it('a missed day plan: plannedFromLabel', () => {
+    expect(hint({ scheduledFor: '2026-10-03' })).toBe('תוכננה לאתמול');
+    expect(hint({ scheduledFor: '2026-10-01' })).toBe('תוכננה ליום ה׳');
+    expect(hint({ scheduledFor: '2026-10-03', dueDate: '2026-10-09' })).toBe('תוכננה לאתמול');
+  });
+
+  it('a missed week plan: "תוכננה לשבוע שעבר"', () => {
+    expect(hint({ scheduledFor: '2026-10-03', weekPlan: true })).toBe('תוכננה לשבוע שעבר');
+  });
+
+  it('nothing for a plan today or ahead, an overdue task, no plan, or a malformed date', () => {
+    expect(hint({ scheduledFor: TODAY })).toBe('');
+    expect(hint({ scheduledFor: '2026-10-10', weekPlan: true })).toBe('');
+    expect(hint({ scheduledFor: '2026-10-02', dueDate: '2026-10-03' })).toBe(''); // overdue shouts
+    expect(hint({})).toBe('');
+    expect(hint({ scheduledFor: '2026-13-01', weekPlan: true })).toBe('');
+  });
+});
+
+describe('deadlineLabel (the hard-deadline badge)', () => {
+  const hard = (dueDate: string | null, hardDeadline = true) =>
+    deadlineLabel({ dueDate, hardDeadline }, TODAY);
+
+  it('"מועד אחרון: יום ד׳" (the weekday with "יום", never a bare letter)', () => {
+    expect(hard('2026-10-07')).toBe('מועד אחרון: יום ד׳');
+    expect(hard('2026-10-10')).toBe('מועד אחרון: שבת');
+    expect(hard(TODAY)).toBe('מועד אחרון: היום');
+    expect(hard('2026-10-05')).toBe('מועד אחרון: מחר');
+    expect(hard('2026-10-15')).toBe('מועד אחרון: 15/10');
+  });
+
+  it('null without a hard deadline, without a date, or for a malformed date', () => {
+    expect(hard('2026-10-07', false)).toBeNull();
+    expect(hard(null)).toBeNull();
+    expect(hard('2026-02-30')).toBeNull();
+  });
+});
+
+describe('PRIORITY_LABELS / RECURRENCE_LABELS', () => {
+  it('names every priority and recurrence in Hebrew', () => {
+    expect(PRIORITY_LABELS).toEqual({ normal: 'רגילה', high: 'חשוב', urgent: 'דחוף' });
+    expect(RECURRENCE_LABELS).toEqual({ weekly: 'כל שבוע', monthly: 'כל חודש', yearly: 'כל שנה' });
   });
 });
 

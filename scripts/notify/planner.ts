@@ -10,7 +10,8 @@
 //   requested   ev:{eventId}:{uid}                      (one event per Send)
 //   completed   ev:{eventId}:{uid} for every coalesced event of the same actor
 //   jar_filled  ev:{eventId}:{uid}
-//   due         due:{taskId}:{dueDate}:{uid} for every task in the per-recipient summary
+//   due         due:{taskId}:{date}:{uid} for every task in the per-recipient summary, where date is
+//               the dueDate, or today's scheduledFor for a timed plan (no dueDate, a dueTime)
 //   eve         eve:{taskId}:{dueDate}:{uid} for every task in the per-recipient summary
 //   weekly      wk:{YYYY-Www}:{uid}
 // The I/O layer creates every key of a Send and pushes ONCE if at least one key was new. A summary
@@ -283,7 +284,16 @@ export function plan(input: PlanInput): Plan {
   }
 
   // ── Time-based reminders: owner, or every member when unassigned; coalesced per recipient.
-  const recipientsOf = (t: Task): string[] => (t.ownerId ? [t.ownerId] : members.map((m) => m.uid));
+  /** The owner, or null when nobody owns it or the owner left the household (no member doc). */
+  const ownerOf = (t: Task): string | null =>
+    t.ownerId !== null && memberByUid.has(t.ownerId) ? t.ownerId : null;
+  const recipientsOf = (t: Task): string[] => {
+    const owner = ownerOf(t);
+    return owner !== null ? [owner] : members.map((m) => m.uid);
+  };
+  /** A soft plan for today with a time and no due date ("היום ב-17:30"). Never a week plan. */
+  const isTimedPlanToday = (t: Task): t is Task & { dueTime: string } =>
+    t.dueDate === null && t.dueTime !== null && t.scheduledFor === parts.iso && !t.weekPlan;
 
   const reminderSummaries = (tasks: Task[], kind: 'due' | 'eve', date: string): void => {
     const perUid = new Map<string, Task[]>();
@@ -300,16 +310,19 @@ export function plan(input: PlanInput): Plan {
           a.title.localeCompare(b.title, 'he') ||
           byId(a, b)
       );
-      const only = list.length === 1 ? list[0] : undefined;
+      const first = list.length === 1 ? list[0] : undefined;
+      const only = first && { ...first, ownerId: ownerOf(first) }; // a former member's: unassigned
       const text = only
-        ? kind === 'due'
-          ? copy.dueOne(only)
-          : copy.eveOne(only)
+        ? kind === 'eve'
+          ? copy.eveOne(only)
+          : isTimedPlanToday(only)
+            ? copy.planOne(only)
+            : copy.dueOne(only)
         : kind === 'due'
           ? copy.dueMany(list.map((t) => t.title))
           : copy.eveMany(list.map((t) => t.title));
       sends.push({
-        keys: list.map((t) => `${kind}:${t.id}:${t.dueDate}:${uid}`),
+        keys: list.map((t) => `${kind}:${t.id}:${t.dueDate ?? t.scheduledFor}:${uid}`),
         uid,
         type: kind,
         ...text,
@@ -321,8 +334,9 @@ export function plan(input: PlanInput): Plan {
   };
 
   if (windows.due) {
+    // A due date today (a deadline: reminded even on a week-planned task), or a timed plan for today.
     reminderSummaries(
-      openTasks.filter((t) => t.dueDate === parts.iso),
+      openTasks.filter((t) => t.dueDate === parts.iso || isTimedPlanToday(t)),
       'due',
       parts.iso
     );
@@ -346,7 +360,10 @@ export function plan(input: PlanInput): Plan {
       );
     for (const m of members) {
       if (!canReceive(m.uid, 'weekly')) continue;
-      const mine = stuck.filter((t) => t.ownerId === m.uid || t.ownerId === null);
+      const mine = stuck.filter((t) => {
+        const owner = ownerOf(t);
+        return owner === m.uid || owner === null;
+      });
       const only = mine.length === 1 ? mine[0] : undefined;
       if (mine.length === 0) continue;
       sends.push({

@@ -8,10 +8,10 @@
 // The start date (ageStart) is the creation day for a one-off. A recurring instance is created the
 // moment the previous one is completed, often weeks before it is due, so its age counts from
 // max(creation day, its own date): next month's bill does not look "open for 3 weeks" before it is
-// even due. The Hebrew copy lives in i18n/format (ageLabelText); this module holds no UI text.
+// even due. The Hebrew badge lives in i18n/format (ageLabel / ageLabelText); this module holds no UI
+// text and imports nothing from i18n.
 
 import { DEFAULT_TZ, diffDays, isValidISO, minISO, todayISO } from './dates';
-import { ageLabelText } from '../i18n/format';
 import type { ISODate, Millis, Task } from './types';
 
 /** Open this many days (or more) counts as stuck. */
@@ -45,14 +45,6 @@ export function ageStart(task: AgeFields, tz: string = DEFAULT_TZ): ISODate {
 /** Whole calendar days from ageStart to `now` (never negative: 0 while an instance's date is ahead). */
 export function ageDays(task: AgeFields, now: Millis | Date, tz: string = DEFAULT_TZ): number {
   return Math.max(0, diffDays(todayISO(now, tz), ageStart(task, tz)));
-}
-
-/**
- * The age badge text for `task`: ageLabelText(ageStart(task), today). The copy and its scale (days,
- * weeks, calendar months, years) live in i18n/format (ageLabelText / elapsedText).
- */
-export function ageLabel(task: AgeFields, now: Millis | Date, tz: string = DEFAULT_TZ): string {
-  return ageLabelText(ageStart(task, tz), todayISO(now, tz));
 }
 
 /**

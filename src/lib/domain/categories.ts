@@ -97,3 +97,13 @@ export function getCategory(id: CategoryId | null | undefined): Category | null 
   if (id == null) return null;
   return byId.get(id) ?? OTHER;
 }
+
+/** The full category label ("בית ותיקונים"); '' for no category, "אחר" for an unknown id. */
+export function categoryLabel(id: CategoryId | null | undefined): string {
+  return getCategory(id)?.label ?? '';
+}
+
+/** The compact label for card meta rows ("בית"); '' for no category, "אחר" for an unknown id. */
+export function categoryShort(id: CategoryId | null | undefined): string {
+  return getCategory(id)?.short ?? '';
+}

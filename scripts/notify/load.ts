@@ -113,6 +113,7 @@ export function normalizeTask(id: string, raw: DocumentData): Task {
     updatedBy: str(d.updatedBy),
     updatedAt: num(d.updatedAt),
     scheduledFor: isoOrNull(d.scheduledFor),
+    weekPlan: d.weekPlan === true,
     dueDate: isoOrNull(d.dueDate),
     dueTime: typeof d.dueTime === 'string' && /^\d{2}:\d{2}$/.test(d.dueTime) ? d.dueTime : null,
     hardDeadline: d.hardDeadline === true,
