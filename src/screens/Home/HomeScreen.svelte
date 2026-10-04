@@ -1,68 +1,259 @@
 <script lang="ts">
-  // STUB (1.1 → 3.2): placeholder Home. Step 3.2 replaces this file.
-  // Shows the brand and today's date in Hebrew so the shell smoke test has something to assert.
-  // Step 2.4 wired it to the state stores (pulse counts, jar, my name, as bare data; the date from
-  // the app clock) so tests/e2e/boot.spec.ts can assert the seeded data. 3.2 builds the real Home on
-  // the same stores.
-  import { he } from '$lib/i18n/he';
+  /*
+   * Home (step 3.2): "a clear picture in one second".
+   *   header      greeting + name (clock.wall), today's date, sync pill, the household's avatars
+   *   pulse       attention / today / waiting numerals (tap → that list) + balance row
+   *   jar strip   JarMini
+   *   attention   "דורש תשומת לב" (only when non-empty)
+   *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty)
+   *   plan        היום | השבוע | בהמשך + member filter, then the TaskCards (unowned ones muted)
+   * Every list comes from tasks.groups (domain groupTasks); nothing is bucketed here.
+   */
+  import { tick } from 'svelte';
+  import Plus from '@lucide/svelte/icons/plus';
+  import Header from '$components/shell/Header.svelte';
+  import {
+    AvatarStack,
+    Button,
+    Chip,
+    EmptyState,
+    MemberChip,
+    SectionHeader,
+    SegmentedControl,
+    Skeleton,
+    SyncIndicator
+  } from '$components/ui';
+  import { EmptyHome } from '$components/illustrations';
   import JarMini from '$components/jar/JarMini.svelte';
+  import TaskList from '$components/task/TaskList.svelte';
+  import { openRequest, takeTask } from '$components/task/actions';
+  import type { Task } from '$lib/domain/types';
+  import { formatLongDate, greeting } from '$lib/i18n/format';
+  import { textDir } from '$lib/i18n/textDir';
+  import { he } from '$lib/i18n/he';
+  import { router } from '$lib/router/router.svelte';
   import { household } from '$lib/state/household.svelte';
   import { tasks } from '$lib/state/tasks.svelte';
   import { clock } from '$lib/state/clock.svelte';
+  import { sync } from '$lib/state/sync.svelte';
+  import { reducedMotion } from '$lib/platform/motion';
+  import PulseCard from './PulseCard.svelte';
+  import { homeView, type HomeBucket } from './homeView.svelte';
 
-  const dateFormat = new Intl.DateTimeFormat('he-IL', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-    timeZone: 'Asia/Jerusalem'
+  const t = he.home;
+
+  const me = $derived(household.me);
+  const others = $derived(household.members.filter((m) => m.uid !== household.uid));
+  const memberIds = $derived(new Set(household.members.map((m) => m.uid)));
+  const groups = $derived(tasks.groups);
+
+  /** Unowned (or a former member's): highlighted in "waiting", quieter in the time lists. */
+  const isUnowned = (task: Task): boolean =>
+    task.ownerId === null || (memberIds.size > 0 && !memberIds.has(task.ownerId));
+
+  // A filter on a member who left falls back to everyone.
+  $effect(() => {
+    const f = homeView.filter;
+    if (f !== 'all' && f !== 'mine' && household.loaded && !others.some((m) => m.uid === f)) {
+      homeView.filter = 'all';
+    }
   });
-  const today = $derived(dateFormat.format(clock.nowMs));
+
+  function matches(task: Task): boolean {
+    const f = homeView.filter;
+    if (f === 'all') return true;
+    if (f === 'mine') return task.ownerId !== null && task.ownerId === household.uid;
+    return task.ownerId === f;
+  }
+
+  const filtered = $derived({
+    today: groups.today.filter(matches),
+    week: groups.week.filter(matches),
+    later: groups.later.filter(matches)
+  });
+  const list = $derived(filtered[homeView.bucket]);
+
+  const weekend = $derived(clock.wall.weekday >= 5);
+  const bucketOptions = $derived<{ value: HomeBucket; label: string; count: number }[]>([
+    { value: 'today', label: t.buckets.today, count: filtered.today.length },
+    {
+      value: 'week',
+      label: weekend ? t.buckets.weekAhead : t.buckets.week,
+      count: filtered.week.length
+    },
+    { value: 'later', label: t.buckets.later, count: filtered.later.length }
+  ]);
+
+  const nothingOpen = $derived(tasks.openLoaded && tasks.open.length === 0);
+  const emptyCopy = $derived(
+    homeView.filter !== 'all' ? t.empty.filtered : t.empty[homeView.bucket]
+  );
+
+  let attentionEl: HTMLElement | undefined = $state();
+  let waitingEl: HTMLElement | undefined = $state();
+  let planEl: HTMLElement | undefined = $state();
+
+  async function pick(key: 'attention' | 'today' | 'waiting') {
+    let target: HTMLElement | undefined;
+    if (key === 'today') {
+      homeView.bucket = 'today';
+      await tick();
+      target = planEl;
+    } else {
+      target = key === 'attention' ? attentionEl : waitingEl;
+      if (!target) {
+        // Nothing to show there: the plan list is the closest useful place.
+        target = planEl;
+      }
+    }
+    target?.scrollIntoView({ behavior: reducedMotion.current ? 'auto' : 'smooth', block: 'start' });
+  }
 </script>
 
-<section class="home" data-stub="HomeScreen">
-  <header>
-    <p class="brand" dir="ltr">{he.common.appName}</p>
-    <h1>{he.home.title}</h1>
-    <p class="date">{today}</p>
-  </header>
+{#snippet unownedActions(task: Task)}
+  <Button size="sm" onclick={() => takeTask(task.id)} data-action="take"
+    >{he.taskCard.take(me ?? 'n')}</Button
+  >
+  {#if others.length > 0}
+    <Button size="sm" variant="secondary" onclick={() => openRequest(task.id)} data-action="request"
+      >{he.taskCard.request}</Button
+    >
+  {/if}
+{/snippet}
 
-  <JarMini jar={household.jar} />
+<section class="home" aria-labelledby="home-title">
+  <Header>
+    <h1 id="home-title" class="greeting">
+      {t.hello(greeting(clock.wall.hour))}<bdi data-me dir={textDir(me?.displayName)}
+        >{me?.displayName ?? ''}</bdi
+      >
+    </h1>
+    <p class="date">{formatLongDate(clock.today)}</p>
+    {#snippet actions()}
+      <div class="head-actions">
+        <SyncIndicator status={sync.status} pending={sync.pendingWrites} announce />
+        {#if household.members.length > 0}
+          <AvatarStack people={[...household.members]} size="sm" label={t.people} />
+        {/if}
+      </div>
+    {/snippet}
+  </Header>
 
-  <ul class="pulse" data-stub="pulse" data-loaded={tasks.openLoaded}>
-    <li data-pulse="attention">{tasks.pulse.attention}</li>
-    <li data-pulse="today">{tasks.pulse.today}</li>
-    <li data-pulse="waiting">{tasks.pulse.waiting}</li>
-  </ul>
-  <p class="me" data-me dir="auto">{household.me?.displayName ?? ''}</p>
+  <div class="content">
+    <PulseCard
+      pulse={tasks.pulse}
+      members={household.members}
+      counts={tasks.countsByMember}
+      onpick={pick}
+    />
 
-  <div class="card">
-    <p>{he.common.comingSoon}</p>
+    <JarMini jar={household.jar} />
+
+    {#if !tasks.openLoaded}
+      <div class="loading" aria-busy="true" aria-label={t.loading}>
+        <Skeleton variant="card" />
+        <Skeleton variant="card" />
+        <Skeleton variant="card" />
+      </div>
+    {:else if nothingOpen}
+      <div class="all-clear">
+        <EmptyState title={t.empty.all.title} body={t.empty.all.body} compact>
+          {#snippet illustration()}<EmptyHome />{/snippet}
+          {#snippet action()}
+            <Button icon={Plus} onclick={() => router.openSheet({ name: 'quickAdd' })}
+              >{t.newTask}</Button
+            >
+          {/snippet}
+        </EmptyState>
+      </div>
+    {:else}
+      {#if groups.attention.length > 0}
+        <section class="block" bind:this={attentionEl} data-section="attention">
+          <SectionHeader
+            id="home-attention"
+            title={t.sections.attention}
+            count={groups.attention.length}
+            tone="danger"
+          />
+          <TaskList
+            tasks={groups.attention}
+            label={t.sections.attention}
+            actions={unownedActions}
+            withActions={isUnowned}
+          />
+        </section>
+      {/if}
+
+      {#if groups.waiting.length > 0}
+        <section class="block" bind:this={waitingEl} data-section="waiting">
+          <SectionHeader
+            id="home-waiting"
+            title={t.sections.waiting}
+            count={groups.waiting.length}
+          />
+          <TaskList tasks={groups.waiting} label={t.sections.waiting} actions={unownedActions} />
+        </section>
+      {/if}
+
+      <section class="block plan" bind:this={planEl} data-section="plan">
+        <SegmentedControl
+          options={bucketOptions}
+          bind:value={homeView.bucket}
+          label={t.buckets.label}
+          haptics
+        />
+        {#if others.length > 0}
+          <div class="filters" role="group" aria-label={t.filters.label}>
+            <Chip
+              label={t.filters.all}
+              selected={homeView.filter === 'all'}
+              onclick={() => (homeView.filter = 'all')}
+            />
+            <Chip
+              label={t.filters.mine}
+              selected={homeView.filter === 'mine'}
+              onclick={() => (homeView.filter = 'mine')}
+            />
+            {#each others as m (m.uid)}
+              <MemberChip
+                person={m}
+                prefix={t.filters.ofPrefix}
+                selected={homeView.filter === m.uid}
+                onclick={() => (homeView.filter = m.uid)}
+              />
+            {/each}
+          </div>
+        {/if}
+
+        {#if list.length > 0}
+          <TaskList
+            tasks={list}
+            label={bucketOptions.find((o) => o.value === homeView.bucket)?.label ?? ''}
+            muted={isUnowned}
+          />
+        {:else}
+          <div class="bucket-empty" data-empty={homeView.bucket}>
+            <EmptyState title={emptyCopy.title} body={emptyCopy.body} compact level={3}>
+              {#snippet illustration()}
+                {#if homeView.bucket === 'today' && homeView.filter === 'all'}<EmptyHome />{/if}
+              {/snippet}
+            </EmptyState>
+          </div>
+        {/if}
+      </section>
+    {/if}
   </div>
 </section>
 
 <style>
   .home {
-    display: grid;
-    gap: var(--s5);
-    padding-block: calc(var(--safe-top) + var(--s7)) var(--s7);
-    padding-inline: var(--screen-pad);
+    padding-block-end: calc(var(--s10) + var(--s6));
   }
 
-  header {
-    display: grid;
-    gap: var(--s1);
-  }
-
-  .brand {
-    justify-self: start;
-    font: var(--font-caption);
-    letter-spacing: 0.04em;
-    color: var(--accent-ink);
-  }
-
-  h1 {
-    font: var(--font-display);
+  .greeting {
+    font: var(--font-title);
     color: var(--ink);
+    text-wrap: balance;
   }
 
   .date {
@@ -70,31 +261,42 @@
     color: var(--ink-2);
   }
 
-  .pulse {
+  .head-actions {
     display: flex;
-    gap: var(--s5);
-    padding: 0;
-    list-style: none;
-    font: var(--font-numeral);
-    font-variant-numeric: tabular-nums;
-    color: var(--ink);
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--s2);
+    padding-block-start: var(--s2);
   }
 
-  .me {
-    font: var(--font-callout);
-    color: var(--ink-2);
+  .content {
+    display: grid;
+    gap: var(--s4);
+    padding-inline: var(--screen-pad);
+    padding-block-start: var(--s3);
   }
 
-  .card {
-    padding: var(--card-pad);
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    border: var(--edge);
-    box-shadow: var(--sh-1);
+  .block {
+    display: grid;
+    gap: var(--s3);
+    margin-block-start: var(--s3);
+    scroll-margin-block-start: var(--s4);
   }
 
-  .card p {
-    font: var(--font-callout);
-    color: var(--ink-2);
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s2);
+  }
+
+  .loading {
+    display: grid;
+    gap: 10px;
+    margin-block-start: var(--s3);
+  }
+
+  .all-clear,
+  .bucket-empty {
+    padding-block: var(--s4);
   }
 </style>
