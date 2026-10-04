@@ -6,7 +6,10 @@ import type { Repository } from '$lib/data/repository';
 
 export const PROJECT_ID = 'demo-homecare';
 
-function hostPort(envValue: string | undefined, fallbackPort: number): { host: string; port: number } {
+function hostPort(
+  envValue: string | undefined,
+  fallbackPort: number
+): { host: string; port: number } {
   const [host, port] = (envValue ?? '').split(':');
   return { host: host || '127.0.0.1', port: Number(port) || fallbackPort };
 }
@@ -71,7 +74,9 @@ export async function serverList(path: string): Promise<Map<string, Record<strin
   const url = `${FIRESTORE_ORIGIN}/v1/projects/${PROJECT_ID}/databases/(default)/documents/${path}?pageSize=300`;
   const res = await fetch(url, { headers: { Authorization: 'Bearer owner' } });
   if (!res.ok) throw new Error(`serverList ${path}: ${res.status} ${await res.text()}`);
-  const body = (await res.json()) as { documents?: { name: string; fields?: Record<string, unknown> }[] };
+  const body = (await res.json()) as {
+    documents?: { name: string; fields?: Record<string, unknown> }[];
+  };
   return new Map(
     (body.documents ?? []).map((d) => [d.name.slice(d.name.lastIndexOf('/') + 1), d.fields ?? {}])
   );

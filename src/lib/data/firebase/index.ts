@@ -16,15 +16,19 @@ export interface FirebaseWebConfig {
   appId: string;
 }
 
+/** The same five keys as select.ts's REQUIRED_CONFIG_KEYS (index.test.ts holds both to one table). */
 const REQUIRED_KEYS = ['apiKey', 'authDomain', 'projectId', 'appId', 'messagingSenderId'] as const;
 
-/** True when apiKey, authDomain, projectId, appId and messagingSenderId are all non-empty strings. */
-export function firebaseConfigLooksComplete(
-  cfg: Partial<FirebaseWebConfig> | undefined | null
-): cfg is FirebaseWebConfig {
-  if (!cfg || typeof cfg !== 'object') return false;
+/**
+ * True when apiKey, authDomain, projectId, appId and messagingSenderId are all strings that are
+ * non-empty once trimmed. Must agree exactly with `configLooksComplete` in src/lib/data/select.ts
+ * (which cannot import this module statically).
+ */
+export function firebaseConfigLooksComplete(cfg: unknown): cfg is FirebaseWebConfig {
+  if (typeof cfg !== 'object' || cfg === null) return false;
+  const c = cfg as Record<string, unknown>;
   return REQUIRED_KEYS.every((k) => {
-    const v = cfg[k];
+    const v = c[k];
     return typeof v === 'string' && v.trim().length > 0;
   });
 }

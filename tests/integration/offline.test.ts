@@ -40,7 +40,10 @@ afterEach(async () => {
 });
 
 function goOffline(r: FirebaseRepo) {
-  vi.stubGlobal('navigator', { onLine: false, userAgent: globalThis.navigator?.userAgent ?? 'node' });
+  vi.stubGlobal('navigator', {
+    onLine: false,
+    userAgent: globalThis.navigator?.userAgent ?? 'node'
+  });
   return disableNetwork(r.firestore as Firestore);
 }
 
@@ -71,7 +74,9 @@ describe('offline queueing (Firebase adapter)', () => {
     r.setJar(hid, { treat: 'גלידה', target: 5 });
     const existingId = r.createTask(hid, { title: 'משימה מלפני הניתוק' });
     await eventually(
-      () => household.last()?.jar !== null && open.last()?.some((t) => t.id === existingId && !t.pending),
+      () =>
+        household.last()?.jar !== null &&
+        open.last()?.some((t) => t.id === existingId && !t.pending),
       'jar and an acknowledged task'
     );
     await eventually(() => sync.last()?.status === 'synced', 'synced before going offline');
@@ -89,7 +94,11 @@ describe('offline queueing (Firebase adapter)', () => {
       () => open.last()?.find((t) => t.id === created && t.pending),
       'the offline task, pending'
     );
-    expect(pendingCreated).toMatchObject({ title: 'נוצרה בלי רשת', status: 'open', createdBy: uid });
+    expect(pendingCreated).toMatchObject({
+      title: 'נוצרה בלי רשת',
+      status: 'open',
+      createdBy: uid
+    });
     expect(typeof pendingCreated.createdAt).toBe('number');
 
     // takeTask resolves without the network (batch path, decided from the cache).
@@ -144,8 +153,12 @@ describe('offline queueing (Firebase adapter)', () => {
     expect(restValue(serverTask?.completedBy)).toBe(uid);
     const photoId = (restValue(serverTask?.completion) as { photoIds: string[] }).photoIds[0]!;
     expect(await serverDoc(`households/${hid}/photos/${photoId}`)).not.toBeNull();
-    expect(restValue((await serverDoc(`households/${hid}/tasks/${existingId}`))?.ownerId)).toBe(uid);
-    expect(restValue((await serverDoc(`households/${hid}/tasks/${nextId}`))?.seriesId)).toBe(recurring);
+    expect(restValue((await serverDoc(`households/${hid}/tasks/${existingId}`))?.ownerId)).toBe(
+      uid
+    );
+    expect(restValue((await serverDoc(`households/${hid}/tasks/${nextId}`))?.seriesId)).toBe(
+      recurring
+    );
     const jar = restValue((await serverDoc(`households/${hid}`))?.jar) as { count: number };
     expect(jar.count).toBe(2);
     const events = [...(await serverList(`households/${hid}/events`)).values()].map((f) =>

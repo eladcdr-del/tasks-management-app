@@ -19,7 +19,14 @@ import { ERROR_DETAIL } from './errors';
 const PRIORITIES: ReadonlySet<string> = new Set(['normal', 'high', 'urgent']);
 const CATEGORY_IDS: ReadonlySet<string> = new Set(DEFAULT_CATEGORIES.map((c) => c.id));
 const FREQS: ReadonlySet<string> = new Set(['weekly', 'monthly', 'yearly']);
-const COLORS: ReadonlySet<string> = new Set(['terracotta', 'sage', 'slate', 'plum', 'ochre', 'teal']);
+const COLORS: ReadonlySet<string> = new Set([
+  'terracotta',
+  'sage',
+  'slate',
+  'plum',
+  'ochre',
+  'teal'
+]);
 const ADDRESS: ReadonlySet<string> = new Set(['f', 'm', 'n']);
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const PHOTO_URL_RE = /^https:\/\/[a-z0-9.-]+[.]googleusercontent[.]com\/[^ ]*$/;
@@ -39,6 +46,7 @@ export type TaskFields = Pick<
   | 'categoryId'
   | 'priority'
   | 'scheduledFor'
+  | 'weekPlan'
   | 'dueDate'
   | 'dueTime'
   | 'hardDeadline'
@@ -51,6 +59,9 @@ export function assertValidTask(t: TaskFields): void {
   if (!PRIORITIES.has(t.priority)) invalid('unknown priority');
   if (t.categoryId !== null && !CATEGORY_IDS.has(t.categoryId)) invalid('unknown category');
   if (t.scheduledFor !== null && !isValidISO(t.scheduledFor)) invalid('scheduledFor is not a date');
+  if (typeof t.weekPlan !== 'boolean') invalid('weekPlan must be a boolean');
+  // A week plan is stored as the Saturday that ends the week, so it needs a date (rules: same).
+  if (t.weekPlan && t.scheduledFor === null) invalid('a week plan needs a scheduledFor');
   if (t.dueDate !== null && !isValidISO(t.dueDate)) invalid('dueDate is not a date');
   if (t.dueTime !== null && !(typeof t.dueTime === 'string' && TIME_RE.test(t.dueTime))) {
     invalid('dueTime must be HH:mm');
@@ -124,7 +135,10 @@ export function cleanNotify(n: NotifyPrefs): NotifyPrefs {
 }
 
 /** Jar settings: treat trimmed 1..60, target an integer 3..50. */
-export function cleanJar(j: { treat: unknown; target: unknown }): { treat: string; target: number } {
+export function cleanJar(j: { treat: unknown; target: unknown }): {
+  treat: string;
+  target: number;
+} {
   const treat = typeof j.treat === 'string' ? j.treat.trim() : '';
   if (!isLen(treat, 1, 60)) invalid('treat must be 1-60 characters');
   const target = j.target;

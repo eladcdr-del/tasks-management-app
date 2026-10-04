@@ -158,7 +158,12 @@ const JAR_STAMP_WAIT_MS = 3_000;
 /** A write's client time is kept this long after its ack (snapshots raised before it may lag). */
 const WRITE_TIME_TTL_MS = 5_000;
 
-const ALL_NOTIFY_ON: NotifyPrefs = { requests: true, reminders: true, partnerDone: true, weekly: true };
+const ALL_NOTIFY_ON: NotifyPrefs = {
+  requests: true,
+  reminders: true,
+  partnerDone: true,
+  weekly: true
+};
 
 const TASK_PATCH_KEYS = [
   'title',
@@ -166,6 +171,7 @@ const TASK_PATCH_KEYS = [
   'categoryId',
   'priority',
   'scheduledFor',
+  'weekPlan',
   'dueDate',
   'dueTime',
   'hardDeadline',
@@ -184,6 +190,7 @@ const INSTANCE_CONTENT_KEYS = [
   'priority',
   'requestedBy',
   'scheduledFor',
+  'weekPlan',
   'dueDate',
   'dueTime',
   'hardDeadline',
@@ -250,6 +257,11 @@ function pickDefined<T extends object, K extends keyof T>(
   return out;
 }
 
+/** The object without its `undefined` values (Firestore rejects them in a write). */
+function definedOnly<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
 const ownDate = (t: Pick<Task, 'dueDate' | 'scheduledFor'>): ISODate | null =>
   t.dueDate ?? t.scheduledFor;
 
@@ -266,7 +278,10 @@ function recurrenceAfterEdit(before: Task, patch: TaskPatch, merged: Task): Task
     before.recurrence === null ||
     before.recurrence.freq !== rec.freq ||
     ownDate(before) !== ownDate(merged);
-  return ensureAnchor({ ...merged, recurrence: replanned ? { freq: rec.freq } : before.recurrence });
+  return ensureAnchor({
+    ...merged,
+    recurrence: replanned ? { freq: rec.freq } : before.recurrence
+  });
 }
 
 function isUntouchedInstance(actual: Task, expected: Task): boolean {
@@ -815,6 +830,28 @@ export async function createFirebaseRepositoryImpl(
     }
   }
 
+  /**
+   * The open tasks of `hid` owned by `uid` (leaveHousehold). The same `status == 'open'` query as
+   * watchOpenTasks (no extra index), filtered here; from the server with my queued writes applied,
+   * or from the cache when the server cannot be reached in time.
+   */
+  async function myOpenTaskRefs(hid: string, uid: string): Promise<DocumentReference[]> {
+    const q = query(tasksCol(hid), where('status', '==', 'open'));
+    let snap: QuerySnapshot;
+    try {
+      if (!online()) throw new RepoError('network', 'offline');
+      snap = await withTimeout(
+        getDocs(q),
+        READ_TIMEOUT_MS,
+        () => new RepoError('network', 'reading the open tasks timed out')
+      );
+    } catch (e) {
+      if (!isUnavailable(e)) throw toRepoError(e);
+      snap = await getDocsFromCache(q);
+    }
+    return snap.docs.filter((d) => d.get('ownerId') === uid).map((d) => d.ref);
+  }
+
   async function removeDevicesOf(uid: string, hid: string): Promise<void> {
     try {
       const snap = await withTimeout(
@@ -868,7 +905,14 @@ export async function createFirebaseRepositoryImpl(
       // The previous user's queued writes would otherwise wait in their queue until they return.
       await flushWrites(SWITCH_FLUSH_MS);
       try {
-        await signInWithTestCredentialImpl(auth, h.emulator, cfg.projectId, uid, displayName, email);
+        await signInWithTestCredentialImpl(
+          auth,
+          h.emulator,
+          cfg.projectId,
+          uid,
+          displayName,
+          email
+        );
       } catch (e) {
         throw toRepoError(e);
       }
@@ -1035,7 +1079,13 @@ export async function createFirebaseRepositoryImpl(
           const uid = requireUid();
           const household = await mustReadHousehold(hid);
           const last = household.memberIds.every((m) => m === uid) || household.memberCount <= 1;
+          const mine = await myOpenTaskRefs(hid, uid);
           const b = newBatch();
+          // My open tasks go back to "waiting for someone to take". No events: the events rule
+          // needs the caller to still be a member after the batch (schema §3).
+          for (const ref of mine) {
+            b.update(ref, { ownerId: null, requestedBy: null, requestedAt: null, ...touch(uid) });
+          }
           b.delete(memberRef(hid, uid));
           b.update(hhRef(hid), {
             memberIds: arrayRemove(uid),
@@ -1115,7 +1165,8 @@ export async function createFirebaseRepositoryImpl(
         const { ack } = await enqueue(async () => {
           const uid = requireUid();
           const data: DocumentData = {};
-          if (patch.displayName !== undefined) data.displayName = cleanDisplayName(patch.displayName);
+          if (patch.displayName !== undefined)
+            data.displayName = cleanDisplayName(patch.displayName);
           if (patch.color !== undefined) {
             assertColor(patch.color);
             data.color = patch.color;
@@ -1161,8 +1212,12 @@ export async function createFirebaseRepositoryImpl(
         const tasks = snap.docs.map((d) => taskFromSnap(d, writeTimeOf(d)));
         // A completion still in flight sorts first (newest); its estimate never precedes a time
         // the server already stamped.
-        const floor = Math.max(0, ...tasks.filter((t) => !t.pending).map((t) => t.completedAt ?? 0));
-        for (const t of tasks) if (t.pending && t.completedAt !== null) t.completedAt = Math.max(t.completedAt, floor);
+        const floor = Math.max(
+          0,
+          ...tasks.filter((t) => !t.pending).map((t) => t.completedAt ?? 0)
+        );
+        for (const t of tasks)
+          if (t.pending && t.completedAt !== null) t.completedAt = Math.max(t.completedAt, floor);
         cb(tasks.slice(0, n), tasks.length > n);
       });
     },
@@ -1199,6 +1254,8 @@ export async function createFirebaseRepositoryImpl(
           priority: d.priority ?? 'normal',
           ownerId,
           scheduledFor: dates.scheduledFor,
+          // Always written (rules: exact key set); a week plan needs its Saturday in scheduledFor.
+          weekPlan: d.weekPlan ?? false,
           dueDate: dates.dueDate,
           dueTime: d.dueTime ?? null,
           hardDeadline: d.hardDeadline ?? false,
@@ -1351,14 +1408,14 @@ export async function createFirebaseRepositoryImpl(
         if (!isValidISO(until)) invalid('snooze date is not a date');
         const task = await mustReadTask(hid, id);
         const now = Date.now();
-        const p = snoozePatch(task, until, now, todayISO(now));
+        // The WHOLE domain patch (scheduledFor, and whatever else it decides: dueDate, weekPlan,
+        // hardDeadline, ...); only its two "now"-ish fields take their Firestore encodings.
         const data: DocumentData = {
-          scheduledFor: p.scheduledFor,
-          snoozeCount: increment(1), // == p.snoozeCount, and safe against a concurrent snooze
-          lastSnoozedAt: serverTimestamp(),
+          ...definedOnly(snoozePatch(task, until, now, todayISO(now))),
+          snoozeCount: increment(1), // == patch.snoozeCount, and safe against a concurrent snooze
+          lastSnoozedAt: serverTimestamp(), // == patch.lastSnoozedAt, as the rules require
           ...touch(uid)
         };
-        if (p.dueDate !== undefined) data.dueDate = p.dueDate;
         const b = newBatch();
         b.update(taskRef(hid, id), data);
         b.set(newEventRef(hid), eventDoc('snoozed', uid, task));
@@ -1431,7 +1488,9 @@ export async function createFirebaseRepositoryImpl(
           const nextInstanceDoc = (next: Task, household: Household | null) => {
             // The owner may have left since: the instance then waits for someone to take it.
             const ownerGone =
-              next.ownerId !== null && household !== null && !household.memberIds.includes(next.ownerId);
+              next.ownerId !== null &&
+              household !== null &&
+              !household.memberIds.includes(next.ownerId);
             return newTaskDoc({ ...next, ownerId: ownerGone ? null : next.ownerId }, uid, false);
           };
 
@@ -1442,7 +1501,8 @@ export async function createFirebaseRepositoryImpl(
                 const ts = await tx.get(tRef);
                 if (!ts.exists()) throw notFound(`task ${id}`);
                 const task = taskFromSnap(ts);
-                if (task.status === 'done') throw new RepoError('conflict', 'the task is already done');
+                if (task.status === 'done')
+                  throw new RepoError('conflict', 'the task is already done');
                 const hs = await tx.get(hRef);
                 if (!hs.exists()) throw notFound(`household ${hid}`);
                 const household = householdFromSnap(hs);
@@ -1622,7 +1682,9 @@ export async function createFirebaseRepositoryImpl(
         // server already stamped, so createdAt stays non-increasing down the list.
         const floor = Math.max(
           0,
-          ...events.filter((_, i) => !snap.docs[i]!.metadata.hasPendingWrites).map((e) => e.createdAt)
+          ...events
+            .filter((_, i) => !snap.docs[i]!.metadata.hasPendingWrites)
+            .map((e) => e.createdAt)
         );
         events.forEach((e, i) => {
           if (snap.docs[i]!.metadata.hasPendingWrites) e.createdAt = Math.max(e.createdAt, floor);

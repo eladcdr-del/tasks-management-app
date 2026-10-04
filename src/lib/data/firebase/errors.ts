@@ -4,7 +4,7 @@
 // `repoErrorMessage` statically without pulling Firebase into the main bundle.
 
 import { RepoError } from '../repository';
-import { errors as he } from '../../i18n/he/errors';
+import { errors as he, PAGES_HOST } from '../../i18n/he/errors';
 
 type Code = RepoError['code'];
 
@@ -88,17 +88,17 @@ export function isCancelled(e: unknown): boolean {
 }
 
 /**
- * The Hebrew message for a RepoError (he.errors). `host` is the page's hostname, used in the
- * unauthorized-domain hint (defaults to `location.hostname` in a browser).
+ * The Hebrew message for a RepoError (he.errors). `host` is the page's hostname, named in the
+ * unauthorized-domain hint (default: `location.hostname` in a browser, else the GitHub Pages host).
  */
 export function repoErrorMessage(e: RepoError, host?: string): string {
   if (e.message === ERROR_DETAIL.unauthorizedDomain) {
-    const h = host ?? (typeof location !== 'undefined' ? location.hostname : undefined);
-    return he.unauthorizedDomain(h || undefined);
+    const h = host ?? (typeof location !== 'undefined' ? location.hostname : '');
+    return h ? he.unauthorizedDomain.replace(PAGES_HOST, h) : he.unauthorizedDomain;
   }
   if (e.message === ERROR_DETAIL.cancelled) return he.cancelled;
   if (e.code === 'permission' && e.message.startsWith(ERROR_DETAIL.invalidPrefix)) {
     return he.invalid;
   }
-  return he.byCode[e.code] ?? he.generic;
+  return he[e.code] ?? he.generic;
 }

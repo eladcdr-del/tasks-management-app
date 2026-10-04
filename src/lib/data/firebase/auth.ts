@@ -151,7 +151,12 @@ export async function signInWithTestCredentialImpl(
     displayName,
     mail
   );
-  const fakeIdToken = JSON.stringify({ sub: uid, email: mail, email_verified: true, name: displayName });
+  const fakeIdToken = JSON.stringify({
+    sub: uid,
+    email: mail,
+    email_verified: true,
+    name: displayName
+  });
   await signInWithCredential(auth, GoogleAuthProvider.credential(fakeIdToken));
   if (auth.currentUser?.uid !== uid) {
     throw new RepoError('unknown', `signed in as ${auth.currentUser?.uid ?? 'nobody'}, not ${uid}`);

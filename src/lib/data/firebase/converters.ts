@@ -58,7 +58,9 @@ const num = (v: unknown, fallback = 0): number =>
 const bool = (v: unknown): boolean => v === true;
 
 const isTimestamp = (v: unknown): v is { toMillis(): number } =>
-  v !== null && typeof v === 'object' && typeof (v as { toMillis?: unknown }).toMillis === 'function';
+  v !== null &&
+  typeof v === 'object' &&
+  typeof (v as { toMillis?: unknown }).toMillis === 'function';
 const isMap = (v: unknown): v is Record<string, unknown> =>
   v !== null && typeof v === 'object' && !Array.isArray(v) && !isTimestamp(v);
 
@@ -235,6 +237,7 @@ export function taskFromSnap(snap: Snap, writeTime?: number): Task {
     updatedBy: str(d.updatedBy),
     updatedAt: millisOr0(d.updatedAt),
     scheduledFor: strOrNull(d.scheduledFor),
+    weekPlan: bool(d.weekPlan),
     dueDate: strOrNull(d.dueDate),
     dueTime: strOrNull(d.dueTime),
     hardDeadline: bool(d.hardDeadline),
@@ -259,6 +262,7 @@ export type TaskContent = Pick<
   | 'priority'
   | 'ownerId'
   | 'scheduledFor'
+  | 'weekPlan'
   | 'dueDate'
   | 'dueTime'
   | 'hardDeadline'
@@ -285,6 +289,7 @@ export function newTaskDoc(t: TaskContent, uid: string, requested: boolean): Doc
     updatedBy: uid,
     updatedAt: now,
     scheduledFor: t.scheduledFor,
+    weekPlan: t.weekPlan,
     dueDate: t.dueDate,
     dueTime: t.dueTime,
     hardDeadline: t.hardDeadline,
