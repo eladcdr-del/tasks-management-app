@@ -82,6 +82,7 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
       requestedBy: string | null;
       createdAt: number;
       scheduledFor: string | null;
+      weekPlan: boolean;
       dueDate: string | null;
       dueTime: string | null;
       hardDeadline: boolean;
@@ -106,6 +107,7 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
       updatedBy: michal,
       updatedAt: ts(t0 - HOUR),
       scheduledFor: fields.scheduledFor ?? null,
+      weekPlan: fields.weekPlan ?? false,
       dueDate: fields.dueDate ?? null,
       dueTime: fields.dueTime ?? null,
       hardDeadline: fields.hardDeadline ?? false,

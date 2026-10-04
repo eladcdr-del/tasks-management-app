@@ -56,6 +56,7 @@ function task(id: string, fields: Partial<Task> = {}): Task {
     updatedBy: 'u-michal',
     updatedAt: daysAgo(1),
     scheduledFor: null,
+    weekPlan: false,
     dueDate: null,
     dueTime: null,
     hardDeadline: false,
@@ -550,6 +551,145 @@ describe('due-day morning (08:00–12:00)', () => {
     );
     expect(out.sends.map((s) => [s.uid, s.keys])).toEqual([
       ['u-dani', [`due:t-dentist:${TODAY}:u-dani`]]
+    ]);
+  });
+});
+
+describe('due-day morning: timed plans (no due date, a time, planned for today)', () => {
+  const pickup = task('t-pickup', {
+    title: 'לאסוף את נועה מחוג',
+    ownerId: 'u-michal',
+    scheduledFor: TODAY,
+    dueTime: '17:30'
+  });
+
+  it('reminds the owner with "היום ב-17:30: {title}" (no "עד השעה": it is a plan, not a deadline)', () => {
+    expect(plan(input({ tasks: [pickup] })).sends).toEqual([
+      {
+        keys: [`due:t-pickup:${TODAY}:u-michal`],
+        uid: 'u-michal',
+        type: 'due',
+        title: 'היום ב-17:30: לאסוף את נועה מחוג',
+        body: 'מחכה ברשימה של היום',
+        url: `${APP}#/task/t-pickup`,
+        tag: `due:${TODAY}`,
+        eventIds: []
+      }
+    ]);
+  });
+
+  it('fans out when unassigned, and joins the due summary in time order', () => {
+    const open = task('t-pickup', { ...pickup, ownerId: null });
+    const one = plan(input({ tasks: [open] })).sends;
+    expect(one.map((s) => [s.uid, s.title, s.body])).toEqual([
+      ['u-dani', 'היום ב-17:30: לאסוף את נועה מחוג', 'עוד לא נלקחה'],
+      ['u-michal', 'היום ב-17:30: לאסוף את נועה מחוג', 'עוד לא נלקחה']
+    ]);
+    const bank = task('t-bank', {
+      title: 'להתקשר לבנק',
+      ownerId: 'u-michal',
+      dueDate: TODAY,
+      dueTime: '10:00'
+    });
+    const both = forUid(plan(input({ tasks: [pickup, bank] })).sends, 'u-michal');
+    expect(both.map((s) => [s.title, s.body, s.keys])).toEqual([
+      [
+        '2 משימות להיום',
+        'להתקשר לבנק, לאסוף את נועה מחוג',
+        [`due:t-bank:${TODAY}:u-michal`, `due:t-pickup:${TODAY}:u-michal`]
+      ]
+    ]);
+  });
+
+  it('needs all three: no due date, a time, and today as the plan', () => {
+    const out = plan(
+      input({
+        tasks: [
+          task('no-time', { ownerId: 'u-dani', scheduledFor: TODAY }),
+          task('tomorrow', { ownerId: 'u-dani', scheduledFor: TOMORROW, dueTime: '09:00' }),
+          task('missed', { ownerId: 'u-dani', scheduledFor: '2026-10-03', dueTime: '09:00' }),
+          task('later-due', {
+            ownerId: 'u-dani',
+            scheduledFor: TODAY,
+            dueDate: TOMORROW,
+            dueTime: '09:00'
+          })
+        ]
+      })
+    );
+    expect(out.sends).toEqual([]);
+  });
+
+  it('is outside its window like any due reminder', () => {
+    expect(plan(input({ now: SUN('12:00'), tasks: [pickup] })).sends).toEqual([]);
+  });
+});
+
+describe('due-day morning: week plans', () => {
+  it('a week plan never gets the timed-plan reminder (its date is a week, not a day)', () => {
+    const weekPlan = task('t-week', {
+      ownerId: 'u-dani',
+      scheduledFor: TODAY,
+      weekPlan: true,
+      dueTime: '10:00'
+    });
+    expect(plan(input({ tasks: [weekPlan] })).sends).toEqual([]);
+  });
+
+  it('a week plan with no time and no due date gets nothing either', () => {
+    const weekPlan = task('t-week', { ownerId: 'u-dani', scheduledFor: TODAY, weekPlan: true });
+    expect(plan(input({ tasks: [weekPlan] })).sends).toEqual([]);
+  });
+
+  it('a due date today is a deadline, so it is still reminded even on a week-planned task', () => {
+    const form = task('t-form', {
+      title: 'להגיש טופס',
+      ownerId: 'u-dani',
+      scheduledFor: '2026-10-10',
+      weekPlan: true,
+      dueDate: TODAY
+    });
+    expect(plan(input({ tasks: [form] })).sends.map((s) => s.title)).toEqual(['להיום: להגיש טופס']);
+  });
+});
+
+describe('a task owned by a former member is treated as unassigned', () => {
+  const orphan = task('t-orphan', {
+    title: 'לשלם חשבון חשמל',
+    ownerId: 'u-gone', // left the household: no member doc
+    dueDate: TODAY
+  });
+
+  it('the due reminder goes to every current member, as "עוד לא נלקחה"', () => {
+    const out = plan(input({ tasks: [orphan] }));
+    expect(out.sends.map((s) => [s.uid, s.title, s.body, s.keys[0]])).toEqual([
+      ['u-dani', 'להיום: לשלם חשבון חשמל', 'עוד לא נלקחה', `due:t-orphan:${TODAY}:u-dani`],
+      ['u-michal', 'להיום: לשלם חשבון חשמל', 'עוד לא נלקחה', `due:t-orphan:${TODAY}:u-michal`]
+    ]);
+  });
+
+  it('respects reminders=off for the members it fans out to', () => {
+    const out = plan(
+      input({
+        members: [member('u-michal', 'מיכל', 'f', { reminders: false }), DANI],
+        tasks: [orphan]
+      })
+    );
+    expect(out.sends.map((s) => s.uid)).toEqual(['u-dani']);
+  });
+
+  it('the evening-before reminder fans out too', () => {
+    const hard = task('t-orphan', { ...orphan, dueDate: TOMORROW, hardDeadline: true });
+    const out = plan(input({ now: SUN('19:00'), tasks: [hard] }));
+    expect(out.sends.map((s) => s.uid)).toEqual(['u-dani', 'u-michal']);
+  });
+
+  it('a stuck orphan is in every member’s weekly nudge', () => {
+    const stuck = task('t-orphan', { ...orphan, dueDate: null, createdAt: daysAgo(30) });
+    const out = plan(input({ now: SUN('10:30'), tasks: [stuck] }));
+    expect(out.sends.map((s) => [s.uid, s.type, s.body])).toEqual([
+      ['u-dani', 'weekly', 'לשלם חשבון חשמל'],
+      ['u-michal', 'weekly', 'לשלם חשבון חשמל']
     ]);
   });
 });
