@@ -1,8 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import * as notifier from '../../../scripts/notify/planner';
 import * as app from './age';
 import { addDays, todayISO } from './dates';
 import type { Task } from './types';
+
+/**
+ * The notifier's stuck rule. It is loaded through a non-literal path so the app's type check
+ * (svelte-check over src/) does not pull in the notifier package, whose imports end in ".ts".
+ */
+interface NotifierStuck {
+  STUCK_AGE_DAYS: number;
+  STUCK_SNOOZE_COUNT: number;
+  ageStart(task: Task): string;
+  isStuck(task: Task, today: string): boolean;
+}
+const NOTIFIER_PLANNER = '../../../scripts/notify/planner';
+const notifier = (await import(/* @vite-ignore */ NOTIFIER_PLANNER)) as NotifierStuck;
 
 // The notifier is its own package and must not import from src/, so it carries a copy of the stuck
 // rule (scripts/notify/planner.ts: ageStart, isStuck, STUCK_*). This test pins the two copies
