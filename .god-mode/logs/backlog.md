@@ -21,3 +21,4 @@
 - [1.1 r2] Keyboard + fixed bars: with resizes-content, BottomNav/FAB sit above the keyboard when a field outside a sheet has focus (Memory search). 3.1/4.1: hide nav while keyboard open.
 - [1.1 r2] 7.3 budget must measure startup JS only (exclude sw.js and lazy chunks).
 - [1.3] "בשבת לנקות" (ב + bare day, verb after) no longer dated; "מחר ב-8" leaves "ב-8" in the title. Consider allowing ב-N when a date phrase precedes it.
+- [2.4] Boot gating uses hard-coded route lists (2.4 predates RouteMeta.access). Switch routeAllowed/gateTarget to ROUTE_META[...].access in Phase 3 (3.1 or orchestrator).

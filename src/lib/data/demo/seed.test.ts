@@ -142,6 +142,16 @@ describe('createSeed: open tasks on 2026-10-04', () => {
       createdBy: DANI
     });
     expect(task('seed-dentist')).toMatchObject({ dueDate: TODAY, dueTime: '16:30' });
+
+    // The one week plan: the Saturday ending this week, no day, still in the week bucket.
+    expect(task('seed-birthday-gift')).toMatchObject({
+      ownerId: null,
+      scheduledFor: '2026-10-10',
+      weekPlan: true,
+      dueDate: null
+    });
+    expect(bucketInfo(task('seed-birthday-gift'), TODAY).bucket).toBe('week');
+    expect(tasks.filter((t) => t.weekPlan).map((t) => t.id)).toEqual(['seed-birthday-gift']);
     expect(task('seed-netflix').title).toBe('לבטל את המנוי ל-Netflix');
     expect(bucketInfo(task('seed-health-refund'), TODAY)).toEqual({
       bucket: 'today',
@@ -243,6 +253,8 @@ describe('createSeed: integrity', () => {
       expect(['open', 'done']).toContain(t.status);
       if (t.recurrence) expect(['weekly', 'monthly', 'yearly']).toContain(t.recurrence.freq);
       if (t.dueTime) expect(t.dueTime).toMatch(/^\d{2}:\d{2}$/);
+      expect(typeof t.weekPlan).toBe('boolean');
+      if (t.weekPlan) expect(t.scheduledFor).not.toBeNull();
     }
     const types = [
       'created',

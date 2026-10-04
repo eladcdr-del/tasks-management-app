@@ -12,6 +12,7 @@
 
   const sheet = $derived(router.sheet);
   const close = () => router.closeSheet();
+  // 3.3/4.1: PhotoViewer renders the 'photo' sheet full-screen; until then nothing is drawn for it.
 </script>
 
 <svelte:window
@@ -20,7 +21,7 @@
   }}
 />
 
-{#if sheet}
+{#if sheet && sheet.name !== 'photo'}
   <button type="button" class="scrim" aria-label={he.common.close} onclick={close}></button>
   <div class="panel" role="dialog" aria-modal="true" data-sheet={sheet.name}>
     {#if sheet.name === 'quickAdd'}
