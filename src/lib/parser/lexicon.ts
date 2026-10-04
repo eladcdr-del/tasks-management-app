@@ -106,12 +106,18 @@ export const RELATIVE_DAYS: Readonly<Record<string, number>> = {
 };
 
 export const PERIOD_PHRASES = {
-  /** "השבוע" → weekHorizon(today): this Saturday, or next Saturday on Friday/Saturday. */
-  thisWeek: ['השבוע'],
+  /**
+   * "השבוע", "השבוע הזה", "במהלך השבוע", "בשבוע הקרוב" → a week plan ending weekHorizon(today):
+   * this Saturday, or next Saturday on Friday/Saturday. ("שבוע הזה" with its prefix is "בשבוע הזה".)
+   */
+  thisWeek: ['השבוע', 'שבוע הזה', 'מהלך השבוע', 'מהלך השבוע הזה', 'שבוע הקרוב'],
   /** "סוף השבוע", "בסופ"ש" → the coming Friday (today, on a Friday: decision (f)). */
   weekend: ['סוף השבוע', 'סוף שבוע', 'סופ"ש'],
-  /** "בשבוע הבא" → next Sunday. */
-  nextWeek: ['שבוע הבא'],
+  /**
+   * "בשבוע הבא" → a week plan ending the Saturday of next week. After "עד" it is next Sunday (the
+   * start of next week), as before the week plans.
+   */
+  nextWeek: ['שבוע הבא', 'מהלך השבוע הבא'],
   /** "בחודש הבא" → the 1st of next month. */
   nextMonth: ['חודש הבא'],
   /** "סוף החודש" → the last day of this month. */
@@ -149,6 +155,52 @@ export const DAY_NAME_VETO_NEXT = ['לציון', 'לחודש'];
 export const BARE_DAY_VETO_NEXT = ['לפני'];
 /** "ערב שבת", "בערב יום שישי": the EVE of that day, which is ambiguous; never read as the day. */
 export const EVE_WORD = 'ערב';
+/** "במוצ"ש", "במוצאי שבת" → Saturday evening (tonight, when said on Saturday). */
+export const SATURDAY_NIGHT_PHRASES = ['מוצ"ש', 'מוצאי שבת', 'מוצאי השבת'];
+/** "לשישי", "לשבת" (for Friday / Shabbat): a target day, only at the end of the line or a clause. */
+export const LAMED_DAY_NAMES = ['שישי', 'ששי', 'שבת'];
+/** "מקום לשבת", "צריך לשבת": here לשבת is the verb "to sit", not "for Shabbat". */
+export const LAMED_DAY_VETO_BEFORE = [
+  'מקום',
+  'איפה',
+  'כיסא',
+  'כסא',
+  'כיסאות',
+  'ספסל',
+  'זמן',
+  'נוח',
+  'צריך',
+  'צריכה',
+  'צריכים',
+  'רוצה',
+  'רוצים',
+  'אפשר',
+  'לבקש',
+  'להגיד',
+  'תגיד',
+  'תגידי'
+];
+/**
+ * Words that name a day or a season without being a date chip: with one of them in the line, a
+ * lone time does not imply today or tomorrow ("ארוחת חג 19:30", council M4). Weekday names are
+ * covered by the date candidates themselves.
+ */
+export const DAY_LIKE_WORDS = [
+  'חג',
+  'חגים',
+  'פסח',
+  'סוכות',
+  'חנוכה',
+  'פורים',
+  'ראש השנה',
+  'כיפור',
+  'שבועות',
+  'מוצאי',
+  'שבת',
+  'סופ"ש',
+  'חופש',
+  'חופשה'
+];
 
 export type OffsetUnit = 'day' | 'week' | 'month';
 
@@ -211,6 +263,27 @@ export const UNTIL_WORD = 'עד';
 export const NOT_LATER_PHRASE = 'לא יאוחר';
 /** "מועד אחרון" marks a hard deadline (and introduces a due date like עד does). */
 export const HARD_DEADLINE_PHRASE = 'מועד אחרון';
+/** "לפני <date>" is due the day BEFORE that date (council M3). */
+export const BEFORE_WORD = 'לפני';
+/** "שבוע לפני 15/10": an offset before "לפני" that the parser does not read, so no date at all. */
+export const BEFORE_OFFSET_WORDS = [
+  'יום',
+  'יומיים',
+  'ימים',
+  'שבוע',
+  'שבועיים',
+  'שבועות',
+  'חודש',
+  'חודשיים',
+  'חודשים',
+  'שעה',
+  'שעתיים',
+  'שעות',
+  'דקות',
+  'שנה',
+  'שנתיים',
+  'שנים'
+];
 /** "בתאריך 15/10", "עד לתאריך 15/10": part of the date phrase. */
 export const DATE_WORD = 'תאריך';
 /** "כל" before a date phrase means a repeat or a span ("כל השבוע", "כל יום ראשון"), not a date. */
@@ -286,14 +359,26 @@ export const NUMBER_CONTEXT_WORDS = [
   'סעיף',
   'כביש',
   'קו',
-  'שער'
+  'שער',
+  // an installment, "3 out of 10" (council M2)
+  'תשלום',
+  'תשלומים',
+  'מתוך'
 ];
 /** A street name may be up to three words long: "רחוב בן גוריון 4/12". */
 export const STREET_WORDS = ['רחוב', "רח'", 'שדרות', "שד'"];
 /** A year-less, un-introduced dd/mm further ahead than this is not a date (C1e). §6 "3/1" is 91. */
 export const MAX_BARE_DATE_DAYS_AHEAD = 120;
-/** A year-less date up to this many days back stays in the current year: overdue (decision c). */
+/**
+ * A year-less date up to this many days back stays in the current year: overdue (decision c). An
+ * explicit year further back than this is not a date at all ("חשבונית 12/10/2020", council M2).
+ */
 export const PAST_GRACE_DAYS = 14;
+/**
+ * "ב-29.9" is as likely a price as a date: a dotted dd.m after ב counts only within
+ * [today − PAST_GRACE_DAYS, today + this] (council M2).
+ */
+export const MAX_BET_DOTTED_DAYS_AHEAD = 120;
 
 // ───────────────────────────── times ─────────────────────────────
 
@@ -303,8 +388,36 @@ export const HOUR_WORD = 'שעה';
 export const HOURS_WORD = 'שעות';
 /** "בין 10:00 ל-12:00". */
 export const BETWEEN_WORD = 'בין';
-/** A bare, unpadded hour below this (1–7) is read as afternoon: "בשעה 5" → 17:00. */
-export const AFTERNOON_BEFORE_HOUR = 8;
+/** An unpadded hour from 1 up to this one is read as afternoon: "בשעה 5" → 17:00 (council C1). */
+export const PM_UNTIL_HOUR = 5;
+/**
+ * Unpadded hours that are genuinely ambiguous: "7:30" is the school run or dinner. With no part of
+ * day and no cue (TIME_CUES) they get no time chip and stay in the title (council C1).
+ */
+export const AMBIGUOUS_HOURS: readonly number[] = [6, 7];
+/**
+ * Words anywhere in the line that settle an ambiguous 6 or 7: waking up, the school run, a flight
+ * or a blood test is in the morning; dinner, an evening or a party is in the evening. A line with
+ * both stays ambiguous.
+ */
+export const TIME_CUES: Readonly<Record<'am' | 'pm', readonly string[]>> = {
+  am: [
+    'להעיר',
+    'הסעה',
+    'הסעות',
+    'להסיע',
+    'גן',
+    'בית ספר',
+    'בית הספר',
+    'ביה"ס',
+    'טיסה',
+    'טיסות',
+    'המראה',
+    'בדיקת דם',
+    'בדיקות דם'
+  ],
+  pm: ['ארוחת ערב', 'ערב', 'מסיבה', 'מסיבת']
+};
 
 export type DayPart = 'morning' | 'noon' | 'afternoon' | 'evening' | 'night';
 
@@ -347,20 +460,55 @@ export const DURATION_WORDS = ['שעות', 'שעה', 'דקות', 'דקה', 'שנ
 
 // ───────────────────────────── priority ─────────────────────────────
 
-/** Level order: later entries win. "!!" is handled separately in the parser; a single "!" is not
- *  a priority (decision b: Israelis end ordinary sentences with "!"). */
+/**
+ * Level order: later entries win. Words may be stretched ("דחוףףף"). Punctuation is handled
+ * separately in the parser: a single "!" is nothing (decision b: Israelis end ordinary sentences
+ * with "!"), and "!!" / "!!!" is at most `high` (council: emphasis, never urgent on its own).
+ */
 export const PRIORITY_WORDS: readonly {
   priority: Exclude<Priority, 'normal'>;
   words: readonly string[];
 }[] = [
   { priority: 'high', words: ['חשוב', 'חשובה', 'חשובים', 'חשובות'] },
-  { priority: 'urgent', words: ['דחוף', 'דחופה', 'דחופים', 'דחופות'] }
+  { priority: 'urgent', words: ['דחוף', 'דחופה', 'דחופים', 'דחופות', 'בדחיפות'] }
 ];
 
 /** Intensifiers consumed together with an adjacent priority word: "ממש דחוף", "זה חשוב". */
 export const INTENSIFIERS_BEFORE = ['זה', 'ממש', 'הכי', 'סופר', 'מאוד', 'מאד', 'כל כך', 'כ"כ'];
 /** …and after it: "חשוב מאוד", "חשוב לי", "דחוף ביותר". */
-export const INTENSIFIERS_AFTER = ['מאוד', 'מאד', 'ממש', 'לי', 'ביותר'];
+export const INTENSIFIERS_AFTER = ['מאוד', 'מאד', 'ממש', 'לי', 'לנו', 'ביותר'];
+/** "לא דחוף אבל חשוב", "חשוב אך לא דחוף": one phrase, the level of the word that is not negated. */
+export const CONTRAST_WORDS = ['אבל', 'אך'];
+/** "אם דחוף, להתקשר": a condition, not a priority. */
+export const CONDITION_WORD = 'אם';
+/**
+ * "חשוב לי שהילדים יאכלו" heads a ש-clause and is not a priority. A word right after it that starts
+ * with ש is read as that clause unless it is one of these (a day, a time or a number).
+ */
+export const SHIN_WORDS_NOT_CLAUSE = [
+  'שבת',
+  'שבוע',
+  'שבועיים',
+  'שבועי',
+  'שבועית',
+  'שני',
+  'שלישי',
+  'שישי',
+  'ששי',
+  'שנה',
+  'שנתי',
+  'שעה',
+  'שעתיים',
+  'שתיים',
+  'שתי',
+  'שלוש',
+  'שלושה',
+  'שש',
+  'שישה',
+  'שבע',
+  'שבעה',
+  'שמונה'
+];
 
 // ───────────────────────────── recurrence ─────────────────────────────
 
@@ -393,7 +541,7 @@ export const REMINDER_LEADS = ['תזכיר לי', 'תזכירי לי', 'להזכ
 /** One category keyword and the conditions under which it counts. */
 export interface CategoryKeyword {
   word: string;
-  /** A verb ("לשלם"): never a "specific noun" that outranks a weak returns verb. */
+  /** A verb ("לשלם"): never a "specific noun". */
   verb?: boolean;
   /** Counts only when one of these words (any prefixes) is somewhere in the line. */
   needs?: readonly string[];
@@ -417,11 +565,66 @@ const verbs = (...list: string[]): CategoryKeyword[] => list.map((word) => ({ wo
 const REPAIR_WORDS = ['לתקן', 'תיקון', 'לתיקון', 'נזילה'];
 
 /**
+ * What "להזמין" must be ordering to be shopping (council M5): never a person, a technician (home),
+ * a taxi, a table, a place or an appointment.
+ */
+export const ORDERABLE_PRODUCTS = [
+  'גז',
+  'בלון גז',
+  'מים',
+  'פיצה',
+  'אוכל',
+  'משלוח',
+  'ספה',
+  'מקרר',
+  'מכונת כביסה',
+  'מייבש',
+  'תנור',
+  'מזרן',
+  'רהיטים',
+  'כיסאות',
+  'מתנה',
+  'מתנות',
+  'בגדים',
+  'נעליים',
+  'ספרים',
+  'ציוד',
+  'חיתולים',
+  'טיטולים',
+  'סופר',
+  'אמזון',
+  'עלי אקספרס',
+  'אליאקספרס',
+  'איביי',
+  'שיין',
+  'אונליין',
+  'אתר',
+  'חבילה',
+  'כרטיסים',
+  'מוצר',
+  'מוצרים'
+];
+
+/** "בחשבון" (maths class, "take into account") is finance only with one of these in the line. */
+export const ACCOUNT_CONTEXT_WORDS = [
+  'בנק',
+  'לשלם',
+  'תשלום',
+  'חיוב',
+  'חיובים',
+  'העברה',
+  'העברת',
+  'יתרה',
+  'עו"ש',
+  'משכורת'
+];
+
+/**
  * Category keywords in Blueprint §6 table order. Detection (see category.ts):
- * - returns is chosen STRONGLY when a returns word comes with a store or clothing word (STORE_WORDS);
- *   only a strong returns choice turns "עד <date>" into a hard deadline;
- * - otherwise returns is chosen WEAKLY only when no specific noun of car/health/finance/home is in
- *   the line ("להחליף מצבר" is car, "להחליף נורה" is home, "להחליף מתנה" is still returns);
+ * - returns needs a returns word AND a strong signal: a store or clothing word, a receipt or credit,
+ *   a store or mall name, or a returnable product (RETURNS_SIGNALS). A returns verb whose object is
+ *   a call, money, the kids, bedding, a nappy… (RETURNS_VERB_VETOES) is no returns word at all
+ *   (council M5). Returns outranks every other category; with a due date it is a hard deadline;
  * - otherwise the FIRST category in table order with a keyword in the text wins, so "להזמין תור
  *   לרופא" is health (health precedes shopping) and "לקנות מתנה" is shopping (before family).
  * This deviates from the plain §6 list on purpose (decision (a)): precision beats recall.
@@ -463,7 +666,9 @@ export const CATEGORY_KEYWORDS: readonly {
     id: 'finance',
     keywords: [
       ...words('ארנונה', 'חשבונית', 'בנק', 'ביטוח', 'טופס', 'תשלום', 'ביטוח לאומי', 'משכנתא'),
-      { word: 'חשבון', badPrefixEnd: 'מ' },
+      // "חשבון חשמל" is a bill; "מבחן בחשבון" is maths and "לקחת בחשבון" is "take into account"
+      { word: 'חשבון', badPrefix: 'ב', badPrefixEnd: 'מ' },
+      { word: 'חשבון', needsPrefix: 'ב', needs: ACCOUNT_CONTEXT_WORDS },
       { word: 'מס', notAbbrev: true },
       ...verbs('לשלם')
     ]
@@ -472,7 +677,17 @@ export const CATEGORY_KEYWORDS: readonly {
     id: 'home',
     keywords: [
       ...verbs('לתקן'),
-      ...words('תיקון', 'נזילה', 'אינסטלטור', 'חשמלאי', 'מזגן', 'הדברה'),
+      ...words(
+        'תיקון',
+        'נזילה',
+        'אינסטלטור',
+        'חשמלאי',
+        'טכנאי',
+        'מזגן',
+        'הדברה',
+        'מנעול',
+        'מנעולן'
+      ),
       { word: 'נורה', badPrefixEnd: 'מ' }, // "מנורה" is a lamp, not מ+נורה
       ...words('דוד שמש', 'דוד חשמל'),
       { word: 'דוד', needsPrefix: 'הב', badPrefix: 'ל', needs: REPAIR_WORDS },
@@ -482,7 +697,8 @@ export const CATEGORY_KEYWORDS: readonly {
   {
     id: 'shopping',
     keywords: [
-      ...verbs('לקנות', 'לרכוש', 'להזמין'),
+      ...verbs('לקנות', 'לרכוש'),
+      { word: 'להזמין', verb: true, needs: ORDERABLE_PRODUCTS },
       ...words('קניות'),
       { word: 'סופר', badPrefixEnd: 'מ' } // "מסופר" is "narrated"; "מהסופר" is fine
     ]
@@ -496,24 +712,68 @@ export const CATEGORY_KEYWORDS: readonly {
   }
 ];
 
-/** A returns word together with one of these is a strong returns signal. */
-export const STORE_WORDS = [
-  'בגד',
-  'בגדים',
-  'חולצה',
-  'חולצות',
-  'מכנסיים',
-  'שמלה',
-  'שמלות',
-  'נעליים',
-  'נעל',
-  'חנות',
-  'קניון',
-  'זיכוי',
-  'מידה',
-  'קבלה'
-];
+/**
+ * The strong signals a returns word needs (council M5). `store` words (a store, a mall, a store
+ * name, a receipt or credit, a size) also lift the "liftable" verb vetoes below; `items` (clothing
+ * and returnable products) do not.
+ */
+export const RETURNS_SIGNALS: Readonly<Record<'store' | 'items', readonly string[]>> = {
+  store: [
+    'חנות',
+    'קניון',
+    'קבלה',
+    'זיכוי',
+    'מידה',
+    'זארה',
+    'H&M',
+    'h&m',
+    'קסטרו',
+    'פוקס',
+    'איקאה',
+    'איקיאה',
+    'עזריאלי'
+  ],
+  items: [
+    'בגד',
+    'בגדים',
+    'חולצה',
+    'חולצות',
+    'מכנסיים',
+    'שמלה',
+    'שמלות',
+    'נעליים',
+    'נעל',
+    'מתנה',
+    'חבילה',
+    'הזמנה'
+  ]
+};
 
-/** Categories whose nouns outrank a weak returns verb ("להחליף מצבר" is car). Shopping and family
- *  nouns do not: "להחליף מתנה" (exchange a gift) is a return. */
-export const SPECIFIC_NOUN_CATEGORIES: readonly CategoryId[] = ['car', 'health', 'finance', 'home'];
+/**
+ * A returns verb followed by one of these objects ("להחזיר טלפון" is "call back", "להחליף סדינים"
+ * is "change the sheets") is not a returns word. `liftable` vetoes give way to a store signal
+ * ("להחזיר טלפון לחנות" is a return); `always` vetoes never do.
+ */
+export const RETURNS_VERB_VETOES: Readonly<
+  Record<string, Readonly<Record<'always' | 'liftable', readonly string[]>>>
+> = {
+  להחזיר: {
+    always: ['שיחה', 'שיחות', 'ילדים', 'ילד', 'ילדה', 'הביתה', 'חוב', 'חובות', 'הלוואה', 'תשובה'],
+    liftable: ['טלפון', 'כסף']
+  },
+  להחליף: {
+    always: [
+      'סדינים',
+      'מצעים',
+      'טיטול',
+      'טיטולים',
+      'חיתול',
+      'חיתולים',
+      'מים',
+      'ספק',
+      'ספקים',
+      'שמן'
+    ],
+    liftable: ['פלאפון', 'טלפון', 'מכשיר', 'בגדים', 'בגד', 'כסף']
+  }
+};

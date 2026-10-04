@@ -146,15 +146,10 @@ describe('"מועד אחרון" is a modifier of the one due chip', () => {
     ]);
   });
 
-  it('alone: a flag chip labelled "מועד אחרון"', () => {
+  it('alone: no chip, the words stay in the title (a hard deadline needs a date)', () => {
     const r = parse('מועד אחרון לשלם ארנונה');
-    expect(chip(r, 'due')).toMatchObject({
-      key: 'due:מועד אחרון',
-      field: 'hardDeadline',
-      value: true,
-      label: 'מועד אחרון',
-      hard: true
-    });
+    expect(chip(r, 'due')).toBeUndefined();
+    expect(r.title).toBe('מועד אחרון לשלם ארנונה');
   });
 
   it('a category-derived hardDeadline shows on the due chip', () => {

@@ -19,6 +19,7 @@
 //
 // No owner/member parsing: the app never infers who does a task.
 
+import { weekHorizon } from '$lib/domain/buckets';
 import { addDays, DEFAULT_TZ } from '$lib/domain/dates';
 import type { CategoryId, ISODate, Priority, RecurrenceFreq } from '$lib/domain/types';
 import {
@@ -27,10 +28,13 @@ import {
   dateCandidates,
   hardCandidates,
   LEVEL_RANK,
+  namesUnparsedDay,
   priorityCandidates,
   recurrenceCandidates,
   resolveClock,
+  resolveRangeEnd,
   timeCandidates,
+  timeCue,
   type Cand,
   type CandKind,
   type Ctx
@@ -40,11 +44,12 @@ import {
   categoryLabel,
   dateLabel,
   dueLabel,
-  HARD_LABEL,
   priorityLabel,
   recurrenceLabel,
-  timeLabel
+  timeLabel,
+  weekPlanLabel
 } from './labels';
+import { SHIN_WORDS_NOT_CLAUSE } from './lexicon';
 import {
   buildTitle,
   collapse,
@@ -87,13 +92,19 @@ interface MatchBase extends MatchSpan {
   hard?: boolean;
   /** More text consumed by this chip: a "מועד אחרון" detached from its date. */
   extra?: MatchSpan[];
-  /** A second field this phrase sets: the date a lone time implies, or the first day of "כל יום ג׳". */
-  alsoSets?: { scheduledFor: ISODate };
+  /**
+   * A second field this phrase sets: the date a lone time implies, the first day of "כל יום ג׳", or
+   * this week's plan for a weekly repeat with no day ("כל שבוע": `weekPlan: true`).
+   */
+  alsoSets?: { scheduledFor: ISODate; weekPlan?: true };
+  /** date chips only: a week plan ("השבוע", "בשבוע הבא"); `value` is the Saturday that ends it. */
+  weekPlan?: true;
 }
 
 export type ParseMatch =
   | (MatchBase & { kind: 'date'; field: 'scheduledFor'; value: ISODate })
   | (MatchBase & { kind: 'due'; field: 'dueDate'; value: ISODate })
+  /** @deprecated Never produced since the Phase 1 council: a hard deadline needs a date. */
   | (MatchBase & { kind: 'due'; field: 'hardDeadline'; value: true })
   | (MatchBase & { kind: 'time'; field: 'dueTime'; value: string })
   | (MatchBase & { kind: 'priority'; field: 'priority'; value: Exclude<Priority, 'normal'> })
@@ -103,6 +114,8 @@ export type ParseMatch =
 export interface ParseResult {
   title: string; // input minus consumed phrases, whitespace/punctuation tidied; never empty (falls back to raw)
   scheduledFor?: ISODate;
+  /** true when scheduledFor is a week plan ("השבוע", "בשבוע הבא", "כל שבוע" with no day). */
+  weekPlan?: boolean;
   dueDate?: ISODate;
   dueTime?: string;
   hardDeadline?: boolean;
@@ -134,15 +147,19 @@ export interface ParseOptions {
  * - A named weekday is the next occurrence STRICTLY after today. "ביום X בשבוע הבא" is X of next
  *   (Sunday–Saturday) week. A bare name is a date only after עד, or after ב at the end of the line,
  *   before punctuation, a time, a date or a part-of-day word ("בשני תשלומים" is not Monday).
- * - "השבוע" is weekHorizon(today): this Saturday, or next Saturday on Friday/Saturday.
+ * - "השבוע" is a week plan ending weekHorizon(today): this Saturday, or next Saturday on
+ *   Friday/Saturday. "בשבוע הבא" is a week plan ending next week's Saturday; "כל שבוע" with no day
+ *   is this week's plan. After "עד" they are plain due dates ("עד השבוע הבא" = next Sunday).
  *   "סוף השבוע" / "בסופ"ש" is the coming Friday (today, if today is Friday: decision (f)).
- * - "בשבוע הבא" is the next Sunday; "בעוד שבוע" is today + 7.
+ *   "בעוד שבוע" is today + 7.
  * - A date with no year up to 14 days back stays this year (overdue); older rolls to next year.
  *   An un-introduced dd/mm more than 120 days ahead, a fraction, a decimal, or a number after
  *   "דירה / מידה / ציון / גרסה…" or a Latin word is not a date.
- * - A time with no date is today if still ahead of `now`, else tomorrow. An unpadded hour 1–7 is
- *   afternoon unless a part-of-day word says otherwise ("בשעה 6 בבוקר").
- * - "עד <date>" (or "מועד אחרון <date>", "לא יאוחר מ<date>") sets dueDate instead of scheduledFor.
+ * - A time with no date is today if still ahead of `now`, else tomorrow (a range: always today),
+ *   unless the line names a day it did not parse ("ארוחת שישי 19:30"). An unpadded hour 1–5 is
+ *   afternoon; an unpadded 6 or 7 needs a part of day or a cue word, else it is no time at all.
+ * - "עד <date>" (or "מועד אחרון <date>", "לא יאוחר מ<date>") sets dueDate instead of scheduledFor;
+ *   "לפני <date>" sets dueDate to the day before. "מועד אחרון" without a date is not parsed.
  * - Only the first phrase per field is consumed; a second date etc. stays in the title.
  */
 export function parseQuickAdd(
@@ -234,6 +251,19 @@ function resolveOverlaps(cands: readonly Cand[]): Cand[] {
   return kept;
 }
 
+const SHIN_OK = new Set(SHIN_WORDS_NOT_CLAUSE);
+const SHIN_WORD_RE = /(?:^|\s)(ש\p{L}*)/gu;
+
+/** Where the first ש-clause at or after `from` starts ("שמחר", "שהאסיפה"), or Infinity. */
+function shinClause(text: string, from: number): number {
+  SHIN_WORD_RE.lastIndex = from === 0 ? 0 : from - 1;
+  for (let m = SHIN_WORD_RE.exec(text); m; m = SHIN_WORD_RE.exec(text)) {
+    const word = m[1] ?? '';
+    if (!SHIN_OK.has(word)) return m.index + m[0].length - word.length;
+  }
+  return Infinity;
+}
+
 function topPriority(cands: readonly Cand[]): Cand | undefined {
   let best: Cand | undefined;
   for (const c of cands) {
@@ -272,18 +302,33 @@ function parseUnsafe(
     `${kind}:${text.slice(start, end)}`;
   const isOff = (c: Cand, kind: MatchKind = OUT_KIND[c.kind]) =>
     dismissed.has(keyOf(kind, c.start, c.end));
-  const first = (kind: CandKind, skip?: Cand) =>
-    kept.find((c) => c.kind === kind && c !== skip && !isOff(c));
+  /**
+   * The first live candidate of `kind`. A dismissed date never promotes one inside a ש-clause after
+   * it ("מחר להזכיר לדני שמחר יש אסיפה" without the first מחר has no date).
+   */
+  const first = (kind: CandKind, skip?: Cand) => {
+    let blockFrom = Infinity;
+    for (const c of kept) {
+      if (c.kind !== kind || c === skip || c.void) continue;
+      if (isOff(c)) {
+        if (kind === 'date' || kind === 'due')
+          blockFrom = Math.min(blockFrom, shinClause(text, c.end));
+        continue;
+      }
+      return c.start >= blockFrom ? undefined : c;
+    }
+    return undefined;
+  };
 
   let date = first('date');
   let due = first('due');
   let hard = first('hard');
   // "מועד אחרון" is a modifier of the one due chip. Dismissing that chip dismisses the modifier too.
   if (hard) {
-    const firstDue = kept.find((c) => c.kind === 'due');
+    const firstDue = kept.find((c) => c.kind === 'due' && !c.void);
     if (firstDue) {
       if (isOff(firstDue)) hard = undefined;
-    } else if (date) {
+    } else if (date && !date.week) {
       // "מועד אחרון" with a plain date elsewhere: that date is the deadline
       if (isOff(date, 'due')) {
         hard = undefined;
@@ -294,6 +339,8 @@ function parseUnsafe(
       }
     }
   }
+  // a hard deadline needs a date: "מועד אחרון" alone is no chip and stays in the title
+  if (!due) hard = undefined;
   const time = first('time');
   const recurrence = first('recurrence');
   const priority = topPriority(kept.filter((c) => c.kind === 'priority' && !isOff(c)));
@@ -301,23 +348,40 @@ function parseUnsafe(
   // Words inside any kept phrase (dismissed or not) are not keywords: "סופר" in "סופר דחוף".
   const category = findCategory(
     text,
-    kept.map((c): Span => [c.start, c.end]),
+    kept.filter((c) => !c.void).map((c): Span => [c.start, c.end]),
     (start, end) => dismissed.has(keyOf('category', start, end))
   );
 
   // Only a STRONG returns signal (a store or clothing word) makes "עד" a hard deadline (M2).
   const hardDeadline =
-    due?.intro === 'hard' || hard !== undefined || (category?.strong === true && due !== undefined);
+    due !== undefined && (due.intro === 'hard' || hard !== undefined || category?.strong === true);
 
-  // scheduledFor: an explicit date, else the first day of "כל יום שלישי", else the day a lone time
-  // implies (decision (d): today if the time is still ahead, else tomorrow)
+  // scheduledFor: an explicit date, else the first day of "כל יום שלישי", else this week's plan for
+  // a weekly repeat with no day, else the day a lone time implies (decision (d): today if the time
+  // is still ahead, else tomorrow; a range is today)
   const recurrenceDate = !date && recurrence?.iso ? recurrence.iso : undefined;
+  const weeklyPlan =
+    !date && !due && recurrence?.freq === 'weekly' && !recurrence.iso
+      ? weekHorizon(today)
+      : undefined;
   const dayPart = (date ?? due ?? recurrence)?.dayPart;
-  const clock = time?.clock ? resolveClock(time.clock, dayPart) : undefined;
+  const cue = timeCue(text);
+  const clock = time?.clock ? (resolveClock(time.clock, dayPart, cue) ?? undefined) : undefined;
+  const endClock =
+    clock && time?.endClock ? resolveRangeEnd(time.endClock, clock, dayPart, cue) : undefined;
   let impliedDate: ISODate | undefined;
-  if (clock && !date && !due && !recurrenceDate) {
-    const [h, m] = clock.split(':').map(Number);
-    impliedDate = (h ?? 0) * 60 + (m ?? 0) > minutes ? today : addDays(today, 1);
+  if (clock && time && !date && !due && !recurrenceDate && !weeklyPlan) {
+    // a dismissed date, or a day the line names without a chip ("ארוחת שישי 19:30"): no date
+    const dateOff = kept.some(
+      (c) => (c.kind === 'date' || c.kind === 'due') && !c.void && isOff(c)
+    );
+    const consumed = [time, priority, recurrence]
+      .filter((c): c is Cand => c !== undefined)
+      .map((c): Span => [c.start, c.end]);
+    if (!dateOff && !namesUnparsedDay(text, consumed)) {
+      const [h, m] = clock.split(':').map(Number);
+      impliedDate = endClock || (h ?? 0) * 60 + (m ?? 0) > minutes ? today : addDays(today, 1);
+    }
   }
 
   // ── chips ──
@@ -337,7 +401,10 @@ function parseUnsafe(
       ...base('date', date),
       field: 'scheduledFor',
       value: date.iso,
-      label: dateLabel(date.iso, today)
+      label: date.week
+        ? weekPlanLabel(date.week, date.iso, today)
+        : dateLabel(date.iso, today, date.dayPart),
+      ...(date.week ? { weekPlan: true as const } : {})
     });
   }
   if (due?.iso) {
@@ -346,18 +413,9 @@ function parseUnsafe(
       ...base('due', due),
       field: 'dueDate',
       value: due.iso,
-      label: dueLabel(due.iso, today),
+      label: dueLabel(due.iso, today, due.dayPart),
       ...(hardDeadline ? { hard: true } : {}),
       ...(hard ? { extra: [span(hard.start, hard.end)] } : {})
-    });
-  } else if (hard) {
-    matches.push({
-      kind: 'due',
-      ...base('due', hard),
-      field: 'hardDeadline',
-      value: true,
-      label: HARD_LABEL,
-      hard: true
     });
   }
   if (time && clock) {
@@ -366,7 +424,7 @@ function parseUnsafe(
       ...base('time', time),
       field: 'dueTime',
       value: clock,
-      label: timeLabel(clock, impliedDate, today),
+      label: timeLabel(clock, impliedDate, today, endClock),
       ...(impliedDate ? { alsoSets: { scheduledFor: impliedDate } } : {})
     });
   }
@@ -389,20 +447,26 @@ function parseUnsafe(
     });
   }
   if (recurrence?.freq) {
+    const alsoSets = recurrenceDate
+      ? { scheduledFor: recurrenceDate }
+      : weeklyPlan
+        ? { scheduledFor: weeklyPlan, weekPlan: true as const }
+        : undefined;
     matches.push({
       kind: 'recurrence',
       ...base('recurrence', recurrence),
       field: 'recurrence',
       value: { freq: recurrence.freq },
-      label: recurrenceLabel(recurrence.freq, recurrenceDate, today),
-      ...(recurrenceDate ? { alsoSets: { scheduledFor: recurrenceDate } } : {})
+      label: recurrenceLabel(recurrence.freq, recurrenceDate, today, recurrence.dayPart),
+      ...(alsoSets ? { alsoSets } : {})
     });
   }
   matches.sort((a, b) => a.start - b.start || a.end - b.end);
 
   const result: ParseResult = { title: rebuildTitle(input, matches), matches };
-  const scheduledFor = date?.iso ?? recurrenceDate ?? impliedDate;
+  const scheduledFor = date?.iso ?? recurrenceDate ?? weeklyPlan ?? impliedDate;
   if (scheduledFor) result.scheduledFor = scheduledFor;
+  if (date?.week || (scheduledFor && scheduledFor === weeklyPlan)) result.weekPlan = true;
   if (due?.iso) result.dueDate = due.iso;
   if (clock) result.dueTime = clock;
   if (hardDeadline) result.hardDeadline = true;

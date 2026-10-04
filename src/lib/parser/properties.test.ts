@@ -62,7 +62,7 @@ const PHRASES: [phrase: string, field: DateField, iso: string][] = [
   ['מחרתיים', 'scheduledFor', '2026-10-06'],
   ['ביום חמישי', 'scheduledFor', '2026-10-08'],
   ["ביום ה'", 'scheduledFor', '2026-10-08'],
-  ['בשבוע הבא', 'scheduledFor', '2026-10-11'],
+  ['בשבוע הבא', 'scheduledFor', '2026-10-17'], // a week plan ending next week's Saturday
   ['בעוד שבועיים', 'scheduledFor', '2026-10-18'],
   ['בעוד 3 ימים', 'scheduledFor', '2026-10-07'],
   ['ב-15/10', 'scheduledFor', '2026-10-15'],
