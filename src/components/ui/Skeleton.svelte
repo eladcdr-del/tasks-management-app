@@ -59,13 +59,13 @@
     animation: shimmer 1.6s var(--ease-out) infinite;
   }
 
-  :global([dir='rtl']) .sk {
+  .sk:dir(rtl) {
     animation-name: shimmer-rtl;
   }
 
   .line {
     block-size: 12px;
-    border-radius: 6px;
+    border-radius: var(--r-pill);
   }
 
   .line.small {
@@ -83,7 +83,7 @@
 
   .stack {
     display: grid;
-    gap: 10px;
+    gap: var(--s2-5);
     inline-size: 100%;
   }
 

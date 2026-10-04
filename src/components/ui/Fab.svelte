@@ -5,6 +5,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import type { HTMLButtonAttributes } from 'svelte/elements';
   import type { IconComponent } from './types';
+  import { ICON_STROKE } from './types';
 
   interface Props extends Omit<HTMLButtonAttributes, 'children'> {
     label: string;
@@ -23,7 +24,7 @@
 </script>
 
 <button {type} class={['fab', { extended }, className]} {...rest}>
-  <Icon size={24} strokeWidth={2.25} aria-hidden="true" />
+  <Icon size={24} strokeWidth={ICON_STROKE} aria-hidden="true" class="fab-icon" />
   <span class="label">{label}</span>
 </button>
 
@@ -32,20 +33,13 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    block-size: 56px;
+    min-block-size: 56px;
     min-inline-size: 56px;
-    padding-inline: 16px;
-    border-radius: 20px;
+    padding-inline: var(--s4);
+    border-radius: var(--r-lg);
     background: var(--accent-strong);
     color: var(--ink-on-accent);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.16),
-      0 2px 6px rgb(74 44 24 / 0.16),
-      0 12px 28px -8px
-        light-dark(
-          color-mix(in srgb, var(--accent-strong) 70%, transparent),
-          color-mix(in srgb, var(--accent-strong) 28%, transparent)
-        );
+    box-shadow: var(--sh-fab);
     transition:
       padding var(--d-slow) var(--ease-out),
       transform var(--d-fast) var(--ease-out),
@@ -65,25 +59,27 @@
       margin var(--d-slow) var(--ease-out);
   }
 
+  .fab :global(.fab-icon) {
+    flex: none;
+  }
+
   .extended {
-    padding-inline: 18px 22px;
+    padding-inline: var(--s4-5) var(--s5);
   }
 
   .extended .label {
     max-inline-size: 12rem;
-    margin-inline-start: 8px;
+    margin-inline-start: var(--s2);
     opacity: 1;
   }
 
   .fab:active {
     transform: scale(0.95);
-    box-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.12),
-      0 1px 3px rgb(74 44 24 / 0.2);
+    box-shadow: var(--sh-fab-pressed);
   }
 
   .fab:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 3px;
   }
 

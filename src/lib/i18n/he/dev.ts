@@ -31,7 +31,8 @@ export const dev = {
       feedback: 'מצב ומשוב',
       empty: 'מצבים ריקים',
       overlays: 'שכבות',
-      fab: 'כפתור צף'
+      fab: 'כפתור צף',
+      sheetParts: 'רכיבי גיליונות'
     },
     labels: {
       variants: 'סוגים',
@@ -54,7 +55,14 @@ export const dev = {
       haptics: 'רטט במגע',
       hapticsHint: 'משוב עדין בלקיחה, בסיום ובבחירה',
       smallSizes: 'בגדלים קטנים',
-      onTile: 'על אריח (אייקון)'
+      onTile: 'על אריח (אייקון)',
+      fullBleed: 'אייקון מותאם למסכה (מלא)',
+      trailingIcon: 'אייקון בסוף',
+      banners: 'באנרים',
+      disclosure: 'פתיחה וסגירה',
+      choiceRows: 'בחירה אחת',
+      pickerChips: 'בוררים',
+      categories: 'קטגוריות'
     },
     demo: {
       primary: 'אני לוקחת',
@@ -127,7 +135,24 @@ export const dev = {
       emptyJarCta: 'בחירת צ׳ופר',
       setupTitle: 'האפליקציה עוד לא חוברה',
       setupBody: 'בינתיים אפשר להסתובב במצב תצוגה עם נתוני דוגמה.',
-      setupCta: 'נסו את הדמו'
+      setupCta: 'נסו את הדמו',
+      next: 'המשך',
+      bannerOfflineTitle: 'אין חיבור לרשת',
+      bannerOfflineBody: 'השינויים נשמרים במכשיר ויסונכרנו כשהרשת תחזור.',
+      bannerErrorTitle: 'ההתחברות נכשלה',
+      bannerErrorBody: 'נסו שוב בעוד רגע.',
+      bannerRetry: 'ניסיון חוזר',
+      bannerSuccessTitle: 'דני הצטרף לבית',
+      bannerNotifTitle: 'ההתראות כבויות',
+      bannerNotifBody: 'כדי לדעת כשמבקשים ממך משהו, אפשר להפעיל אותן בהגדרות.',
+      disclosureSummary: 'להוסיף תיעוד?',
+      disclosureHint: 'הערה, עלות, מקום',
+      requestWho: 'למי לשלוח?',
+      requestSub: 'יקבל התראה',
+      pickWhen: 'מתי',
+      pickWho: 'מי',
+      pickRepeat: 'חזרה',
+      pickWhenValue: 'מחר 17:30'
     }
   }
 } as const;

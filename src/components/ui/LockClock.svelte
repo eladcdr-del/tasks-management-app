@@ -2,10 +2,11 @@
   // "Lock-clock": a clock with a small padlock: the hard-deadline glyph (Lucide has none).
   // Drawn on Lucide's 24-grid with the same stroke language, so it sits among Lucide icons.
   import type { LucideProps } from '@lucide/svelte';
+  import { ICON_STROKE } from './types';
 
   let {
     size = 24,
-    strokeWidth = 2,
+    strokeWidth = ICON_STROKE,
     color = 'currentColor',
     class: className = '',
     ...rest

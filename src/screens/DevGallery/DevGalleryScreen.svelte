@@ -24,23 +24,31 @@
   import CalendarRange from '@lucide/svelte/icons/calendar-range';
   import CalendarPlus from '@lucide/svelte/icons/calendar-plus';
   import Gift from '@lucide/svelte/icons/gift';
+  import ArrowLeft from '@lucide/svelte/icons/arrow-left';
+  import NotebookPen from '@lucide/svelte/icons/notebook-pen';
 
   import {
     Avatar,
     AvatarStack,
     Badge,
+    Banner,
     BottomSheet,
     Button,
     Card,
+    CategoryIcon,
     Chip,
+    ChoiceRow,
+    ColorSwatchPicker,
     CompletionCircle,
     Dialog,
+    Disclosure,
     EmptyState,
     Fab,
     IconButton,
     ListRow,
     MemberChip,
     NumberField,
+    PickerChip,
     ProgressBar,
     SectionHeader,
     SegmentedControl,
@@ -55,22 +63,14 @@
   } from '$components/ui';
   import { AppMark, EmptyHome, EmptyJar, EmptyMemory, Setup } from '$components/illustrations';
   import type { MemberColor } from '$lib/domain/types';
+  import { CATEGORY_ORDER, getCategory } from '$lib/domain/categories';
   import { he } from '$lib/i18n/he';
   import { isHapticsEnabled, setHapticsEnabled } from '$lib/platform/haptics';
   import GallerySection from './GallerySection.svelte';
   import GalleryGroup from './GalleryGroup.svelte';
   import TaskCardMock from './TaskCardMock.svelte';
   import PulseCardMock from './PulseCardMock.svelte';
-  import {
-    COLOR_NAMES,
-    MEMBER_COLORS,
-    PHOTO,
-    attention,
-    danny,
-    family,
-    today,
-    waiting
-  } from './galleryData';
+  import { PHOTO, attention, danny, family, today, waiting } from './galleryData';
 
   const g = he.dev.gallery;
   const t = g.demo;
@@ -120,6 +120,10 @@
   let haptics = $state(isHapticsEnabled());
   let fabExtended = $state(true);
   let loadingDemo = $state(false);
+  let notifBanner = $state(true);
+  let documenting = $state(false);
+  let requestTo = $state('danny');
+  let when = $state<string | null>(t.pickWhenValue);
 
   // ── Overlays ──
   let sheetOpen = $state(false);
@@ -167,19 +171,7 @@
           { value: 'dark', label: g.themeDark }
         ]}
       />
-      <div class="swatches" role="radiogroup" aria-label={g.myColor}>
-        {#each MEMBER_COLORS as c (c)}
-          <button
-            type="button"
-            role="radio"
-            class="swatch"
-            data-member-color={c}
-            aria-checked={myColor === c}
-            aria-label={COLOR_NAMES[c]}
-            onclick={() => (myColor = c)}><span></span></button
-          >
-        {/each}
-      </div>
+      <ColorSwatchPicker label={g.myColor} bind:value={myColor} />
     </div>
   </header>
 
@@ -269,6 +261,12 @@
         <AppMark size={32} tile />
       </div>
     </GalleryGroup>
+    <GalleryGroup label={L.fullBleed}>
+      <div class="marks">
+        <span class="maskable"><AppMark size={96} fullBleed /></span>
+        <span class="maskable"><AppMark size={48} fullBleed /></span>
+      </div>
+    </GalleryGroup>
     <GalleryGroup label={L.smallSizes}>
       <div class="marks">
         <span class="lockup"><AppMark size={32} /><span>HomeCare</span></span>
@@ -310,6 +308,10 @@
         <Button variant="secondary" icon={Share2}>{t.share}</Button>
         <Button variant="ghost" icon={ChevronRight} flipIcon>{t.seeAll}</Button>
       </div>
+    </GalleryGroup>
+    <GalleryGroup label={L.trailingIcon}>
+      <Button iconEnd={ArrowLeft}>{t.next}</Button>
+      <Button variant="secondary" href="#/dev/gallery" iconEnd={ArrowLeft}>{t.seeAll}</Button>
     </GalleryGroup>
     <GalleryGroup label="IconButton">
       <IconButton label={he.common.edit} icon={Pencil} />
@@ -413,10 +415,9 @@
       <Badge kind="age" label="פתוחה 3 שבועות" />
       <Badge kind="snooze" label="נדחתה 4 פעמים" />
       <Badge kind="due" label="עד יום ה׳" />
-      <Badge kind="due" tone="accent" label="עד היום" />
       <Badge kind="deadline" label="מועד אחרון: ד׳" />
-      <Badge kind="danger" label="באיחור" />
-      <Badge kind="danger" label="דחוף" />
+      <Badge kind="overdue" label="באיחור של יומיים" />
+      <Badge kind="urgent" label="דחוף" />
       <Badge kind="neutral" tone="success" icon={Check} label="בוצעה" />
     </GalleryGroup>
   </GallerySection>
@@ -536,6 +537,82 @@
         />
       </div>
     </Card>
+  </GallerySection>
+
+  <!-- ═══ Sheet parts ═══ -->
+  <GallerySection id="sheet-parts" title={s.sheetParts}>
+    <GalleryGroup label={L.banners} layout="stack">
+      <Banner tone="warn" title={t.bannerOfflineTitle} body={t.bannerOfflineBody} />
+      <Banner
+        tone="danger"
+        title={t.bannerErrorTitle}
+        body={t.bannerErrorBody}
+        actionLabel={t.bannerRetry}
+        onaction={() => showSnack(t.bannerRetry, false)}
+      />
+      <Banner tone="success" title={t.bannerSuccessTitle} />
+      {#if notifBanner}
+        <Banner
+          tone="info"
+          title={t.bannerNotifTitle}
+          body={t.bannerNotifBody}
+          ondismiss={() => (notifBanner = false)}
+        />
+      {/if}
+    </GalleryGroup>
+    <GalleryGroup label={L.disclosure} layout="stack">
+      <Card padding="none">
+        <Disclosure
+          summary={t.disclosureSummary}
+          hint={t.disclosureHint}
+          icon={NotebookPen}
+          bind:open={documenting}
+        >
+          <TextArea label={t.notes} placeholder={t.notesPlaceholder} bind:value={notes} />
+        </Disclosure>
+      </Card>
+    </GalleryGroup>
+    <GalleryGroup label={L.choiceRows} layout="stack">
+      <Card padding="none">
+        <div role="radiogroup" aria-label={t.requestWho}>
+          {#each [{ id: 'danny', person: danny }, { id: 'noa', person: family[2]! }, { id: 'omer', person: family[5]! }] as row (row.id)}
+            <ChoiceRow
+              name="request-to"
+              title={row.person.displayName}
+              subtitle={t.requestSub}
+              userText
+              checked={requestTo === row.id}
+              onselect={() => (requestTo = row.id)}
+            >
+              {#snippet leading()}
+                <Avatar
+                  name={row.person.displayName}
+                  photoURL={row.person.photoURL}
+                  color={row.person.color}
+                  size="sm"
+                />
+              {/snippet}
+            </ChoiceRow>
+          {/each}
+        </div>
+      </Card>
+    </GalleryGroup>
+    <GalleryGroup label={L.pickerChips}>
+      <PickerChip
+        label={t.pickWhen}
+        value={when}
+        icon={CalendarDays}
+        onclick={() => (when = t.pickWhenValue)}
+        onclear={() => (when = null)}
+      />
+      <PickerChip label={t.pickWho} value="דני" icon={Users} userText />
+      <PickerChip label={t.pickRepeat} icon={Repeat} />
+    </GalleryGroup>
+    <GalleryGroup label={L.categories}>
+      {#each CATEGORY_ORDER as id (id)}
+        <span class="cat"><CategoryIcon {id} />{getCategory(id).short}</span>
+      {/each}
+    </GalleryGroup>
   </GallerySection>
 
   <!-- ═══ Feedback ═══ -->
@@ -746,49 +823,24 @@
     text-wrap: balance;
   }
 
+  .maskable {
+    display: block;
+    border-radius: 50%;
+    overflow: hidden;
+    box-shadow: var(--sh-1);
+  }
+
+  .cat {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    font: var(--font-callout);
+    color: var(--ink-2);
+  }
+
   .controls {
     display: grid;
     gap: var(--s3);
-  }
-
-  .swatches {
-    display: flex;
-    justify-content: space-between;
-  }
-
-  .swatch {
-    display: grid;
-    place-items: center;
-    inline-size: var(--tap-min);
-    block-size: var(--tap-min);
-    border-radius: var(--r-pill);
-  }
-
-  .swatch span {
-    inline-size: 28px;
-    block-size: 28px;
-    border-radius: var(--r-pill);
-    background: var(--m-base);
-    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.06);
-    transition:
-      box-shadow var(--d-base) var(--ease-out),
-      transform var(--d-base) var(--ease-out);
-  }
-
-  .swatch[aria-checked='true'] span {
-    box-shadow:
-      0 0 0 3px var(--bg),
-      0 0 0 5px var(--m-base);
-    transform: scale(0.86);
-  }
-
-  .swatch:focus-visible {
-    outline: none;
-  }
-
-  .swatch:focus-visible span {
-    outline: 2px solid var(--accent);
-    outline-offset: 6px;
   }
 
   /* ── Home composition ── */
@@ -885,11 +937,9 @@
     flex-wrap: wrap;
   }
 
-  .marks :global(.appmark.tile) {
+  .marks :global(.appmark.tile:not(.fullBleed)) {
     border-radius: 22%;
-    box-shadow:
-      0 1px 2px rgb(74 44 24 / 0.08),
-      0 6px 18px rgb(74 44 24 / 0.1);
+    box-shadow: var(--sh-raised), var(--sh-2);
   }
 
   .lockup {

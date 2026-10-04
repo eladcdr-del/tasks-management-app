@@ -13,6 +13,8 @@
    */
   import { fly, fade } from 'svelte/transition';
   import type { IconComponent } from './types';
+  import { ICON_STROKE } from './types';
+  import { textDir } from '$lib/i18n/textDir';
   import { dur, easeOut, reducedMotion } from '$lib/platform/motion';
 
   type Reason = 'timeout' | 'action';
@@ -26,6 +28,8 @@
     /** Milliseconds before auto-dismiss; 0 keeps it until dismissed. */
     duration?: number;
     icon?: IconComponent;
+    /** The message contains user-entered text (a task title): direction via textDir(). */
+    userText?: boolean;
     class?: string;
   }
 
@@ -36,6 +40,7 @@
     onDismiss,
     duration = 5000,
     icon: Icon,
+    userText = false,
     class: className
   }: Props = $props();
 
@@ -108,9 +113,9 @@
   }}
 >
   {#if Icon}
-    <span class="icon"><Icon size={18} strokeWidth={2} aria-hidden="true" /></span>
+    <span class="icon"><Icon strokeWidth={ICON_STROKE} aria-hidden="true" class="sb-icon" /></span>
   {/if}
-  <span class="message">{message}</span>
+  <span class="message" dir={userText ? textDir(message) : undefined}>{message}</span>
   {#if actionLabel}
     <button type="button" class="action" onclick={act}>{actionLabel}</button>
   {/if}
@@ -118,11 +123,13 @@
 
 <style>
   .snackbar {
-    /* Inverse surface (no token yet → light-dark() fallback; see 1.4 REPORT). */
-    --sb-bg: light-dark(#2b2420, #3a2f29);
-    --sb-fg: light-dark(#fbf6ef, #f4ece3);
-    --sb-action: light-dark(#f0a27c, #f0a27c);
-    --sb-icon: light-dark(#b5ccb2, #b5ccb2);
+    /* Truly inverse in both themes: dark on the light app, light on the dark app. */
+    --sb-bg: var(--inverse-surface);
+    --sb-fg: var(--inverse-ink);
+    --sb-action: var(--inverse-accent);
+    --sb-icon: var(--inverse-success);
+    /* The page's focus ring disappears on an inverse surface; use the inverse accent here. */
+    --focus-ring: var(--inverse-accent);
     display: flex;
     align-items: center;
     gap: var(--s3);
@@ -135,10 +142,8 @@
     border-radius: var(--r-md);
     background: var(--sb-bg);
     color: var(--sb-fg);
-    box-shadow:
-      0 8px 28px rgb(43 36 32 / 0.22),
-      0 2px 6px rgb(43 36 32 / 0.12);
-    border: 1px solid light-dark(transparent, #4a3e36);
+    box-shadow: var(--sh-inverse);
+    border: 1px solid var(--inverse-edge);
     pointer-events: auto;
     touch-action: manipulation;
   }
@@ -147,11 +152,16 @@
     display: grid;
     place-items: center;
     flex: none;
-    inline-size: 26px;
-    block-size: 26px;
+    inline-size: 1.75em;
+    block-size: 1.75em;
     border-radius: var(--r-pill);
     background: color-mix(in srgb, var(--sb-icon) 18%, transparent);
     color: var(--sb-icon);
+  }
+
+  .icon :global(.sb-icon) {
+    inline-size: var(--icon-sm);
+    block-size: var(--icon-sm);
   }
 
   .message {
@@ -171,7 +181,7 @@
     min-block-size: var(--tap-min);
     min-inline-size: var(--tap-min);
     padding-inline: var(--s3);
-    border-radius: 12px;
+    border-radius: var(--r-control-sm);
     color: var(--sb-action);
     font: var(--font-callout);
     font-weight: 600;
@@ -184,7 +194,7 @@
   }
 
   .action:focus-visible {
-    outline: 2px solid var(--sb-action);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
 </style>

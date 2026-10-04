@@ -248,3 +248,66 @@ test('Snackbar: auto-dismisses after 5s, pauses while touched', async ({ page })
   await page.clock.runFor(1600);
   await expect(bar).toBeHidden();
 });
+
+test('focus ring: every :focus-visible outline uses --focus-ring (never the 2.9:1 accent)', async ({
+  page
+}) => {
+  await openGallery(page);
+  const ring = await page.evaluate(() => {
+    const probe = document.createElement('i');
+    probe.style.color = 'var(--focus-ring)';
+    document.body.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return c;
+  });
+  // Keyboard focus on a sample of primitives; the visible outline (on the element or the inner
+  // face / dot / pseudo-element) must carry the focus-ring colour.
+  const targets = [
+    page.getByRole('button', { name: 'פתיחת גיליון', exact: true }),
+    page.locator('[data-section="chips"] button.chip').first(),
+    page.getByRole('radio', { name: 'מרווה' }),
+    page.locator('[data-section="sheet-parts"] .picker-chip .main').first(),
+    page.locator('[data-section="sheet-parts"] [aria-expanded]').first()
+  ];
+  for (const target of targets) {
+    await target.focus();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Tab');
+    const colors = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement;
+      const nodes = [el, el.parentElement!, ...el.querySelectorAll('*')];
+      const out: string[] = [];
+      for (const n of nodes) {
+        for (const pseudo of [null, '::after', '::before']) {
+          const cs = getComputedStyle(n, pseudo);
+          if (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0)
+            out.push(cs.outlineColor);
+        }
+        const sib = n.nextElementSibling;
+        if (n === el && sib) {
+          const cs = getComputedStyle(sib);
+          if (cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0)
+            out.push(cs.outlineColor);
+        }
+      }
+      return out;
+    });
+    expect(colors.length, 'a visible focus outline').toBeGreaterThan(0);
+    for (const c of colors) expect(c).toBe(ring);
+  }
+});
+
+test('large text (200%): no horizontal overflow at 360px', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await openGallery(page);
+  await page.evaluate(() => {
+    document.documentElement.style.fontSize = '200%';
+  });
+  await page.waitForTimeout(100);
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth
+  }));
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+});

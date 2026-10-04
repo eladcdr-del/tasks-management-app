@@ -5,6 +5,7 @@
   import Plus from '@lucide/svelte/icons/plus';
   import { he } from '$lib/i18n/he';
   import { haptic } from '$lib/platform/haptics';
+  import { ICON_STROKE } from './types';
 
   interface Props {
     value?: number;
@@ -17,6 +18,8 @@
     suffix?: string;
     onchange?: (value: number) => void;
     disabled?: boolean;
+    /** Play the light "select" haptic on each step (opt-in). */
+    haptics?: boolean;
     class?: string;
   }
 
@@ -29,6 +32,7 @@
     suffix,
     onchange,
     disabled = false,
+    haptics = false,
     class: className
   }: Props = $props();
 
@@ -39,7 +43,7 @@
     if (next === value) return;
     value = next;
     onchange?.(next);
-    haptic('select');
+    if (haptics) haptic('select');
   }
 </script>
 
@@ -52,7 +56,7 @@
     disabled={disabled || value <= min}
     onclick={() => change(-step)}
   >
-    <Minus size={20} strokeWidth={2} aria-hidden="true" />
+    <Minus size={20} strokeWidth={ICON_STROKE} aria-hidden="true" />
   </button>
   <output class="value" aria-live="polite" aria-atomic="true">
     <span class="num n">{value}</span>
@@ -65,7 +69,7 @@
     disabled={disabled || value >= max}
     onclick={() => change(step)}
   >
-    <Plus size={20} strokeWidth={2} aria-hidden="true" />
+    <Plus size={20} strokeWidth={ICON_STROKE} aria-hidden="true" />
   </button>
 </div>
 
@@ -85,10 +89,10 @@
     inline-size: var(--tap-min);
     block-size: var(--tap-min);
     border-radius: var(--r-pill);
-    background: light-dark(var(--surface), #43382f);
+    background: var(--surface-raised);
     color: var(--ink);
-    box-shadow: 0 1px 2px rgb(74 44 24 / 0.1);
-    border: 1px solid light-dark(transparent, #4d4037);
+    box-shadow: var(--sh-raised);
+    border: 1px solid var(--surface-raised-edge);
     transition:
       transform var(--d-fast) var(--ease-out),
       background-color var(--d-fast) var(--ease-out);
@@ -96,7 +100,7 @@
 
   .step:active:not(:disabled) {
     transform: scale(0.92);
-    background: light-dark(color-mix(in oklab, var(--surface), var(--ink) 5%), #4d4037);
+    background: var(--surface-raised-press);
   }
 
   .step:disabled {
@@ -107,7 +111,7 @@
   }
 
   .step:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 
@@ -115,7 +119,7 @@
     display: inline-flex;
     align-items: baseline;
     justify-content: center;
-    gap: 6px;
+    gap: var(--s1-5);
     min-inline-size: 5.5rem;
     padding-inline: var(--s2);
   }

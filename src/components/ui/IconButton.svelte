@@ -101,14 +101,15 @@
     color: var(--ink);
   }
 
+  /* Toggle on: ink selection (never the brand peach). */
   .pressed .face {
-    background: var(--accent-soft);
-    color: var(--accent-ink);
+    background: var(--select-bg);
+    color: var(--select-fg);
   }
 
   @media (hover: hover) {
-    .plain:hover .face,
-    .outline:hover .face {
+    .plain:not(.pressed):hover .face,
+    .outline:not(.pressed):hover .face {
       background: color-mix(in oklab, var(--surface-2), transparent 30%);
       color: var(--ink);
     }
@@ -130,7 +131,7 @@
   }
 
   .icon-btn:focus-visible .face {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 

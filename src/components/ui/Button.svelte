@@ -1,16 +1,22 @@
 <script lang="ts">
   // Button: primary / secondary / ghost / danger · sm (36, 44px hit) / md (44) / lg (52).
-  // Renders <a> when `href` is set. While `loading`, the label keeps its width under a spinner,
-  // the button stays focusable (aria-disabled) and clicks are swallowed.
+  // Renders <a> when `href` is set (extra attributes such as target / rel / onclick reach it too).
+  // While `loading`, the label keeps its size under a spinner, the button stays focusable
+  // (aria-disabled) and clicks are swallowed.
+  // Heights are minimums: with a large system font the label wraps (balanced) and the button grows.
   import type { Snippet } from 'svelte';
-  import type { HTMLButtonAttributes } from 'svelte/elements';
+  import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
   import Spinner from './Spinner.svelte';
   import type { IconComponent } from './types';
+  import { ICON_STROKE } from './types';
 
   type Variant = 'primary' | 'secondary' | 'ghost' | 'danger';
   type Size = 'sm' | 'md' | 'lg';
 
-  interface Props extends Omit<HTMLButtonAttributes, 'children'> {
+  interface Props
+    extends
+      Omit<HTMLButtonAttributes, 'children'>,
+      Pick<HTMLAnchorAttributes, 'target' | 'rel' | 'download' | 'hreflang'> {
     variant?: Variant;
     size?: Size;
     loading?: boolean;
@@ -18,8 +24,12 @@
     block?: boolean;
     /** Leading icon (sits at inline-start, so on the right in RTL). */
     icon?: IconComponent;
-    /** Mirror a directional icon in RTL. */
+    /** Mirror the leading icon in RTL (directional icons). */
     flipIcon?: boolean;
+    /** Trailing icon (inline-end: on the left in RTL), e.g. a "forward" chevron. */
+    iconEnd?: IconComponent;
+    /** Mirror the trailing icon in RTL. */
+    flipIconEnd?: boolean;
     href?: string;
     children: Snippet;
   }
@@ -31,6 +41,8 @@
     block = false,
     icon: Icon,
     flipIcon = false,
+    iconEnd: IconEnd,
+    flipIconEnd = false,
     href,
     disabled = false,
     type = 'button',
@@ -40,33 +52,51 @@
     ...rest
   }: Props = $props();
 
-  const iconSize = $derived(size === 'sm' ? 16 : size === 'lg' ? 20 : 18);
+  const spinnerSize = $derived(size === 'sm' ? 16 : size === 'lg' ? 20 : 18);
   const classes = $derived(['btn', variant, size, { block, loading }, className]);
 
-  function guard(e: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement }) {
+  function guard(e: MouseEvent) {
     if (loading) {
       e.preventDefault();
       e.stopImmediatePropagation();
       return;
     }
-    onclick?.(e);
+    (onclick as ((e: MouseEvent) => void) | null | undefined)?.(e);
   }
 </script>
 
 {#snippet inner()}
   <span class="content">
     {#if Icon}
-      <Icon size={iconSize} strokeWidth={2} aria-hidden="true" class={flipIcon ? 'flip-rtl' : ''} />
+      <Icon
+        strokeWidth={ICON_STROKE}
+        aria-hidden="true"
+        class={['btn-icon', { 'flip-rtl': flipIcon }]}
+      />
     {/if}
     <span class="label">{@render children()}</span>
+    {#if IconEnd}
+      <IconEnd
+        strokeWidth={ICON_STROKE}
+        aria-hidden="true"
+        class={['btn-icon', 'end', { 'flip-rtl': flipIconEnd }]}
+      />
+    {/if}
   </span>
   {#if loading}
-    <span class="busy"><Spinner size={iconSize} /></span>
+    <span class="busy"><Spinner size={spinnerSize} /></span>
   {/if}
 {/snippet}
 
 {#if href && !disabled}
-  <a {href} class={classes} aria-busy={loading || undefined}>
+  <a
+    {href}
+    class={classes}
+    aria-busy={loading || undefined}
+    aria-disabled={loading || undefined}
+    {...rest as HTMLAnchorAttributes}
+    onclick={guard}
+  >
     {@render inner()}
   </a>
 {:else}
@@ -76,8 +106,8 @@
     {disabled}
     aria-disabled={loading || undefined}
     aria-busy={loading || undefined}
-    onclick={guard}
     {...rest}
+    onclick={guard}
   >
     {@render inner()}
   </button>
@@ -94,14 +124,15 @@
     justify-content: center;
     gap: var(--s2);
     min-inline-size: var(--tap-min);
-    border-radius: 14px;
+    max-inline-size: 100%;
+    border-radius: var(--r-control);
     border: 0;
     background: var(--btn-bg);
     color: var(--btn-fg);
     box-shadow: var(--btn-shadow);
     font-weight: 500;
+    text-align: center;
     text-decoration: none;
-    white-space: nowrap;
     user-select: none;
     -webkit-user-select: none;
     transition:
@@ -111,11 +142,12 @@
       color var(--d-fast) var(--ease-out);
   }
 
-  /* Sizes */
+  /* Sizes: the height is a minimum; em padding lets large text grow the button. */
   .sm {
-    block-size: 36px;
-    padding-inline: 14px;
-    border-radius: 12px;
+    min-block-size: 36px;
+    padding-block: 0.3em;
+    padding-inline: var(--s3-5);
+    border-radius: var(--r-control-sm);
     font-size: var(--fs-callout);
     line-height: 1.25rem;
   }
@@ -129,16 +161,18 @@
   }
 
   .md {
-    block-size: 44px;
-    padding-inline: 18px;
+    min-block-size: 44px;
+    padding-block: 0.4em;
+    padding-inline: var(--s4-5);
     font-size: var(--fs-body);
     line-height: 1.375rem;
   }
 
   .lg {
-    block-size: var(--btn-h);
+    min-block-size: var(--btn-h);
+    padding-block: 0.5em;
     padding-inline: var(--s6);
-    border-radius: var(--r-md);
+    border-radius: var(--r-control-lg);
     font-size: 1.0625rem;
     line-height: 1.5rem;
   }
@@ -151,26 +185,28 @@
   .content {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: inherit;
     min-inline-size: 0;
   }
 
   .label {
-    overflow: hidden;
-    text-overflow: ellipsis;
+    min-inline-size: 0;
+    text-wrap: balance;
+    overflow-wrap: break-word;
+  }
+
+  .content :global(.btn-icon) {
+    flex: none;
+    inline-size: var(--icon-sm);
+    block-size: var(--icon-sm);
   }
 
   /* Variants */
   .primary {
     --btn-bg: var(--accent-strong);
     --btn-fg: var(--ink-on-accent);
-    --btn-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.16), 0 1px 2px rgb(74 44 24 / 0.16),
-      0 6px 16px -8px
-        light-dark(
-          color-mix(in srgb, var(--accent-strong) 80%, transparent),
-          color-mix(in srgb, var(--accent-strong) 30%, transparent)
-        );
+    --btn-shadow: var(--sh-accent);
   }
 
   .secondary {
@@ -184,15 +220,9 @@
   }
 
   .danger {
-    --btn-bg: var(--danger);
-    --btn-fg: var(--ink-on-accent);
-    --btn-shadow:
-      inset 0 1px 0 rgb(255 255 255 / 0.12), 0 1px 2px rgb(74 44 24 / 0.16),
-      0 6px 16px -8px
-        light-dark(
-          color-mix(in srgb, var(--danger) 70%, transparent),
-          color-mix(in srgb, var(--danger) 25%, transparent)
-        );
+    --btn-bg: var(--danger-solid);
+    --btn-fg: var(--on-danger);
+    --btn-shadow: var(--sh-danger);
   }
 
   @media (hover: hover) {
@@ -203,10 +233,10 @@
       --btn-bg: color-mix(in oklab, var(--surface-2), var(--ink) 5%);
     }
     .ghost:hover:not(:disabled) {
-      --btn-bg: color-mix(in srgb, var(--accent-soft) 60%, transparent);
+      --btn-bg: color-mix(in oklab, var(--surface-2) 70%, transparent);
     }
     .danger:hover:not(:disabled) {
-      --btn-bg: color-mix(in oklab, var(--danger), var(--ink) 8%);
+      --btn-bg: color-mix(in oklab, var(--danger-solid), var(--ink) 8%);
     }
   }
 
@@ -216,7 +246,7 @@
 
   .primary:active:not(:disabled) {
     --btn-bg: color-mix(in oklab, var(--accent-strong), var(--ink) 14%);
-    --btn-shadow: inset 0 1px 2px rgb(0 0 0 / 0.12);
+    --btn-shadow: var(--sh-press-inset);
   }
 
   .secondary:active:not(:disabled) {
@@ -224,16 +254,16 @@
   }
 
   .ghost:active:not(:disabled) {
-    --btn-bg: var(--accent-soft);
+    --btn-bg: var(--surface-2);
   }
 
   .danger:active:not(:disabled) {
-    --btn-bg: color-mix(in oklab, var(--danger), var(--ink) 14%);
-    --btn-shadow: inset 0 1px 2px rgb(0 0 0 / 0.12);
+    --btn-bg: color-mix(in oklab, var(--danger-solid), var(--ink) 14%);
+    --btn-shadow: var(--sh-press-inset);
   }
 
   .btn:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 3px;
   }
 
@@ -248,7 +278,7 @@
     --btn-bg: transparent;
   }
 
-  /* Loading: keep the label's width, hide it under a centred spinner. */
+  /* Loading: keep the label's size, hide it under a centred spinner. */
   .loading {
     cursor: progress;
   }

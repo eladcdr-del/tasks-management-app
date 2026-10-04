@@ -8,6 +8,8 @@
 // Note for the merge of step 1.4: keys 1.4 added to the old `dev` block of he.ts that are used by
 // primitives are re-homed here by the orchestrator.
 
+import type { MemberColor } from '$lib/domain/types';
+
 export const ui = {
   remove: (label: string) => `הסרת ${label}`,
   unassigned: 'עדיין לא נלקחה',
@@ -16,6 +18,19 @@ export const ui = {
   decrease: 'הפחתה',
   markDone: (title: string) => `סימון כבוצעה: ${title}`,
   currency: '₪',
+  /** Banner × button. */
+  dismiss: 'סגירת ההודעה',
+  /** PickerChip with no value yet: "מתי · בחירה". */
+  choose: 'בחירה',
+  /** ColorSwatchPicker: the Hebrew name of each member colour (its accessible name). */
+  memberColors: {
+    terracotta: 'טרקוטה',
+    sage: 'מרווה',
+    slate: 'כחול־אפור',
+    plum: 'שזיף',
+    ochre: 'חרדל',
+    teal: 'טורקיז'
+  } satisfies Record<MemberColor, string>,
   sync: {
     synced: 'הכל שמור',
     saving: 'שומר…',

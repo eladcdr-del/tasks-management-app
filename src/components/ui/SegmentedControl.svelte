@@ -1,7 +1,10 @@
 <script lang="ts" generics="T extends string">
-  // SegmentedControl: equal-width options on a sand track with a sliding white thumb.
+  // SegmentedControl: equal-width options on a sand track with a sliding ink thumb (selection is
+  // ink: the chosen option is cream on ink, AA in both themes).
   // a11y: radiogroup + radios, roving tabindex. Arrow keys follow the reading direction
   // (in RTL, ArrowLeft moves to the next option), Home/End jump; selection follows focus.
+  // The thumb slides towards inline-end; :dir() picks the sign, so it follows the control's own
+  // resolved direction. Labels wrap with large text and the track grows with them.
   import { haptic } from '$lib/platform/haptics';
 
   interface Option {
@@ -17,10 +20,19 @@
     /** Accessible name of the group (Hebrew). */
     label: string;
     onchange?: (value: T) => void;
+    /** Play the light "select" haptic when the choice changes (opt-in). */
+    haptics?: boolean;
     class?: string;
   }
 
-  let { options, value = $bindable(), label, onchange, class: className }: Props = $props();
+  let {
+    options,
+    value = $bindable(),
+    label,
+    onchange,
+    haptics = false,
+    class: className
+  }: Props = $props();
 
   let root: HTMLDivElement | undefined = $state();
   const index = $derived(
@@ -36,7 +48,7 @@
     if (opt.value !== value) {
       value = opt.value;
       onchange?.(opt.value);
-      haptic('select');
+      if (haptics) haptic('select');
     }
     if (focus) root?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[i]?.focus();
   }
@@ -86,15 +98,21 @@
 
 <style>
   .segmented {
-    --pad: 4px;
+    --pad: var(--s1);
+    --dir: 1;
     position: relative;
     display: grid;
     grid-template-columns: repeat(var(--n), minmax(0, 1fr));
-    block-size: 44px;
+    min-block-size: 44px;
     padding: var(--pad);
     border-radius: var(--r-md);
     background: var(--surface-2);
     isolation: isolate;
+  }
+
+  /* RTL: the thumb travels towards the left. */
+  .segmented:dir(rtl) {
+    --dir: -1;
   }
 
   .thumb {
@@ -102,58 +120,50 @@
     inset-block: var(--pad);
     inset-inline-start: var(--pad);
     inline-size: calc((100% - var(--pad) * 2) / var(--n));
-    border-radius: 12px;
-    /* Raised: white in light; a lighter brown than the track in dark (no token yet). */
-    background: light-dark(var(--surface), #43382f);
-    border: 1px solid light-dark(transparent, #4d4037);
-    box-shadow:
-      0 1px 2px rgb(74 44 24 / 0.08),
-      0 2px 6px rgb(74 44 24 / 0.06);
-    transform: translateX(calc(var(--i) * 100%));
-    transition: transform var(--d-slow) var(--ease-out);
+    border-radius: var(--r-control-sm);
+    background: var(--select-bg);
+    box-shadow: var(--sh-raised);
+    translate: calc(var(--i) * 100% * var(--dir)) 0;
+    transition: translate var(--d-slow) var(--ease-out);
     z-index: -1;
-  }
-
-  /* RTL: the thumb travels towards the left. */
-  :global([dir='rtl']) .thumb {
-    transform: translateX(calc(var(--i) * -100%));
   }
 
   .seg {
     position: relative;
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: center;
-    gap: 6px;
+    gap: 0 var(--s1-5);
     min-inline-size: 0;
+    min-block-size: 44px;
     /* The visible thumb is 36px; the button fills the whole 44px track height. */
     margin-block: calc(var(--pad) * -1);
-    border-radius: 12px;
+    padding-block: var(--pad);
+    padding-inline: var(--s1);
+    border-radius: var(--r-control-sm);
     color: var(--ink-2);
     font-size: var(--fs-callout);
     font-weight: 500;
     line-height: 1.25rem;
+    text-align: center;
     transition: color var(--d-base) var(--ease-out);
   }
 
   .seg[aria-checked='true'] {
-    color: var(--ink);
+    color: var(--select-fg);
   }
 
   .label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+    text-wrap: balance;
   }
 
   .count {
     font-size: var(--fs-caption);
     font-weight: 600;
-    color: var(--ink-2);
-  }
-
-  .seg[aria-checked='true'] .count {
-    color: var(--accent-ink);
+    color: inherit;
   }
 
   .seg:focus-visible {
@@ -164,9 +174,9 @@
     content: '';
     position: absolute;
     inset: var(--pad);
-    border-radius: 12px;
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+    border-radius: var(--r-control-sm);
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
   }
 
   @media (prefers-reduced-motion: reduce) {

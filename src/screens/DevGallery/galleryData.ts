@@ -1,5 +1,10 @@
 // Fixture data for the dev gallery (like seed data: content, not UI strings).
-import type { MemberColor } from '$lib/domain/types';
+import type { CategoryId, ISODate, MemberColor, Priority, RecurrenceFreq } from '$lib/domain/types';
+import { ageDays, ageLabel } from '$lib/domain/age';
+import { getCategory } from '$lib/domain/categories';
+import { addDays } from '$lib/domain/dates';
+import { snoozedLabel, whenChip } from '$lib/i18n/format';
+import { recurrenceLabel } from '$lib/parser/labels';
 import type { AvatarPerson } from '$components/ui/types';
 
 /** A stand-in "Google photo" (inline SVG, no network). */
@@ -40,9 +45,8 @@ export const family: AvatarPerson[] = [
 ];
 
 export interface MockBadge {
-  kind: 'age' | 'snooze' | 'due' | 'deadline' | 'danger';
+  kind: 'overdue' | 'urgent' | 'due' | 'deadline' | 'age' | 'snooze';
   label: string;
-  tone?: 'accent';
   /** 'plain' = quiet inline meta (no pill). */
   variant?: 'plain';
 }
@@ -50,7 +54,8 @@ export interface MockBadge {
 export interface MockTask {
   id: string;
   title: string;
-  category: 'car' | 'shopping' | 'home' | 'health' | 'finance' | 'returns' | 'family' | 'other';
+  category: CategoryId;
+  /** getCategory(category).short */
   categoryLabel: string;
   owner: 'me' | 'partner' | null;
   badges: MockBadge[];
@@ -60,74 +65,125 @@ export interface MockTask {
   done?: boolean;
 }
 
+/** The gallery's fixed "today" (a Sunday), so the labels and screenshots never drift. */
+export const GALLERY_TODAY: ISODate = '2026-10-04';
+const NOW = Date.parse(`${GALLERY_TODAY}T09:00:00+03:00`);
+const NOW_WALL = { hour: 9, minute: 0 };
+const URGENT_LABEL = 'דחוף';
+
+interface MockSpec {
+  id: string;
+  title: string;
+  category: CategoryId;
+  owner: 'me' | 'partner' | null;
+  /** Offsets in days from GALLERY_TODAY. */
+  due?: number;
+  planned?: number;
+  dueTime?: string;
+  hardDeadline?: boolean;
+  priority?: Priority;
+  createdDaysAgo?: number;
+  snoozeCount?: number;
+  recurrence?: RecurrenceFreq;
+  requested?: string;
+  pending?: boolean;
+  done?: boolean;
+}
+
+/** Builds a mock card the way TaskCard will: every label comes from the real formatters. */
+function mock(spec: MockSpec): MockTask {
+  const dueDate = spec.due === undefined ? null : addDays(GALLERY_TODAY, spec.due);
+  const scheduledFor = spec.planned === undefined ? null : addDays(GALLERY_TODAY, spec.planned);
+  const ageFields = {
+    createdAt: NOW - (spec.createdDaysAgo ?? 0) * 86_400_000,
+    seriesId: spec.recurrence ? `s-${spec.id}` : null,
+    dueDate,
+    scheduledFor
+  };
+  const badges: MockBadge[] = [];
+  const when = whenChip(
+    { dueDate, scheduledFor, dueTime: spec.dueTime ?? null },
+    GALLERY_TODAY,
+    NOW_WALL
+  );
+  if (when?.tone === 'late') badges.push({ kind: 'overdue', label: when.text });
+  if (spec.priority === 'urgent') badges.push({ kind: 'urgent', label: URGENT_LABEL });
+  if (when && when.tone !== 'late') {
+    badges.push({ kind: spec.hardDeadline ? 'deadline' : 'due', label: when.text });
+  }
+  if (ageDays(ageFields, NOW) >= 14) badges.push({ kind: 'age', label: ageLabel(ageFields, NOW) });
+  if (spec.snoozeCount) {
+    badges.push({ kind: 'snooze', label: snoozedLabel(spec.snoozeCount), variant: 'plain' });
+  }
+  return {
+    id: spec.id,
+    title: spec.title,
+    category: spec.category,
+    categoryLabel: getCategory(spec.category).short,
+    owner: spec.owner,
+    badges,
+    recurring: spec.recurrence
+      ? recurrenceLabel(spec.recurrence, undefined, GALLERY_TODAY)
+      : undefined,
+    requested: spec.requested,
+    pending: spec.pending,
+    done: spec.done
+  };
+}
+
 export const attention: MockTask[] = [
-  {
-    id: 'a1',
-    title: 'לקחת את האוטו לטסט',
-    category: 'car',
-    categoryLabel: 'רכב',
-    owner: 'partner',
-    badges: [{ kind: 'danger', label: 'באיחור יומיים' }]
-  },
-  {
+  mock({ id: 'a1', title: 'לקחת את האוטו לטסט', category: 'car', owner: 'partner', due: -2 }),
+  mock({
     id: 'a2',
     title: 'לשלם ארנונה',
     category: 'finance',
-    categoryLabel: 'כספים',
     owner: 'me',
-    recurring: 'חודשי',
-    badges: [
-      { kind: 'danger', label: 'דחוף' },
-      { kind: 'due', label: 'עד היום', tone: 'accent' }
-    ]
-  }
+    recurrence: 'monthly',
+    priority: 'urgent',
+    due: 0,
+    hardDeadline: true
+  })
 ];
 
-export const waiting: MockTask = {
+export const waiting: MockTask = mock({
   id: 'w1',
   title: 'להזמין אינסטלטור לנזילה במקלחת',
   category: 'home',
-  categoryLabel: 'בית ותיקונים',
-  owner: null,
-  badges: []
-};
+  owner: null
+});
 
 export const today: MockTask[] = [
-  {
+  mock({
     id: 't1',
     title: 'להחליף את החולצה בקניון',
     category: 'returns',
-    categoryLabel: 'החזרות',
     owner: 'me',
-    badges: [{ kind: 'deadline', label: 'עד יום ד׳' }]
-  },
-  {
+    due: 3,
+    hardDeadline: true
+  }),
+  mock({
     id: 't2',
     title: 'לברר על מזגן חדש לחדר השינה',
     category: 'home',
-    categoryLabel: 'בית',
     owner: 'partner',
-    badges: [
-      { kind: 'age', label: 'פתוחה 7 שבועות' },
-      { kind: 'snooze', label: 'נדחתה 4 פעמים', variant: 'plain' }
-    ]
-  },
-  {
+    createdDaysAgo: 49,
+    snoozeCount: 4
+  }),
+  mock({
     id: 't3',
-    title: 'לבטל את המנוי ל־Netflix לפני החידוש',
+    title: 'Netflix: לבטל את המנוי לפני החידוש',
     category: 'finance',
-    categoryLabel: 'כספים',
     owner: 'me',
     requested: 'דני ביקש ממך',
     pending: true,
-    badges: [{ kind: 'due', label: 'עד 31.10' }]
-  },
-  {
+    due: 27
+  }),
+  mock({
     id: 't4',
     title: 'לקנות מתנה ליום ההולדת של נועה',
     category: 'family',
-    categoryLabel: 'משפחה',
     owner: 'me',
-    badges: []
-  }
+    planned: 0,
+    dueTime: '17:30'
+  })
 ];

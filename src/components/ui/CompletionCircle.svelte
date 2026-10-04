@@ -3,7 +3,7 @@
    * CompletionCircle: the "done" control at the start of every TaskCard. 44×44 hit target around
    * a 26px circle (lg: 30px). role="checkbox"; its name is "סימון כבוצעה: <title>".
    *
-   * Motion (Blueprint §8): checking fills the circle with accent (soft spring pop) and draws the
+   * Motion (Blueprint §8): checking fills the circle with accent-strong (soft spring pop) and draws the
    * check stroke in 240ms, with a faint ring "breath" outwards; it fires haptic('complete').
    * Unchecking reverses in 120ms. Reduced motion: both simply crossfade in ≤ 120ms.
    *
@@ -69,7 +69,8 @@
   .cc {
     --cc-size: 26px;
     --cc-ring: var(--ink-3);
-    --cc-fill: var(--accent);
+    /* accent-strong, not accent: the check needs ≥ 3:1 on the fill (4.6:1 light, 8:1 dark). */
+    --cc-fill: var(--accent-strong);
     position: relative;
     display: grid;
     place-items: center;
@@ -174,7 +175,7 @@
   }
 
   .cc:focus-visible svg {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 3px;
     border-radius: var(--r-pill);
   }

@@ -1,10 +1,12 @@
 <script lang="ts">
-  // TextField: label, hint, error; `dir="auto"` so Hebrew, English and mixed text each align right.
+  // TextField: label, hint, error. Direction follows textDir(value): any Hebrew → rtl (so
+  // "IKEA להחזיר" stays right-aligned), pure Latin / digits → auto.
   // `bind:value`. Extra input attributes (maxlength, enterkeyhint, autocomplete…) pass through.
   // To autofocus inside a BottomSheet, add `data-autofocus` (the sheet focuses it on open).
   import type { Snippet } from 'svelte';
   import type { HTMLInputAttributes } from 'svelte/elements';
   import FieldShell from './FieldShell.svelte';
+  import { textDir } from '$lib/i18n/textDir';
   import type { IconComponent } from './types';
   import { ICON_STROKE } from './types';
 
@@ -32,6 +34,7 @@
     id: idProp,
     type = 'text',
     disabled = false,
+    placeholder,
     class: className,
     ...rest
   }: Props = $props();
@@ -42,7 +45,7 @@
 </script>
 
 {#snippet lead()}
-  {#if Icon}<Icon size={20} strokeWidth={ICON_STROKE} aria-hidden="true" />{/if}
+  {#if Icon}<Icon strokeWidth={ICON_STROKE} aria-hidden="true" />{/if}
 {/snippet}
 
 <FieldShell
@@ -61,7 +64,8 @@
     {id}
     {type}
     class="control"
-    dir="auto"
+    dir={textDir(value || placeholder)}
+    {placeholder}
     bind:value
     {disabled}
     aria-invalid={error ? 'true' : undefined}

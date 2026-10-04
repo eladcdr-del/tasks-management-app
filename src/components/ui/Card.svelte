@@ -97,7 +97,7 @@
 
   .interactive:active {
     transform: scale(0.985);
-    box-shadow: 0 1px 2px rgb(74 44 24 / 0.06);
+    box-shadow: var(--sh-pressed);
   }
 
   @media (hover: hover) {
@@ -107,7 +107,7 @@
   }
 
   .interactive:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 

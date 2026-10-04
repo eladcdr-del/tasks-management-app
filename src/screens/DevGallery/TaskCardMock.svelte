@@ -2,20 +2,14 @@
   // MOCK TaskCard, built only from 1.4 primitives, so the composition can be judged.
   // The real TaskCard (swipe, collapse, data) is step 3.2's.
   import type { Snippet } from 'svelte';
-  import Car from '@lucide/svelte/icons/car';
-  import ShoppingBag from '@lucide/svelte/icons/shopping-bag';
-  import Wrench from '@lucide/svelte/icons/wrench';
-  import HeartPulse from '@lucide/svelte/icons/heart-pulse';
-  import Receipt from '@lucide/svelte/icons/receipt';
-  import Repeat2 from '@lucide/svelte/icons/repeat-2';
   import Repeat from '@lucide/svelte/icons/repeat';
-  import Gift from '@lucide/svelte/icons/gift';
-  import CircleDot from '@lucide/svelte/icons/circle-dot';
   import HandHelping from '@lucide/svelte/icons/hand-helping';
   import Avatar from '$components/ui/Avatar.svelte';
   import Badge from '$components/ui/Badge.svelte';
   import CompletionCircle from '$components/ui/CompletionCircle.svelte';
-  import type { AvatarPerson, IconComponent } from '$components/ui/types';
+  import { categoryIcon } from '$components/ui/CategoryIcon.svelte';
+  import type { AvatarPerson } from '$components/ui/types';
+  import { textDir } from '$lib/i18n/textDir';
   import type { MockTask } from './galleryData';
 
   interface Props {
@@ -27,17 +21,6 @@
 
   let { task, me, partner, actions }: Props = $props();
 
-  const ICONS: Record<MockTask['category'], IconComponent> = {
-    car: Car,
-    shopping: ShoppingBag,
-    home: Wrench,
-    health: HeartPulse,
-    finance: Receipt,
-    returns: Repeat2,
-    family: Gift,
-    other: CircleDot
-  };
-
   // Local, optimistic: starts from the task and can be toggled in the gallery.
   let done = $derived(task.done ?? false);
   const owner = $derived(task.owner === 'me' ? me : task.owner === 'partner' ? partner : null);
@@ -48,16 +31,16 @@
   <div class="body">
     {#if task.requested}
       <p class="requested">
-        <HandHelping size={14} strokeWidth={2} aria-hidden="true" />{task.requested}
+        <HandHelping class="req-icon" strokeWidth={1.75} aria-hidden="true" />{task.requested}
       </p>
     {/if}
-    <button type="button" class="title" dir="auto">{task.title}</button>
+    <button type="button" class="title" dir={textDir(task.title)}>{task.title}</button>
     <div class="meta">
       <!-- Status first (read first in RTL), then the quiet context. -->
       {#each task.badges as b (b.label)}
-        <Badge kind={b.kind} label={b.label} tone={b.tone} variant={b.variant} />
+        <Badge kind={b.kind} label={b.label} variant={b.variant} />
       {/each}
-      <Badge variant="plain" icon={ICONS[task.category]} label={task.categoryLabel} />
+      <Badge variant="plain" icon={categoryIcon(task.category)} label={task.categoryLabel} />
       {#if task.recurring}
         <Badge variant="plain" icon={Repeat} label={task.recurring} />
       {/if}
@@ -115,6 +98,12 @@
     color: var(--accent-ink);
   }
 
+  .requested :global(.req-icon) {
+    inline-size: 1em;
+    block-size: 1em;
+    flex: none;
+  }
+
   .title {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -123,7 +112,7 @@
     overflow: hidden;
     font-size: var(--fs-body);
     font-weight: 500;
-    line-height: 1.375rem;
+    line-height: 1.4;
     color: var(--ink);
     text-align: start;
     transition: color var(--d-base) var(--ease-out);
@@ -142,7 +131,7 @@
   }
 
   .title:focus-visible::after {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 
