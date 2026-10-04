@@ -72,7 +72,7 @@ test('entering the demo (?demo=1) from setup → Home with the seeded data and t
 
   await page.goto('./?demo=1#/');
   await expectPulse(page, 3, 4, 3);
-  await expect(page.getByText('ארוחה במסעדה · 7/10')).toBeVisible();
+  await expect(page.getByText('ארוחה במסעדה · 7 מתוך 10')).toBeVisible();
   await expect(page.locator('[data-me]')).toHaveText('מיכל');
   await expect(banner(page)).toContainText('מצב תצוגה · הנתונים לדוגמה');
   await expect(page.getByRole('navigation', { name: 'ניווט ראשי' })).toBeVisible();
