@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { shareTask, whatsappUrl } from './share';
+import { inviteLink, parseInviteInput, shareTask, whatsappUrl } from './share';
 
 const input = {
   title: 'מצבר',
@@ -50,5 +50,26 @@ describe('shareTask', () => {
     vi.stubGlobal('window', { open: vi.fn().mockReturnValue(null) });
     await expect(shareTask(input)).resolves.toBe('copied');
     expect(writeText).toHaveBeenCalledWith(`${input.text}\n${input.url}`);
+  });
+});
+
+describe('invite links', () => {
+  it('builds the public join link', () => {
+    expect(inviteLink('Abc123xyz')).toBe(
+      'https://eladcdr-del.github.io/tasks-management-app/#/join/Abc123xyz'
+    );
+  });
+
+  it('reads a pasted link from any host, or a bare code', () => {
+    expect(
+      parseInviteInput(' https://eladcdr-del.github.io/tasks-management-app/#/join/Abc123xyz ')
+    ).toBe('Abc123xyz');
+    expect(parseInviteInput('הצטרפו: http://localhost:4173/x/#/join/Q1w2E3r4T5y6?x=1')).toBe(
+      'Q1w2E3r4T5y6'
+    );
+    expect(parseInviteInput('Abc123xyz')).toBe('Abc123xyz');
+    expect(parseInviteInput('')).toBeNull();
+    expect(parseInviteInput('שלום מה נשמע')).toBeNull();
+    expect(parseInviteInput('abc')).toBeNull();
   });
 });

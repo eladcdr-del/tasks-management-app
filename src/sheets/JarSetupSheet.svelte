@@ -1,25 +1,70 @@
 <script lang="ts">
-  // STUB (1.1 → 4.2): placeholder. Step 4.2 replaces this file; keep the props contract.
-  // Rendered by SheetHost when router.sheet.name matches; `onClose` pops the sheet's history entry.
+  // JarSetupSheet (step 4.2): the treat and how many tasks fill the jar (3–50) → household.setJar.
+  // Opens with the current jar when there is one. Rendered by SheetHost; `onClose` pops its entry.
+  import { Button, Stepper, TextField } from '$components/ui';
   import { he } from '$lib/i18n/he';
+  import { household } from '$lib/state/household.svelte';
 
   interface Props {
     onClose: () => void;
   }
 
   let { onClose }: Props = $props();
+  const t = he.jar.setup;
+
+  const current = household.jar;
+  let treat = $state(current?.treat ?? '');
+  let target = $state(current?.target ?? 10);
+  let tried = $state(false);
+  const error = $derived(tried && treat.trim() === '' ? t.treatError : undefined);
+
+  function save(e: SubmitEvent) {
+    e.preventDefault();
+    tried = true;
+    const name = treat.trim();
+    if (!name) return;
+    household.setJar({ treat: name, target: Math.min(50, Math.max(3, Math.round(target))) });
+    onClose();
+  }
 </script>
 
-<div class="stub" data-stub="JarSetupSheet">
-  <h2>{he.jar.setup.title}</h2>
-  <p>{he.common.comingSoon}</p>
-  <button type="button" onclick={onClose}>{he.common.close}</button>
-</div>
+<form class="sheet" data-sheet-content="jarSetup" onsubmit={save} novalidate>
+  <header>
+    <h2>{current ? t.editTitle : t.title}</h2>
+    <p class="hint">{t.hint}</p>
+  </header>
+  <TextField
+    label={t.treat}
+    bind:value={treat}
+    placeholder={t.treatPlaceholder}
+    maxlength={60}
+    enterkeyhint="done"
+    {error}
+    data-autofocus
+  />
+  <div class="target">
+    <p class="target-label">{t.target}</p>
+    <Stepper
+      bind:value={target}
+      min={3}
+      max={50}
+      label={t.target}
+      suffix={t.targetSuffix}
+      haptics
+    />
+  </div>
+  <Button type="submit" block size="lg">{current ? t.save : t.start}</Button>
+</form>
 
 <style>
-  .stub {
+  .sheet {
     display: grid;
-    gap: var(--s3);
+    gap: var(--s5);
+  }
+
+  header {
+    display: grid;
+    gap: var(--s1);
   }
 
   h2 {
@@ -27,19 +72,19 @@
     color: var(--ink);
   }
 
-  p {
+  .hint {
     font: var(--font-callout);
     color: var(--ink-2);
   }
 
-  button {
-    justify-self: start;
-    min-block-size: var(--tap-min);
-    padding-inline: var(--s5);
-    border-radius: var(--r-pill);
-    background: var(--surface-2);
-    color: var(--ink);
+  .target {
+    display: grid;
+    gap: var(--s2);
+  }
+
+  .target-label {
     font: var(--font-callout);
     font-weight: 500;
+    color: var(--ink);
   }
 </style>
