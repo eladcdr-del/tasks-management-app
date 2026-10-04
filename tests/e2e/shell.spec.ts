@@ -122,7 +122,7 @@ test.describe('screenshots', () => {
       ).toBeVisible();
       await expect(page.getByRole('link', { name: /למדריך החיבור/ })).toHaveAttribute(
         'href',
-        'https://github.com/eladcdr-del/tasks-management-app/blob/main/SETUP.md'
+        'https://github.com/eladcdr-del/tasks-management-app/blob/HEAD/SETUP.md'
       );
       await shot(page, `setup-${scheme}`);
 
