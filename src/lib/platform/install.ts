@@ -30,7 +30,9 @@ const listeners = new Set<(s: InstallState) => void>();
 function isStandalone(): boolean {
   if (typeof window === 'undefined') return false;
   const nav = navigator as Navigator & { standalone?: boolean };
-  return window.matchMedia?.('(display-mode: standalone)').matches === true || nav.standalone === true;
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches === true || nav.standalone === true
+  );
 }
 
 export function installState(): InstallState {
