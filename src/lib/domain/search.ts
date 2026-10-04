@@ -5,7 +5,7 @@
 //
 // Matching model. Both sides are normalised and split into tokens (normalizeHebrew, tokenize).
 //  - QUERY stopwords are dropped, also behind prefix letters ("ובאיזה" -> "איזה"): question and
-//    function words (מתי, איזה, של, ...) and the past-tense verbs questions open with (שילמנו,
+//    function words (מתי, איזה, של, שלו, ...) and the past-tense verbs questions open with (שילמנו,
 //    תיקן, עשינו, קנינו, עלה, ...: "החלפנו" rarely matches the noun "החלפת" anyway, and the object
 //    of the question carries the meaning). The haystack keeps every word.
 //  - Hebrew glues the prefix letters ו ה ב ל מ ש כ onto words. Up to two are peeled off a token, on
@@ -53,19 +53,19 @@ const FINAL_FORMS = 'ךםןףץ';
 const REGULAR_FORMS = 'כמנפצ';
 
 // Zero-width space / non-joiner / joiner, word joiner, BOM: they separate words in pasted text.
-const ZERO_WIDTH = /[​-‍⁠﻿]/g;
+const ZERO_WIDTH = /[\u200B-\u200D\u2060\uFEFF]/g;
 // Bidi controls (LRM, RLM, embeddings, overrides, isolates): invisible, removed.
-const BIDI_CONTROLS = /[‎‏‪-‮⁦-⁩]/g;
+const BIDI_CONTROLS = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 // Niqqud + cantillation (U+0591-U+05BD, U+05BF, U+05C1-2, U+05C4-5, U+05C7), without the
 // maqaf / paseq / sof-pasuq punctuation.
-const POINTS = /[֑-ׇֽֿׁׂׅׄ]/g;
+const POINTS = /[\u0591-\u05BD\u05BF\u05C1\u05C2\u05C4\u05C5\u05C7]/g;
 // Hebrew punctuation that separates words: maqaf, paseq, sof pasuq, nun hafukha.
-const HEBREW_SEPARATORS = /[־׀׃׆]/g;
+const HEBREW_SEPARATORS = /[\u05BE\u05C0\u05C3\u05C6]/g;
 // Geresh, gershayim and quote marks (ASCII and typographic): dropped, so פנצ'ר == פנצר and בסופ"ש == בסופש.
-const QUOTES = /['"`´׳״‘-‟′″]/g;
+const QUOTES = /['"`\u00B4\u05F3\u05F4\u2018-\u201F\u2032\u2033]/g;
 // A hyphen (hyphen-minus, U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure dash, U+2013 en
 // dash) between two digits / Latin letters: dropped, so 050-1234567 == 0501234567 and Wi-Fi == wifi.
-const INNER_HYPHEN = /([0-9a-z])[-‐-–](?=[0-9a-z])/g;
+const INNER_HYPHEN = /([0-9a-z])[-\u2010-\u2013](?=[0-9a-z])/g;
 const FINAL_LETTERS = new RegExp(`[${FINAL_FORMS}]`, 'g');
 const NOT_WORD = /[^\p{L}\p{M}\p{N}]+/u;
 
@@ -125,6 +125,21 @@ const STOPWORDS = new Set(
     'זה',
     'זאת',
     'לנו',
+    'האם',
+    'איך',
+    // pronouns ("ומה הטלפון שלו?": "שלו" must not prefix-match "שלושת")
+    'הוא',
+    'היא',
+    'הם',
+    'לו',
+    'לה',
+    'אותו',
+    'אותה',
+    'שלי',
+    'שלו',
+    'שלה',
+    'שלנו',
+    'שלהם',
     // past-tense verbs that natural questions open with ("כמה שילמנו על...", "מי תיקן את...")
     'שילמנו',
     'שילם',
@@ -337,7 +352,6 @@ export function searchDoneTasks(
   if (strict.length > 0) return strict.sort(byRank).map((h) => h.task);
 
   const meaningful = wanted.filter((q) => q.raw.length >= FALLBACK_MIN_TOKEN);
-  if (meaningful.length < 2) return []; // with one token the fallback is the strict pass
   const partial: Hit[] = [];
   for (const { task, hay } of candidates) {
     const scores = meaningful.map((q) => tokenScore(q, hay)).filter((s) => s > 0);

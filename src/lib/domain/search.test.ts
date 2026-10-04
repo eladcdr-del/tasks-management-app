@@ -237,7 +237,21 @@ describe('matchesQuery', () => {
       'האחרונות',
       'זה',
       'זאת',
-      'לנו'
+      'לנו',
+      'האם',
+      'איך',
+      'הוא',
+      'היא',
+      'הם',
+      'לו',
+      'לה',
+      'אותו',
+      'אותה',
+      'שלי',
+      'שלו',
+      'שלה',
+      'שלנו',
+      'שלהם'
     ];
     // Past-tense verbs that natural questions open with ("כמה שילמנו על...", "מי תיקן את...").
     const questionVerbs = [
@@ -518,7 +532,9 @@ describe('searchDoneTasks', () => {
 
   it('matches across fields: each token may hit a different field', () => {
     expect(ids(searchDoneTasks(all, 'מצבר יוסי'))).toEqual([battery.id]);
-    expect(ids(searchDoneTasks(all, 'מצבר משה'))).toEqual([]);
+    // no task has both: the strict pass is empty, so the fallback lists each partial match
+    expect(scoreQuery('החלפת מצבר מוסך השרון יוסי', 'מצבר משה')).toBe(0);
+    expect(ids(searchDoneTasks(all, 'מצבר משה'))).toEqual([battery.id, leak.id]);
   });
 
   it('only returns completed tasks', () => {
@@ -616,6 +632,11 @@ describe('searchDoneTasks', () => {
     it('needs a meaningful token: single letters and stopwords never carry it', () => {
       expect(searchDoneTasks(all, 'מתי ב 2031')).toEqual([]);
       expect(searchDoneTasks(all, 'שמן כסף')).toEqual([]);
+    });
+
+    it('one meaningful token is enough when a stray letter broke the strict pass', () => {
+      // "ז" matches no word in any task, so the strict pass is empty; מצבר alone still counts
+      expect(ids(searchDoneTasks(all, 'מצבר ז'))).toEqual([battery.id]);
     });
 
     it('respects the filters and still ignores open tasks', () => {
@@ -792,7 +813,11 @@ describe('house memory: natural questions over a seed-like history (council B-M6
     ['כמה עלו הקניות', [groceries]],
     ['כמה שילמנו על המתנה לבר המצווה?', [barMitzvah]],
     ['מתי החלפנו מצבר ובאיזה מוסך?', [battery]],
-    ['איפה תיקנו את הפנצ׳ר', [tire]]
+    ['איפה תיקנו את הפנצ׳ר', [tire]],
+    // an unlisted verb ("ניקינו") breaks the strict pass; the fallback still finds the job
+    ['מתי ניקינו את המזגנים?', [acCleaning]],
+    // no task says "מספר": both jobs at the garage with יוסי match the other two tokens
+    ['מה המספר של יוסי מהמוסך?', [battery, carService]]
   ])('"%s"', (q, expected) => {
     expect(ask(q)).toEqual(ids(expected));
   });
