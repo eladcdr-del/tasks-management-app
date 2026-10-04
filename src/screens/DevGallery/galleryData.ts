@@ -1,9 +1,9 @@
 // Fixture data for the dev gallery (like seed data: content, not UI strings).
 import type { CategoryId, ISODate, MemberColor, Priority, RecurrenceFreq } from '$lib/domain/types';
-import { ageDays, ageLabel } from '$lib/domain/age';
+import { ageDays } from '$lib/domain/age';
 import { getCategory } from '$lib/domain/categories';
 import { addDays } from '$lib/domain/dates';
-import { snoozedLabel, whenChip } from '$lib/i18n/format';
+import { ageLabel, snoozedLabel, whenChip } from '$lib/i18n/format';
 import { recurrenceLabel } from '$lib/parser/labels';
 import type { AvatarPerson } from '$components/ui/types';
 
