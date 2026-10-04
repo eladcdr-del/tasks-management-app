@@ -9,10 +9,11 @@
   import RequestSheet from '../../sheets/RequestSheet.svelte';
   import SnoozeSheet from '../../sheets/SnoozeSheet.svelte';
   import JarSetupSheet from '../../sheets/JarSetupSheet.svelte';
+  import PhotoSheet from '../../sheets/PhotoSheet.svelte';
 
   const sheet = $derived(router.sheet);
   const close = () => router.closeSheet();
-  // 3.3/4.1: PhotoViewer renders the 'photo' sheet full-screen; until then nothing is drawn for it.
+  // The 'photo' sheet is full-screen (PhotoSheet, owner 3.3), outside the bottom-sheet panel.
 </script>
 
 <svelte:window
@@ -21,7 +22,9 @@
   }}
 />
 
-{#if sheet && sheet.name !== 'photo'}
+{#if sheet && sheet.name === 'photo'}
+  <PhotoSheet photoId={sheet.photoId} onClose={close} />
+{:else if sheet}
   <button type="button" class="scrim" aria-label={he.common.close} onclick={close}></button>
   <div class="panel" role="dialog" aria-modal="true" data-sheet={sheet.name}>
     {#if sheet.name === 'quickAdd'}
