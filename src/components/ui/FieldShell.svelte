@@ -3,6 +3,7 @@
   // optional adornments), hint and error. Not used directly by screens.
   import type { Snippet } from 'svelte';
   import CircleAlert from '@lucide/svelte/icons/circle-alert';
+  import { ICON_STROKE } from './types';
 
   interface Props {
     id: string;
@@ -49,7 +50,7 @@
   </div>
   {#if error}
     <p id="{id}-error" class="msg error">
-      <CircleAlert size={15} strokeWidth={2} aria-hidden="true" />
+      <CircleAlert strokeWidth={ICON_STROKE} aria-hidden="true" class="msg-icon" />
       <span>{error}</span>
     </p>
   {:else if hint}
@@ -89,7 +90,8 @@
     min-block-size: var(--btn-h);
     border-radius: var(--r-md);
     background: var(--surface);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--line), var(--ink) 6%);
+    /* --field-edge is ≥ 3:1 on --surface and --bg (WCAG 1.4.11). */
+    box-shadow: inset 0 0 0 1px var(--field-edge);
     transition:
       box-shadow var(--d-base) var(--ease-out),
       background-color var(--d-base) var(--ease-out);
@@ -101,8 +103,8 @@
 
   .box:focus-within {
     box-shadow:
-      inset 0 0 0 1.5px var(--accent),
-      0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent);
+      inset 0 0 0 1.5px var(--focus-ring),
+      0 0 0 4px color-mix(in srgb, var(--focus-ring) 16%, transparent);
   }
 
   .invalid .box {
@@ -137,7 +139,7 @@
   }
 
   .box :global(.control::placeholder) {
-    color: var(--ink-3);
+    color: var(--placeholder);
     opacity: 1;
   }
 
@@ -146,7 +148,7 @@
   }
 
   .multiline .box :global(.control) {
-    padding-block: 14px;
+    padding-block: var(--s3-5);
     resize: none;
     line-height: var(--lh-body);
   }
@@ -156,6 +158,11 @@
     place-items: center;
     flex: none;
     color: var(--ink-2);
+  }
+
+  .adorn :global(svg) {
+    inline-size: var(--icon-md);
+    block-size: var(--icon-md);
   }
 
   .lead {
@@ -170,7 +177,7 @@
   .msg {
     display: flex;
     align-items: flex-start;
-    gap: 6px;
+    gap: var(--s1-5);
     font: var(--font-caption);
     font-weight: 400;
   }
@@ -184,8 +191,10 @@
     font-weight: 500;
   }
 
-  .error :global(svg) {
+  .error :global(.msg-icon) {
     flex: none;
-    margin-block-start: 1.5px;
+    inline-size: var(--icon-sm);
+    block-size: var(--icon-sm);
+    margin-block-start: 0.05em;
   }
 </style>

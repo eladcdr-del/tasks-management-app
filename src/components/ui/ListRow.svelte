@@ -1,10 +1,14 @@
 <script lang="ts">
-  // ListRow: a 56px+ row for settings, members and pickers. Rows placed next to each other get an
-  // inset hairline between them automatically. Put them inside <Card padding="none">.
+  // ListRow: a 56px+ row for settings, members and pickers. Rows placed next to each other get a
+  // hairline between them automatically, inset on the CONTENT edges: it starts at the text column
+  // and stops at the row's inline-end padding. Put them inside <Card padding="none">, or bleed them
+  // to a sheet's edges with `--row-pad: var(--sheet-pad)` and a matching negative margin.
   //   - `href` → link, `onclick` → button, neither → static row (may hold its own controls).
   //   - `chevron` adds a "forward" chevron at inline-end (points left in RTL).
+  // Titles wrap (no truncation), and icons scale with the text.
   import type { Snippet } from 'svelte';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import { textDir } from '$lib/i18n/textDir';
   import type { IconComponent } from './types';
   import { ICON_STROKE } from './types';
 
@@ -22,7 +26,7 @@
     onclick?: (e: MouseEvent) => void;
     chevron?: boolean;
     danger?: boolean;
-    /** Title is user-entered (names, task titles): dir="auto". */
+    /** Title is user-entered (names, task titles): direction via textDir(). */
     userText?: boolean;
     class?: string;
   }
@@ -56,22 +60,17 @@
     <span class="lead">{@render leading()}</span>
   {:else if Icon}
     <span class="lead icon">
-      <Icon
-        size={20}
-        strokeWidth={ICON_STROKE}
-        aria-hidden="true"
-        class={flipIcon ? 'flip-rtl' : ''}
-      />
+      <Icon strokeWidth={ICON_STROKE} aria-hidden="true" class={['ic', { 'flip-rtl': flipIcon }]} />
     </span>
   {/if}
   <span class="main">
-    <span class="title" dir={userText ? 'auto' : undefined}>{title}</span>
+    <span class="title" dir={userText ? textDir(title) : undefined}>{title}</span>
     {#if subtitle}<span class="subtitle">{subtitle}</span>{/if}
   </span>
   {#if value}<span class="value">{value}</span>{/if}
   {#if trailing}<span class="trail">{@render trailing()}</span>{/if}
   {#if chevron}
-    <ChevronRight size={18} strokeWidth={ICON_STROKE} aria-hidden="true" class="chev flip-rtl" />
+    <ChevronRight strokeWidth={ICON_STROKE} aria-hidden="true" class="chev flip-rtl" />
   {/if}
 {/snippet}
 
@@ -85,7 +84,9 @@
 
 <style>
   .row {
-    --row-inset: var(--s4);
+    --pad: var(--row-pad, var(--s4));
+    --lead: calc(var(--icon-md) + var(--s4)); /* 36px at 100%, grows with the text */
+    --row-inset: var(--pad);
     position: relative;
     display: flex;
     align-items: center;
@@ -93,7 +94,7 @@
     inline-size: 100%;
     min-block-size: 56px;
     padding-block: var(--s2);
-    padding-inline: var(--s4);
+    padding-inline: var(--pad);
     color: var(--ink);
     text-align: start;
     text-decoration: none;
@@ -101,15 +102,15 @@
   }
 
   .has-lead {
-    --row-inset: calc(var(--s4) + 36px + var(--s3));
+    --row-inset: calc(var(--pad) + var(--lead) + var(--s3));
   }
 
-  /* Hairline between consecutive rows, aligned with the text column. */
+  /* Hairline between consecutive rows: from the text column to the inline-end content edge. */
   :global(.hc-list-row + .hc-list-row::before) {
     content: '';
     position: absolute;
     inset-block-start: 0;
-    inset-inline: var(--row-inset) 0;
+    inset-inline: var(--row-inset) var(--pad);
     border-block-start: 1px solid var(--line);
   }
 
@@ -117,20 +118,25 @@
     display: grid;
     place-items: center;
     flex: none;
-    min-inline-size: 36px;
+    min-inline-size: var(--lead);
   }
 
   .lead.icon {
-    inline-size: 36px;
-    block-size: 36px;
-    border-radius: 12px;
+    inline-size: var(--lead);
+    block-size: var(--lead);
+    border-radius: var(--r-control-sm);
     background: var(--surface-2);
     color: var(--ink-2);
   }
 
+  .lead :global(.ic) {
+    inline-size: var(--icon-md);
+    block-size: var(--icon-md);
+  }
+
   .main {
     display: grid;
-    gap: 2px;
+    gap: var(--s0-5);
     flex: 1;
     min-inline-size: 0;
   }
@@ -138,9 +144,8 @@
   .title {
     font: var(--font-body);
     font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
   }
 
   .subtitle {
@@ -150,9 +155,12 @@
   }
 
   .value {
-    flex: none;
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    max-inline-size: 45%;
     font: var(--font-callout);
     color: var(--ink-2);
+    text-align: end;
   }
 
   .trail {
@@ -163,8 +171,10 @@
 
   .row :global(.chev) {
     flex: none;
+    inline-size: var(--icon-sm);
+    block-size: var(--icon-sm);
     color: var(--ink-3);
-    margin-inline-end: -4px;
+    margin-inline-end: calc(var(--s1) * -1);
   }
 
   .danger .title {
@@ -191,7 +201,7 @@
   }
 
   .interactive:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
     border-radius: var(--r-md);
   }

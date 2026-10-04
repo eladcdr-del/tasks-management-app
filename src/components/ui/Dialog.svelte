@@ -10,6 +10,7 @@
   import { untrack } from 'svelte';
   import Button from './Button.svelte';
   import { he } from '$lib/i18n/he';
+  import { textDir } from '$lib/i18n/textDir';
   import { REDUCED_MAX, reducedMotion } from '$lib/platform/motion';
   import { lockScroll, wrapTab } from './focus';
 
@@ -23,6 +24,8 @@
     tone?: 'default' | 'danger';
     /** Shows a spinner on the confirm button and blocks dismissal. */
     loading?: boolean;
+    /** Title / message contain user-entered text (a task title): direction via textDir(). */
+    userText?: boolean;
     onConfirm: () => void;
     onCancel: () => void;
   }
@@ -36,6 +39,7 @@
     cancelLabel = he.common.cancel,
     tone = 'default',
     loading = false,
+    userText = false,
     onConfirm,
     onCancel
   }: Props = $props();
@@ -103,8 +107,10 @@
 >
   <div class="scrim" aria-hidden="true"></div>
   <div class="card" bind:this={cardEl}>
-    <h2 id="{uid}-t" class="title">{title}</h2>
-    {#if message}<p id="{uid}-m" class="message">{message}</p>{/if}
+    <h2 id="{uid}-t" class="title" dir={userText ? textDir(title) : undefined}>{title}</h2>
+    {#if message}
+      <p id="{uid}-m" class="message" dir={userText ? textDir(message) : undefined}>{message}</p>
+    {/if}
     {#if children}<div class="extra">{@render children()}</div>{/if}
     <div class="actions">
       <Button variant="secondary" size="md" data-cancel disabled={loading} onclick={onCancel}>
@@ -159,6 +165,9 @@
   .card {
     position: relative;
     inline-size: min(100%, 360px);
+    max-block-size: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: var(--s6) var(--s5) var(--s5);
     border-radius: var(--r-xl);
     background: var(--surface);
@@ -195,9 +204,10 @@
     margin-block-start: var(--s3);
   }
 
+  /* Two equal buttons side by side; they stack when large text makes either label too wide. */
   .actions {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 7.5em), 1fr));
     gap: var(--s2);
     margin-block-start: var(--s6);
   }

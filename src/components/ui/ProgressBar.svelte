@@ -43,15 +43,15 @@
 </div>
 
 <style>
+  /* Every fill is ≥ 3:1 against the track (tokens.css): the -ink shades, not the light bases. */
   .progress {
-    --fill: var(--accent);
+    --fill: var(--progress-fill);
     display: flex;
     inline-size: 100%;
     block-size: 6px;
     overflow: hidden;
     border-radius: var(--r-pill);
-    /* Sand in light; in dark surface-2 vanishes on a card, so use the hairline colour. */
-    background: light-dark(var(--surface-2), var(--line));
+    background: var(--progress-track);
   }
 
   .regular {
@@ -59,11 +59,11 @@
   }
 
   .tone-sage {
-    --fill: var(--sage);
+    --fill: var(--sage-ink);
   }
 
   .tone-member {
-    --fill: var(--m-base);
+    --fill: var(--m-ink);
   }
 
   .fill {

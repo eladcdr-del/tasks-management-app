@@ -1,12 +1,14 @@
 <script lang="ts">
   // SectionHeader: "דורש תשומת לב  (2)  ·········  הכל". Title + optional count + optional action.
+  // tone="danger" turns the count into the solid danger pill (the attention block only).
+  // The title wraps and the count pill grows with large text.
   import type { Snippet } from 'svelte';
 
   interface Props {
     title: string;
     count?: number;
-    /** Tone of the count pill: neutral, or danger for "דורש תשומת לב". */
-    tone?: 'neutral' | 'danger' | 'accent';
+    /** Tone of the count pill: neutral, or solid danger for "דורש תשומת לב". */
+    tone?: 'neutral' | 'danger';
     actionLabel?: string;
     onaction?: (e: MouseEvent) => void;
     actionHref?: string;
@@ -34,7 +36,7 @@
 
 <div class={['section-header', className]}>
   <svelte:element this={`h${level}`} class="title" {id}>
-    <span>{title}</span>
+    <span class="t">{title}</span>
     {#if count !== undefined}
       <span class={['count', 'num', tone]}>{count}</span>
     {/if}
@@ -59,19 +61,25 @@
 
   .title {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--s2);
+    gap: var(--s1) var(--s2);
+    min-inline-size: 0;
     font: var(--font-headline);
     color: var(--ink);
+  }
+
+  .t {
     min-inline-size: 0;
+    overflow-wrap: anywhere;
   }
 
   .count {
     display: inline-grid;
     place-items: center;
-    min-inline-size: 24px;
-    block-size: 22px;
-    padding-inline: 7px;
+    min-inline-size: 1.85em;
+    min-block-size: 1.7em;
+    padding-inline: 0.55em;
     border-radius: var(--r-pill);
     background: var(--surface-2);
     color: var(--ink-2);
@@ -81,18 +89,14 @@
   }
 
   .count.danger {
-    background: var(--danger-soft);
-    color: var(--danger);
-  }
-
-  .count.accent {
-    background: var(--accent-soft);
-    color: var(--accent-ink);
+    background: var(--danger-solid);
+    color: var(--on-danger);
   }
 
   .action {
     display: inline-grid;
     place-items: center;
+    flex: none;
     min-block-size: var(--tap-min);
     min-inline-size: var(--tap-min);
     padding-inline: var(--s2);
@@ -105,11 +109,11 @@
   }
 
   .action:active {
-    background: var(--accent-soft);
+    background: var(--surface-2);
   }
 
   .action:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: -2px;
   }
 </style>

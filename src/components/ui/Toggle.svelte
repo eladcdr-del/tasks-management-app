@@ -2,6 +2,8 @@
   // Toggle: a settings row: label (+ description) at inline-start, a switch at inline-end.
   // A native checkbox with role="switch" underneath, so Space, labels and screen readers just work.
   // The whole row (≥ 56px) is the hit target. `bind:checked`.
+  // The thumb travels towards inline-end (left in RTL): the direction comes from :dir(), so the
+  // switch follows the element's own resolved direction.
   import { haptic } from '$lib/platform/haptics';
 
   interface Props {
@@ -12,6 +14,8 @@
     onchange?: (checked: boolean) => void;
     /** Hide the visible label (switch only); the label is still announced. */
     hideLabel?: boolean;
+    /** Play the light "select" haptic on change (opt-in; most switches should stay silent). */
+    haptics?: boolean;
     class?: string;
   }
 
@@ -22,6 +26,7 @@
     disabled = false,
     onchange,
     hideLabel = false,
+    haptics = false,
     class: className
   }: Props = $props();
 
@@ -41,7 +46,7 @@
     {disabled}
     aria-describedby={description ? `${uid}-d` : undefined}
     onchange={() => {
-      haptic('select');
+      if (haptics) haptic('select');
       onchange?.(checked);
     }}
   />
@@ -56,6 +61,7 @@
     justify-content: space-between;
     gap: var(--s4);
     min-block-size: 56px;
+    padding-block: var(--s2);
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
@@ -64,11 +70,12 @@
     display: inline-flex;
     min-block-size: var(--tap-min);
     min-inline-size: var(--tap-min);
+    padding-block: 0;
   }
 
   .text {
     display: grid;
-    gap: 2px;
+    gap: var(--s0-5);
     min-inline-size: 0;
   }
 
@@ -87,14 +94,21 @@
     --w: 52px;
     --h: 32px;
     --t: 26px;
+    --travel: calc(var(--w) - var(--h));
+    --dir: 1;
     position: relative;
     flex: none;
     inline-size: var(--w);
     block-size: var(--h);
     border-radius: var(--r-pill);
-    background: color-mix(in oklab, var(--surface-2), var(--ink-3) 45%);
-    box-shadow: inset 0 1px 2px rgb(43 36 32 / 0.08);
+    background: var(--control-off);
+    box-shadow: var(--sh-inset);
     transition: background-color var(--d-base) var(--ease-out);
+  }
+
+  /* RTL: the thumb travels the other way (towards inline-end = left). */
+  .track:dir(rtl) {
+    --dir: -1;
   }
 
   .thumb {
@@ -104,28 +118,21 @@
     inline-size: var(--t);
     block-size: var(--t);
     border-radius: var(--r-pill);
-    background: light-dark(#fff, #f4ece3);
-    box-shadow:
-      0 1px 2px rgb(43 36 32 / 0.2),
-      0 2px 6px rgb(43 36 32 / 0.12);
-    transition: transform var(--d-base) var(--ease-out);
+    background: var(--control-thumb);
+    box-shadow: var(--sh-thumb);
+    transition: translate var(--d-base) var(--ease-out);
   }
 
   input:checked + .track {
     background: var(--accent-strong);
   }
 
-  /* On = thumb at inline-end (left in RTL). */
   input:checked + .track .thumb {
-    transform: translateX(calc(var(--w) - var(--h)));
-  }
-
-  :global([dir='rtl']) input:checked + .track .thumb {
-    transform: translateX(calc((var(--w) - var(--h)) * -1));
+    translate: calc(var(--travel) * var(--dir)) 0;
   }
 
   input:focus-visible + .track {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 3px;
   }
 

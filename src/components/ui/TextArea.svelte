@@ -3,6 +3,7 @@
   // `maxRows`, then scrolls. Optional live counter when `maxlength` is set.
   import type { HTMLTextareaAttributes } from 'svelte/elements';
   import FieldShell from './FieldShell.svelte';
+  import { textDir } from '$lib/i18n/textDir';
 
   interface Props extends Omit<HTMLTextareaAttributes, 'value' | 'children' | 'class'> {
     label: string;
@@ -28,6 +29,7 @@
     counter = false,
     id: idProp,
     disabled = false,
+    placeholder,
     maxlength,
     class: className,
     ...rest
@@ -57,7 +59,8 @@
   <textarea
     {id}
     class="control"
-    dir="auto"
+    dir={textDir(value || placeholder)}
+    {placeholder}
     {rows}
     {maxlength}
     bind:value
