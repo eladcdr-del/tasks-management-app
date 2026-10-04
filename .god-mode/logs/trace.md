@@ -25,3 +25,4 @@
 | 22 | 14:51 | Surgeon S2 (P1 council) | BEST (opus), worktree | Domain/format/notifier: search fallback, hard-deadline attention, snooze fixes, age weeks, week-plan display, copy, timed-plan reminder, parity test | worktree |
 | 23 | 14:51 | Surgeon S3 (P1 council) | BEST (opus), worktree | Design system: focus ring, colour semantics, large text, 6 primitives, textDir, tokens, contrast, AppMark, truthful gallery | worktree |
 | 24 | 14:51 | Surgeon S4 (P1 council) | STRONG (sonnet), main | weekPlan through rules/schema/demo/seed/contract; leave releases tasks; drop pinned-copy test | main |
+| 25 | resume | Workflow wf_87341cfb-0b3 | inherit (opus) | 4 tracks × (build + QA loop ≤3 rounds): parser, domain/notifier, design system, firebase adapter | 4 worktree branches |
