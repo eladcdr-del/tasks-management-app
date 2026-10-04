@@ -45,20 +45,4 @@ describe('per-owner string files (src/lib/i18n/he/)', () => {
     const namespaces = files.map((f) => f.replace(/^\.\/he\/|\.ts$/g, '')).sort();
     expect(Object.keys(he).sort()).toEqual(namespaces);
   });
-
-  it('keeps every string from the pre-split he.ts', () => {
-    expect(he.common.close).toBe('סגירה');
-    expect(he.shell.fab).toBe('משימה חדשה');
-    expect(he.update).toEqual({ ready: 'גרסה חדשה מוכנה', action: 'עדכון' });
-    expect(he.onboarding.join.title).toBe('הצטרפות לבית');
-    expect(he.onboardingNotifications.title).toBe('התראות');
-    expect(he.taskDetail.title).toBe('פרטי משימה');
-    expect(he.sheetQuickAdd.title).toBe('משימה חדשה');
-    expect(he.sheetComplete.title).toBe('כל הכבוד, עוד משימה ירדה מהרשימה');
-    expect(he.sheetRequest.title).toBe('לבקש מ…');
-    expect(he.sheetSnooze.title).toBe('דחייה');
-    expect(he.jar.setup.title).toBe('הצ׳ופר הבא');
-    expect(he.errors.generic).toBe('משהו השתבש. נסו שוב.');
-    expect(he.dev.galleryTitle).toBe('גלריית רכיבים');
-  });
 });

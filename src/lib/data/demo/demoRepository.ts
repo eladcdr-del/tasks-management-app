@@ -168,6 +168,7 @@ const TASK_PATCH_KEYS = [
   'categoryId',
   'priority',
   'scheduledFor',
+  'weekPlan',
   'dueDate',
   'dueTime',
   'hardDeadline',
@@ -189,6 +190,7 @@ const INSTANCE_CONTENT_KEYS = [
   'ownerId',
   'requestedBy',
   'scheduledFor',
+  'weekPlan',
   'dueDate',
   'dueTime',
   'hardDeadline',
@@ -220,6 +222,8 @@ function assertValidTask(t: Task): void {
   if (!PRIORITIES.has(t.priority)) fail('unknown priority');
   if (t.categoryId !== null && !CATEGORY_IDS.has(t.categoryId)) fail('unknown category');
   if (t.scheduledFor !== null && !isValidISO(t.scheduledFor)) fail('scheduledFor is not a date');
+  if (typeof t.weekPlan !== 'boolean') fail('weekPlan must be a boolean');
+  if (t.weekPlan && t.scheduledFor === null) fail('a week plan needs a scheduledFor');
   if (t.dueDate !== null && !isValidISO(t.dueDate)) fail('dueDate is not a date');
   if (t.dueTime !== null && !TIME_RE.test(t.dueTime)) fail('dueTime must be HH:mm');
   if (typeof t.hardDeadline !== 'boolean') fail('hardDeadline must be a boolean');
@@ -547,6 +551,16 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const uid = requireUser(st);
         const rec = memberHousehold(st, hid, uid);
         const h = rec.household;
+        // My open tasks go back to "waiting for someone to take". No events: the leaver is no
+        // longer a member once the batch commits, so the rules would reject them.
+        const t = now();
+        for (const task of Object.values(rec.tasks)) {
+          if (task.status !== 'open' || task.ownerId !== uid) continue;
+          task.ownerId = null;
+          task.requestedBy = null;
+          task.requestedAt = null;
+          touch(task, uid, t);
+        }
         delete rec.members[uid];
         h.memberIds = h.memberIds.filter((m) => m !== uid);
         h.memberCount = h.memberIds.length;

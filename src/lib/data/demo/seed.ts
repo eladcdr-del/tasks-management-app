@@ -13,6 +13,7 @@
 //  - jar.count equals the completions since the jar's round started, and each earned treat was
 //    filled by a real completion.
 
+import { weekHorizon } from '../../domain/buckets';
 import {
   addDays,
   addMonths,
@@ -118,6 +119,8 @@ interface Spec {
   /** The creator assigned it to the owner at creation, i.e. a request (requestedAt = createdAt). */
   requested?: boolean;
   scheduledFor?: ISODate | null;
+  /** A week plan: `scheduledFor` is the Saturday ending the planned week (needs a date, no snoozes). */
+  weekPlan?: boolean;
   dueDate?: ISODate | null;
   dueTime?: string | null;
   hardDeadline?: boolean;
@@ -174,6 +177,9 @@ class SeedBuilder {
       throw new Error(`seed: ${s.id} is owned by someone else but was neither taken nor requested`);
     }
     const snoozes = s.snoozes ?? [];
+    if (s.weekPlan && (!s.scheduledFor || snoozes.length > 0)) {
+      throw new Error(`seed: ${s.id} is a week plan, so it needs a scheduledFor and no snoozes`);
+    }
     const lastSnooze = snoozes.at(-1);
     const actions: [Millis, Uid][] = [[s.createdAt, s.createdBy]];
     if (s.takenAt !== undefined) actions.push([s.takenAt, s.ownerId!]);
@@ -195,7 +201,7 @@ class SeedBuilder {
       updatedBy,
       updatedAt,
       scheduledFor: lastSnooze ? lastSnooze[1] : (s.scheduledFor ?? null),
-      weekPlan: false,
+      weekPlan: s.weekPlan ?? false,
       dueDate: s.dueDate ?? null,
       dueTime: s.dueTime ?? null,
       hardDeadline: s.hardDeadline ?? false,
@@ -294,7 +300,8 @@ export function createSeed(now: Date): DemoState {
     createdBy: M,
     createdAt: b.at(-5, '21:20'),
     ownerId: null,
-    scheduledFor: b.day(4)
+    scheduledFor: weekHorizon(b.today), // planned for "the week", not a day: shown as "השבוע"
+    weekPlan: true
   });
   b.task({
     id: 'seed-washer',

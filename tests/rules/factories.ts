@@ -208,6 +208,7 @@ export function taskDoc(uid: string, overrides: Doc = {}): Doc {
     updatedBy: uid,
     updatedAt: serverTimestamp(),
     scheduledFor: null,
+    weekPlan: false,
     dueDate: null,
     dueTime: null,
     hardDeadline: false,
@@ -414,8 +415,17 @@ export function joinBatch(db: Firestore, uid: string, opts: JoinOptions = {}): W
   return b;
 }
 
-/** The leave batch: members/{self} deleted, household.memberIds -= self, users/{self} cleared. */
-export function leaveBatch(db: Firestore, uid: string, hid = HID): WriteBatch {
+/**
+ * The leave batch: members/{self} deleted, household.memberIds -= self, users/{self} cleared, and
+ * every task in `releaseTaskIds` (the leaver's open tasks) released: owner and request cleared.
+ * No events: the events rule needs the caller to still be a member after the batch.
+ */
+export function leaveBatch(
+  db: Firestore,
+  uid: string,
+  hid = HID,
+  releaseTaskIds: readonly string[] = []
+): WriteBatch {
   const b = writeBatch(db);
   b.delete(doc(db, path.member(uid, hid)));
   b.update(doc(db, path.household(hid)), {
@@ -423,6 +433,14 @@ export function leaveBatch(db: Firestore, uid: string, hid = HID): WriteBatch {
     memberCount: increment(-1)
   });
   b.set(doc(db, path.user(uid)), userDoc(null));
+  for (const id of releaseTaskIds) {
+    b.update(doc(db, path.task(id, hid)), {
+      ownerId: null,
+      requestedBy: null,
+      requestedAt: null,
+      ...touched(uid)
+    });
+  }
   return b;
 }
 

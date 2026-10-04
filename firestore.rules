@@ -241,8 +241,8 @@ service cloud.firestore {
     function isTaskShape(d) {
       return hasExactly(d, [
           'title', 'notes', 'categoryId', 'priority', 'ownerId', 'requestedBy', 'requestedAt',
-          'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'scheduledFor', 'dueDate', 'dueTime',
-          'hardDeadline', 'recurrence', 'seriesId', 'status', 'snoozeCount', 'lastSnoozedAt',
+          'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'scheduledFor', 'weekPlan', 'dueDate',
+          'dueTime', 'hardDeadline', 'recurrence', 'seriesId', 'status', 'snoozeCount', 'lastSnoozedAt',
           'completedAt', 'completedBy', 'completion'])
         && isStr(d.title, 1, 200)
         && isStr(d.notes, 0, 4000)
@@ -258,6 +258,9 @@ service cloud.firestore {
         && d.updatedBy == me()
         && d.updatedAt == request.time
         && isNullOrIsoDate(d.scheduledFor)
+        && d.weekPlan is bool
+        // a week plan is stored as the Saturday ending the week, so it needs a date
+        && (!d.weekPlan || d.scheduledFor != null)
         && isNullOrIsoDate(d.dueDate)
         && isNullOrTime(d.dueTime)
         && d.hardDeadline is bool
