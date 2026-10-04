@@ -19,7 +19,7 @@
     "test:rules": "firebase emulators:exec --only firestore --project demo-homecare \"vitest run --project rules\"",
     "test:integration": "firebase emulators:exec --only auth,firestore --project demo-homecare \"vitest run --project integration\"",
     "test:e2e": "playwright test --project=demo",
-    "test:e2e:emu": "firebase emulators:exec --only auth,firestore --project demo-homecare \"playwright test --project=emulator\"",
+    "test:e2e:emu": "firebase emulators:exec --only auth,firestore --project demo-homecare \"playwright test --project=emulator --workers=1\"",
     "notify:test": "firebase emulators:exec --only firestore --project demo-homecare \"vitest run --project notifier\"",
     "notify:dry": "tsx scripts/notify/index.ts --dry",
     "budget": "node scripts/check-budget.mjs"
