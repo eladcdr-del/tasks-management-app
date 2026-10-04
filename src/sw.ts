@@ -1,13 +1,64 @@
 /// <reference lib="webworker" />
-// STUB (1.1 → 5.1): the single service worker, built by vite-plugin-pwa (injectManifest)
-// to `<base>/sw.js` with scope `<base>`. Step 5.1 adds navigation fallback, runtime caching and
-// Firebase background messaging here (Blueprint §1, §9, §10).
-import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
+// owner: step 5.1. The single service worker, built by vite-plugin-pwa (injectManifest) to
+// `<base>sw.js` with scope `<base>` (Blueprint §1, §9, §10).
+//
+//   precache      the app shell, fonts and icons (the Firebase SDK chunks are left out on purpose,
+//                 see vite.config.ts `globIgnores`, so demo users never download them)
+//   navigation    every in-scope navigation is answered with the precached index.html (hash routes)
+//   runtime       lazy JS chunks under <base>assets/ that are not precached (the Firebase SDK):
+//                 CacheFirst — names are content-hashed, so a cached file never goes stale.
+//                 Google profile photos: StaleWhileRevalidate.
+//   update        registerType 'prompt': UpdatePrompt posts SKIP_WAITING to the waiting worker.
+//   push          FCM data-only messages {type,title,body,url,tag} (scripts/notify/sender.ts). The
+//                 Firebase messaging SW SDK is NOT bundled: its two jobs are reproduced here —
+//                 a visible app window receives the payload in Firebase's own envelope (so
+//                 `onMessage` in the page fires and shows a snackbar), otherwise we show the
+//                 notification ourselves (RTL, Hebrew, icon, badge, tag, deep link).
+import { cleanupOutdatedCaches, createHandlerBoundToURL, precacheAndRoute } from 'workbox-precaching';
+import { NavigationRoute, registerRoute } from 'workbox-routing';
+import { CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { ExpirationPlugin } from 'workbox-expiration';
 
 declare const self: ServiceWorkerGlobalScope;
 
+/** The SW's own directory is the app's base path (it is served at `<base>sw.js`). */
+const BASE = new URL('./', self.location.href);
+const basePath = BASE.pathname;
+const abs = (path: string) => new URL(path, BASE).href;
+
 cleanupOutdatedCaches();
 precacheAndRoute(self.__WB_MANIFEST);
+
+// Hash routing: any navigation inside the scope gets the app shell (offline too).
+registerRoute(new NavigationRoute(createHandlerBoundToURL('index.html')));
+
+// Lazy chunks that are not precached (the Firebase SDK): cached on first use, so the Firebase
+// mode keeps working offline after one online visit.
+registerRoute(
+  ({ url, request }) =>
+    url.origin === self.location.origin &&
+    url.pathname.startsWith(`${basePath}assets/`) &&
+    (request.destination === 'script' || url.pathname.endsWith('.js')),
+  new CacheFirst({
+    cacheName: 'homecare-chunks',
+    plugins: [new ExpirationPlugin({ maxEntries: 40, purgeOnQuotaError: true })]
+  })
+);
+
+// Google account photos (Avatar): show the cached one at once, refresh in the background.
+registerRoute(
+  ({ url }) => url.hostname.endsWith('.googleusercontent.com'),
+  new StaleWhileRevalidate({
+    cacheName: 'homecare-avatars',
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 30,
+        maxAgeSeconds: 30 * 24 * 60 * 60,
+        purgeOnQuotaError: true
+      })
+    ]
+  })
+);
 
 // registerType 'prompt': UpdatePrompt asks the waiting worker to take over.
 self.addEventListener('message', (event: ExtendableMessageEvent) => {
@@ -19,4 +70,93 @@ self.addEventListener('message', (event: ExtendableMessageEvent) => {
   ) {
     void self.skipWaiting();
   }
+});
+
+// ── Web push (FCM) ──────────────────────────────────────────────────────────────────────────────
+
+interface PushData {
+  type?: string;
+  title?: string;
+  body?: string;
+  url?: string;
+  tag?: string;
+}
+
+/** FCM's web push envelope: `{ data: {...}, from, fcmMessageId, ... }` (data-only messages). */
+function readPush(event: PushEvent): { envelope: Record<string, unknown>; data: PushData } | null {
+  if (!event.data) return null;
+  try {
+    const envelope = event.data.json() as unknown;
+    if (typeof envelope !== 'object' || envelope === null) return null;
+    const env = envelope as Record<string, unknown>;
+    const raw = typeof env.data === 'object' && env.data !== null ? env.data : env;
+    return { envelope: env, data: raw as PushData };
+  } catch {
+    return null; // not JSON: not one of ours
+  }
+}
+
+/** Only same-origin URLs inside the app's scope; anything else opens Home. */
+function safeUrl(url: string | undefined): string {
+  if (!url) return abs('#/');
+  try {
+    const u = new URL(url, BASE);
+    if (u.origin === self.location.origin && u.pathname.startsWith(basePath)) return u.href;
+  } catch {
+    // fall through
+  }
+  return abs('#/');
+}
+
+async function windowClients(): Promise<readonly WindowClient[]> {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+}
+
+async function handlePush(event: PushEvent): Promise<void> {
+  const msg = readPush(event);
+  if (!msg) return;
+  const clients = await windowClients();
+  const visible = clients.filter((c) => c.visibilityState === 'visible');
+  if (visible.length > 0) {
+    // Foreground: hand it to the page's Firebase SDK (`onMessage`), in the SDK's own envelope.
+    const payload = { ...msg.envelope, isFirebaseMessaging: true, messageType: 'push-received' };
+    for (const client of visible) client.postMessage(payload);
+    return;
+  }
+  const { title, body, url, tag, type } = msg.data;
+  await self.registration.showNotification(title || 'HomeCare', {
+    body: body ?? '',
+    dir: 'rtl',
+    lang: 'he',
+    icon: abs('icons/icon-192.png'),
+    badge: abs('icons/badge-96.png'),
+    tag: tag || type || undefined,
+    data: { url: safeUrl(url) }
+  });
+}
+
+self.addEventListener('push', (event: PushEvent) => {
+  event.waitUntil(handlePush(event));
+});
+
+async function openFromNotification(url: string): Promise<void> {
+  const clients = await windowClients();
+  const inScope = clients.find((c) => new URL(c.url).pathname.startsWith(basePath));
+  if (inScope) {
+    const focused = await inScope.focus();
+    try {
+      await focused.navigate(url);
+    } catch {
+      // An uncontrolled client cannot be navigated: tell the page to route itself.
+      focused.postMessage({ type: 'NAVIGATE', url });
+    }
+    return;
+  }
+  await self.clients.openWindow(url);
+}
+
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
+  event.notification.close();
+  const data = event.notification.data as { url?: string } | null;
+  event.waitUntil(openFromNotification(safeUrl(data?.url)));
 });

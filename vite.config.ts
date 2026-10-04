@@ -91,18 +91,21 @@ export default defineConfig({
   plugins: [
     svelte(),
     preloadHebrewFont(),
-    // ── PWA block: owned by step 5.1 from Phase 5 onward. ──────────────────────
+    // ── PWA block: owned by step 5.1. ──────────────────────────────────────────
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
       registerType: 'prompt',
-      // Registration is wired by UpdatePrompt (virtual:pwa-register) in step 5.1.
-      // Until then the SW is built but never registered, so dev/E2E stay cache-free.
+      // Registration lives in UpdatePrompt (virtual:pwa-register). Production and E2E builds
+      // register the SW; the dev server never does (devOptions off).
       injectRegister: false,
       injectManifest: {
-        // The web manifest is added by the plugin itself.
-        globPatterns: ['**/*.{js,css,html,woff2,svg,png,ico}']
+        globPatterns: ['**/*.{js,css,html,woff2,svg,png,ico,webmanifest}'],
+        // The Firebase SDK chunks stay out of the precache: demo / setup users never need them.
+        // The SW caches them at runtime (CacheFirst) on first use instead (src/sw.ts).
+        globIgnores: ['**/firebaseRepository-*.js', '**/messaging-*.js', '**/firebase-sdk-*.js'],
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024
       },
       manifest: {
         name: 'HomeCare',
@@ -114,10 +117,37 @@ export default defineConfig({
         start_url: `${base}#/`,
         scope: base,
         display: 'standalone',
+        orientation: 'portrait',
         background_color: '#FBF6EF',
         theme_color: '#FBF6EF',
-        icons: [], // generated in step 5.1 (pwa-assets.config.ts)
-        shortcuts: [{ name: 'משימה חדשה', url: `${base}#/new` }]
+        categories: ['productivity', 'lifestyle'],
+        // public/icons/: PNGs rendered from source.svg (AppMark tile) and source-maskable.svg
+        // (AppMark fullBleed); badge-96.png is the monochrome status-bar badge (notifications).
+        icons: [
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          {
+            src: 'icons/maskable-192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          {
+            src: 'icons/maskable-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable'
+          },
+          { src: 'icons/source.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }
+        ],
+        shortcuts: [
+          {
+            name: 'משימה חדשה',
+            short_name: 'משימה חדשה',
+            url: `${base}#/new`,
+            icons: [{ src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' }]
+          }
+        ]
       },
       devOptions: { enabled: false }
     })
