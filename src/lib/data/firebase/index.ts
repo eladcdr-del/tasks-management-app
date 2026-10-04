@@ -1,8 +1,9 @@
-// PLACEHOLDER — replaced by step 2.2
+// The Firebase adapter's entry point (Blueprint §5 "Adapter selection", owner step 2.2).
 //
-// The Firebase adapter's frozen entry point (.god-mode/logs/decisions.md). Step 2.4 codes against
-// these signatures through a lazy `await import('$lib/data/firebase')` (src/lib/data/select.ts);
-// this file exists only so the build resolves that module until step 2.2 lands the real adapter.
+// FROZEN SHAPE: the state layer (2.4) imports exactly these names. This file must stay free of
+// Firebase SDK imports (type-only imports are erased): the SDK is loaded by the dynamic import in
+// `createFirebaseRepository`, so demo and setup users never download it, whether this file is
+// imported statically or lazily. No top-level side effects anywhere in this folder.
 
 import type { Repository } from '../repository';
 
@@ -15,24 +16,45 @@ export interface FirebaseWebConfig {
   appId: string;
 }
 
+/** The same five keys as select.ts's REQUIRED_CONFIG_KEYS (index.test.ts holds both to one table). */
+const REQUIRED_KEYS = ['apiKey', 'authDomain', 'projectId', 'appId', 'messagingSenderId'] as const;
+
+/**
+ * True when apiKey, authDomain, projectId, appId and messagingSenderId are all strings that are
+ * non-empty once trimmed. Must agree exactly with `configLooksComplete` in src/lib/data/select.ts
+ * (which cannot import this module statically).
+ */
+export function firebaseConfigLooksComplete(cfg: unknown): cfg is FirebaseWebConfig {
+  if (typeof cfg !== 'object' || cfg === null) return false;
+  const c = cfg as Record<string, unknown>;
+  return REQUIRED_KEYS.every((k) => {
+    const v = c[k];
+    return typeof v === 'string' && v.trim().length > 0;
+  });
+}
+
+export interface FirebaseRepoOptions {
+  emulator?: { host: string; firestorePort: number; authPort: number };
+}
+
 export interface FirebaseExtras {
+  /** Emulator/test only: sign in with a fake Google credential. Throws outside emulator mode. */
   signInWithTestCredential(uid: string, displayName: string, email?: string): Promise<void>;
-  app: unknown;
-  firestore: unknown;
-  auth: unknown;
+  /** The initialized app + firestore + auth, for 5.1 messaging and debugging. */
+  readonly app: unknown;
+  readonly firestore: unknown;
+  readonly auth: unknown;
   dispose(): Promise<void>;
 }
 
-export function firebaseConfigLooksComplete(cfg: unknown): cfg is FirebaseWebConfig {
-  void cfg;
-  throw new Error('firebase adapter not built yet');
-}
-
+/**
+ * Initializes Firebase (persistent offline cache, Google auth; the emulators when `opts.emulator`)
+ * and returns the Repository. Loads the SDK on first call (a separate chunk).
+ */
 export async function createFirebaseRepository(
   cfg: FirebaseWebConfig,
-  opts?: { emulator?: { host: string; firestorePort: number; authPort: number } }
+  opts: FirebaseRepoOptions = {}
 ): Promise<Repository & FirebaseExtras> {
-  void cfg;
-  void opts;
-  throw new Error('firebase adapter not built yet');
+  const { createFirebaseRepositoryImpl } = await import('./firebaseRepository');
+  return createFirebaseRepositoryImpl(cfg, opts);
 }
