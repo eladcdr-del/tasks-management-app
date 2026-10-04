@@ -1,22 +1,21 @@
 <script lang="ts">
-  // App root (1.1 → 2.4). Route outlet + FAB + bottom nav + sheet / snackbar hosts + update prompt.
-  // Step 2.4: boot gating. The session's phase decides which routes may render (session.svelte.ts
-  // routeAllowed / gateTarget):
+  // App root (1.1 → 2.4 → 3.1). Route outlet + FAB + bottom nav + sheet / snackbar hosts + update
+  // prompt. Boot gating: the session's phase and ROUTE_META[route].access decide which routes may
+  // render (components/shell/gate.ts):
   //   booting       → splash (brand mark on cream, no text; an error + retry if boot failed)
   //   setup         → #/setup                       signed-out → #/welcome
-  //   no-household  → #/onboarding/household, or #/join/:code for an invite opened while signed out
-  //   ready         → every app route; #/setup, #/welcome, #/onboarding/household, #/join → #/
+  //   no-household  → onboarding ('auth' routes) and #/join; else #/onboarding/household, or
+  //                   #/join/:code for an invite opened while signed out
+  //   ready         → 'auth' + 'household' routes; public routes and onboarding/household → #/
   // A disallowed route never renders (the splash stands in for the frame before the redirect).
+  // The bottom nav and the FAB step aside while a sheet or the on-screen keyboard is open.
   import { untrack } from 'svelte';
   import { router } from '$lib/router/router.svelte';
   import { he } from '$lib/i18n/he';
-  import {
-    gateTarget,
-    rememberPendingInvite,
-    routeAllowed,
-    session,
-    takePendingInvite
-  } from '$lib/state/session.svelte';
+  import { rememberPendingInvite, session, takePendingInvite } from '$lib/state/session.svelte';
+  import { gateTarget, routeAllowed } from '$components/shell/gate';
+  import { viewport } from '$components/shell/viewport.svelte';
+  import { startInstallCapture } from '$lib/platform/install';
   import HomeScreen from './screens/Home/HomeScreen.svelte';
   import MemoryScreen from './screens/Memory/MemoryScreen.svelte';
   import JarScreen from './screens/Jar/JarScreen.svelte';
@@ -52,6 +51,10 @@
   const tab = $derived(ready ? router.meta.tab : undefined);
   const fab = $derived(ready && router.meta.fab);
   const demoBanner = $derived(session.mode === 'demo' && route.name !== 'devGallery');
+  const chromeHidden = $derived(viewport.keyboardOpen || router.sheet !== null);
+
+  startInstallCapture();
+  viewport.start();
 
   // Redirect a route the phase does not allow (replace: the wrong screen never enters history).
   $effect(() => {
@@ -63,7 +66,7 @@
       }
       const target = gateTarget(
         phase,
-        current,
+        current.name,
         phase === 'no-household' ? takePendingInvite() : null
       );
       if (target) router.navigate(target, { replace: true });
@@ -124,11 +127,11 @@
     </main>
 
     {#if fab}
-      <FabHost />
+      <FabHost hidden={chromeHidden} />
     {/if}
 
     {#if tab !== undefined}
-      <BottomNav active={tab} />
+      <BottomNav active={tab} hidden={chromeHidden} />
     {/if}
   </div>
 
@@ -137,7 +140,7 @@
   {/if}
 {/if}
 
-<SnackbarHost />
+<SnackbarHost aboveNav={tab !== undefined && !chromeHidden} />
 <UpdatePrompt />
 
 <style>

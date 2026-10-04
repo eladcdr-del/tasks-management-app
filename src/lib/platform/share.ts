@@ -4,6 +4,41 @@
 // Share a task (or an invite link): Web Share API first, then WhatsApp (https://wa.me/?text=),
 // then the clipboard. Never throws.
 
+/** Public app URL (GitHub Pages); invite links always point here, whatever host made them. */
+export const APP_URL = 'https://eladcdr-del.github.io/tasks-management-app/';
+
+/** `https://eladcdr-del.github.io/tasks-management-app/#/join/<code>`. */
+export function inviteLink(code: string): string {
+  return `${APP_URL}#/join/${encodeURIComponent(code)}`;
+}
+
+/**
+ * The invite code inside whatever the user pasted: a full link (any host, `#/join/<code>`), or the
+ * bare code. Null when it does not look like either.
+ */
+export function parseInviteInput(input: string): string | null {
+  const text = input.trim();
+  if (!text) return null;
+  const m = /#\/join\/([^\s?#/]+)/.exec(text);
+  let code = m?.[1] ?? text;
+  try {
+    code = decodeURIComponent(code);
+  } catch {
+    // keep it raw
+  }
+  return /^[A-Za-z0-9_-]{6,64}$/.test(code) ? code : null;
+}
+
+/** Copies text to the clipboard. Resolves false where the clipboard is blocked. */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    await globalThis.navigator?.clipboard.writeText(text);
+    return Boolean(globalThis.navigator?.clipboard);
+  } catch {
+    return false;
+  }
+}
+
 export type ShareResult = 'shared' | 'whatsapp' | 'copied' | 'cancelled';
 
 export interface ShareInput {

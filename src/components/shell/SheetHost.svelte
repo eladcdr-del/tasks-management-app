@@ -1,9 +1,16 @@
 <script lang="ts">
-  // STUB (1.1 → 3.1): renders the open sheet (router.sheet) in a placeholder panel.
-  // Step 3.1 replaces the panel with the BottomSheet from 1.4 (drag, focus trap, inert background);
-  // keep the sheet-name → component mapping.
+  // owner: step 3.1. Renders the open sheet (router.sheet) inside the BottomSheet primitive.
+  //   - `open` follows router.sheet; the last spec is kept in `shown` until `onClosed`, so the
+  //     content stays rendered while the sheet animates out (Back, scrim, ×, drag, Escape).
+  //   - `onClose` pops the sheet's history entry (router.closeSheet), so the hardware Back button
+  //     and the UI never disagree.
+  //   - The 'photo' sheet is full-screen (PhotoSheet, owner 3.3), outside the bottom-sheet panel.
+  // Sheets render their own visible heading; the panel takes the sheet's title as its accessible
+  // name.
+  import { BottomSheet } from '$components/ui';
   import { he } from '$lib/i18n/he';
   import { router } from '$lib/router/router.svelte';
+  import type { SheetSpec } from '$lib/router/routes';
   import QuickAddSheet from '../../sheets/QuickAddSheet.svelte';
   import CompleteSheet from '../../sheets/CompleteSheet.svelte';
   import RequestSheet from '../../sheets/RequestSheet.svelte';
@@ -11,56 +18,57 @@
   import JarSetupSheet from '../../sheets/JarSetupSheet.svelte';
   import PhotoSheet from '../../sheets/PhotoSheet.svelte';
 
-  const sheet = $derived(router.sheet);
-  const close = () => router.closeSheet();
-  // The 'photo' sheet is full-screen (PhotoSheet, owner 3.3), outside the bottom-sheet panel.
+  type PanelSpec = Exclude<SheetSpec, { name: 'photo' }>;
+
+  const LABELS: Record<PanelSpec['name'], string> = {
+    quickAdd: he.sheetQuickAdd.title,
+    complete: he.sheetComplete.title,
+    request: he.sheetRequest.title,
+    snooze: he.sheetSnooze.title,
+    jarSetup: he.jar.setup.title
+  };
+
+  const live = $derived(router.sheet);
+  const photo = $derived(live?.name === 'photo' ? live : null);
+  const panelLive = $derived(live && live.name !== 'photo' ? live : null);
+
+  // The last panel spec, kept through the exit animation.
+  let shown = $state.raw<PanelSpec | null>(null);
+  $effect.pre(() => {
+    if (panelLive) shown = panelLive;
+  });
+
+  const close = () => void router.closeSheet();
 </script>
 
-<svelte:window
-  onkeydown={(e) => {
-    if (sheet && e.key === 'Escape') close();
-  }}
-/>
-
-{#if sheet && sheet.name === 'photo'}
-  <PhotoSheet photoId={sheet.photoId} onClose={close} />
-{:else if sheet}
-  <button type="button" class="scrim" aria-label={he.common.close} onclick={close}></button>
-  <div class="panel" role="dialog" aria-modal="true" data-sheet={sheet.name}>
-    {#if sheet.name === 'quickAdd'}
-      <QuickAddSheet onClose={close} />
-    {:else if sheet.name === 'complete'}
-      <CompleteSheet taskId={sheet.taskId} onClose={close} />
-    {:else if sheet.name === 'request'}
-      <RequestSheet taskId={sheet.taskId} onClose={close} />
-    {:else if sheet.name === 'snooze'}
-      <SnoozeSheet taskId={sheet.taskId} onClose={close} />
-    {:else if sheet.name === 'jarSetup'}
-      <JarSetupSheet onClose={close} />
-    {/if}
-  </div>
+{#if photo}
+  <PhotoSheet photoId={photo.photoId} onClose={close} />
 {/if}
 
-<style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    z-index: var(--z-sheet);
-    background: var(--scrim);
-  }
-
-  .panel {
-    position: fixed;
-    inset-inline: 0;
-    inset-block-end: 0;
-    z-index: var(--z-sheet);
-    max-block-size: 90dvh;
-    overflow: auto;
-    padding: var(--s6) var(--screen-pad) calc(var(--s6) + var(--safe-bottom));
-    border-start-start-radius: var(--r-xl);
-    border-start-end-radius: var(--r-xl);
-    background: var(--surface);
-    border: var(--edge);
-    box-shadow: var(--sh-sheet);
-  }
-</style>
+{#if shown}
+  {@const spec = shown}
+  <BottomSheet
+    open={panelLive !== null}
+    onClose={close}
+    onClosed={() => {
+      if (!panelLive) shown = null;
+    }}
+    label={LABELS[spec.name]}
+  >
+    <div class="sheet-body" data-sheet={spec.name}>
+      {#key spec}
+        {#if spec.name === 'quickAdd'}
+          <QuickAddSheet onClose={close} />
+        {:else if spec.name === 'complete'}
+          <CompleteSheet taskId={spec.taskId} onClose={close} />
+        {:else if spec.name === 'request'}
+          <RequestSheet taskId={spec.taskId} onClose={close} />
+        {:else if spec.name === 'snooze'}
+          <SnoozeSheet taskId={spec.taskId} onClose={close} />
+        {:else if spec.name === 'jarSetup'}
+          <JarSetupSheet onClose={close} />
+        {/if}
+      {/key}
+    </div>
+  </BottomSheet>
+{/if}

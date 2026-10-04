@@ -9,5 +9,7 @@ export const shell = {
     household: 'הבית שלנו'
   },
   navLabel: 'ניווט ראשי',
-  fab: 'משימה חדשה'
+  fab: 'משימה חדשה',
+  /** Accessible name of the snackbar live region. */
+  snackbarRegion: 'הודעות'
 } as const;

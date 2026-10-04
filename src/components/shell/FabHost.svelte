@@ -1,38 +1,55 @@
 <script lang="ts">
-  // owner: step 3.1 — STUB (1.1 → 3.1); only 3.1 edits this file. No props.
-  // App.svelte mounts this only where ROUTE_META[route].fab is true (Home, Memory). Placeholder "+"
-  // that opens QuickAdd; step 3.1 swaps in the Fab primitive from 1.4 (inline-end, above the nav).
-  // Deliberately icon-free: no lucide runtime in the bundle until 3.1 mounts the real Fab.
+  // owner: step 3.1. No props. App.svelte mounts this only where ROUTE_META[route].fab is true
+  // (Home, Memory) and hides it while a sheet or the keyboard is open (`hidden`). The Fab primitive
+  // sits at inline-end, above the bottom nav; it collapses to a circle while scrolling down.
+  import { Fab } from '$components/ui';
   import { he } from '$lib/i18n/he';
   import { router } from '$lib/router/router.svelte';
+
+  let { hidden = false }: { hidden?: boolean } = $props();
+
+  let extended = $state(true);
+  let lastY = 0;
+
+  function onscroll() {
+    const y = window.scrollY;
+    if (Math.abs(y - lastY) < 8) return;
+    extended = y < lastY || y < 24;
+    lastY = y;
+  }
 </script>
 
-<button
-  type="button"
-  class="fab"
-  aria-label={he.shell.fab}
-  data-stub="FabHost"
-  onclick={() => router.openSheet({ name: 'quickAdd' })}
->
-  <span aria-hidden="true">+</span>
-</button>
+<svelte:window {onscroll} />
+
+<div class="fab-host" class:hidden inert={hidden}>
+  <Fab
+    label={he.shell.fab}
+    {extended}
+    data-fab
+    onclick={() => router.openSheet({ name: 'quickAdd' })}
+  />
+</div>
 
 <style>
-  .fab {
+  .fab-host {
     position: fixed;
     inset-inline-end: calc(var(--screen-pad) + max(0px, (100vw - var(--content-max)) / 2));
     inset-block-end: calc(var(--nav-h) + var(--safe-bottom) + var(--s4));
     z-index: var(--z-fab);
-    display: grid;
-    place-items: center;
-    inline-size: 56px;
-    block-size: 56px;
-    border-radius: var(--r-pill);
-    background: var(--accent-strong);
-    color: var(--ink-on-accent);
-    box-shadow: var(--sh-2);
-    font-size: 2rem;
-    font-weight: 400;
-    line-height: 1;
+    transition:
+      transform var(--d-base) var(--ease-out),
+      opacity var(--d-base) var(--ease-out);
+  }
+
+  .fab-host.hidden {
+    transform: translateY(calc(var(--nav-h) + 80px));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fab-host.hidden {
+      transform: none;
+    }
   }
 </style>
