@@ -115,6 +115,10 @@ export function lookback(text: string, idx: number): string {
   return space === -1 || space >= idx ? '' : text.slice(space, idx);
 }
 
+/** One of `words`, with 0–2 prefixes, as a whole word anywhere in the text. */
+export const anywhereRe = (words: readonly string[]): RegExp =>
+  rx1(`(?:^|[^${LETTER_OR_DIGIT}])${ATTACHED}(?:${alt(words)})(?![${LETTER_OR_DIGIT}])`);
+
 /** A regex matching one of `words` (with 0–2 prefixes) as the LAST word before the lookback end. */
 export function lastWordRe(words: readonly string[], toRegex: (w: string) => string = lit): RegExp {
   return rx1(`(?:^|[^${LETTER_OR_DIGIT}])${ATTACHED}(?:${alt(words, toRegex)})\\s+$`);
@@ -139,6 +143,9 @@ const EMPTY_QUOTES_RE =
 const DANGLING_UNTIL_RE = new RegExp(`(?:^|\\s)${lit(UNTIL_WORD)}$`, 'u');
 /** "תזכיר לי" at the very start, with the separators after it. */
 const REMINDER_LEAD_RE = new RegExp(`^(?:${alt(REMINDER_LEADS)})(?:${SEP})+`, 'u');
+
+/** A word that starts a new clause: an infinitive or a ו-conjunction ("לקנות", "ולהתקשר"). */
+const CLAUSE_START_RE = /^(?:ו\p{L}|ל\p{L}{3,})/u;
 
 export const collapse = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
@@ -173,16 +180,30 @@ export function buildTitle(input: string, ranges: readonly Span[]): string {
   segments.push(input.slice(pos));
 
   let out = segments[0] ?? '';
+  // a clause comma next to a removed phrase in mid-sentence survives the removal (council M3):
+  // "להתקשר לסבתא מחר, לקנות לה פרחים" → "להתקשר לסבתא, לקנות לה פרחים"
+  let comma = false;
   for (let i = 1; i < segments.length; i++) {
     // The text before a removed phrase loses the separators and the dangling "עד" that led into it.
     for (let prev = ''; prev !== out;) {
       prev = out;
-      out = out.replace(TRAILING_SEP_RE, '').replace(DANGLING_UNTIL_RE, '');
+      const trimmed = out.replace(TRAILING_SEP_RE, '');
+      if (trimmed !== out && out.slice(trimmed.length).includes(',')) comma = true;
+      out = trimmed.replace(DANGLING_UNTIL_RE, '');
     }
     // A removed phrase takes the separator that followed it ("מחר, לשלם" → "לשלם").
-    const rest = (segments[i] ?? '').replace(LEADING_SEP_RE, '');
+    const seg = segments[i] ?? '';
+    const rest = seg.replace(LEADING_SEP_RE, '');
+    if (seg.slice(0, seg.length - rest.length).includes(',')) comma = true;
+    if (!rest) continue;
     // "לנקות בשבת!" → "לנקות!": a closing ! or ? stays attached to the word before it
-    if (rest) out = /^[!?]/.test(rest) ? `${out}${rest}` : `${out} ${rest}`;
+    if (/^[!?]/.test(rest)) out = `${out}${rest}`;
+    else
+      out =
+        comma && WORD_CHAR_RE.test(out) && CLAUSE_START_RE.test(rest)
+          ? `${out}, ${rest}`
+          : `${out} ${rest}`;
+    comma = false;
   }
   let title = collapse(out);
   if (cuts.length > 0) {

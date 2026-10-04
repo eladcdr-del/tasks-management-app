@@ -53,7 +53,13 @@ describe('Blueprint §6 required cases (now = Sunday 2026-10-04 09:00 Asia/Jerus
     ['דחוף לשלם ארנונה', { title: 'לשלם ארנונה', priority: 'urgent', categoryId: 'finance' }],
     [
       'תור לרופא שיניים בשבוע הבא',
-      { title: 'תור לרופא שיניים', scheduledFor: '2026-10-11', categoryId: 'health' }
+      // a week plan ending next week's Saturday since the Phase 1 council
+      {
+        title: 'תור לרופא שיניים',
+        scheduledFor: '2026-10-17',
+        weekPlan: true,
+        categoryId: 'health'
+      }
     ],
     [
       'לקנות מתנה לדנה עד 15/10',
@@ -62,9 +68,18 @@ describe('Blueprint §6 required cases (now = Sunday 2026-10-04 09:00 Asia/Jerus
     ['לברר על מזגן', { title: 'לברר על מזגן', categoryId: 'home' }],
     [
       'השבוע לתקן את הברז',
-      { title: 'לתקן את הברז', scheduledFor: '2026-10-10', categoryId: 'home' }
+      // a week plan since the Phase 1 council
+      { title: 'לתקן את הברז', scheduledFor: '2026-10-10', weekPlan: true, categoryId: 'home' }
     ],
-    ['להשקות עציצים כל שבוע', { title: 'להשקות עציצים', recurrence: { freq: 'weekly' } }],
+    [
+      'להשקות עציצים כל שבוע',
+      {
+        title: 'להשקות עציצים',
+        scheduledFor: '2026-10-10',
+        weekPlan: true,
+        recurrence: { freq: 'weekly' }
+      }
+    ],
     [
       'חשמלאי ביום ראשון בשעה 17:30',
       { title: 'חשמלאי', scheduledFor: '2026-10-11', dueTime: '17:30', categoryId: 'home' }
@@ -122,9 +137,6 @@ describe('Hebrew prefixes ו/ה/ב/ל/מ/ש/כ (up to two)', () => {
     ['להתקשר וממחר', '2026-10-05'],
     ['להתקשר כשמחר', '2026-10-05'],
     ['להתקשר ולמחרתיים', '2026-10-06'],
-    ['להתקשר ובשבוע הבא', '2026-10-11'],
-    ['להתקשר לשבוע הבא', '2026-10-11'],
-    ['להתקשר השבוע הבא', '2026-10-11'],
     ['להתקשר וביום חמישי', '2026-10-08'],
     ['להתקשר ליום חמישי', '2026-10-08'],
     ['להתקשר ובחמישי', '2026-10-08'],
@@ -132,6 +144,11 @@ describe('Hebrew prefixes ו/ה/ב/ל/מ/ש/כ (up to two)', () => {
     ['להתקשר ובסוף החודש', '2026-10-31']
   ])('%s', (input, scheduledFor) => {
     expect(fields(input)).toEqual({ title: 'להתקשר', scheduledFor });
+  });
+
+  // next week is a week plan ending its Saturday (Phase 1 council)
+  it.each(['להתקשר ובשבוע הבא', 'להתקשר לשבוע הבא', 'להתקשר השבוע הבא'])('%s', (input) => {
+    expect(fields(input)).toEqual({ title: 'להתקשר', scheduledFor: '2026-10-17', weekPlan: true });
   });
 
   it('treats a detached one-letter prefix (from a hyphen) as part of the phrase', () => {
@@ -195,11 +212,10 @@ describe('weekday names resolve to the next occurrence strictly after today', ()
   it('bare weekday names are only dates after "עד" (otherwise שני = "two" etc.)', () => {
     expect(fields('לקנות שני חלבים').scheduledFor).toBeUndefined();
     expect(fields('פגישה שישי בערב').scheduledFor).toBeUndefined();
-    // a returns verb with no store or clothing word is only a weak signal: no hardDeadline (M2)
+    // a returns verb with no strong signal is no category at all, so no hardDeadline (council M5)
     expect(fields('להחזיר עד חמישי')).toEqual({
       title: 'להחזיר',
-      dueDate: '2026-10-08',
-      categoryId: 'returns'
+      dueDate: '2026-10-08'
     });
     expect(fields('לסדר עד לחמישי')).toEqual({ title: 'לסדר', dueDate: '2026-10-08' });
     expect(fields('לסדר עד ליום חמישי')).toEqual({ title: 'לסדר', dueDate: '2026-10-08' });
@@ -273,11 +289,11 @@ describe('week and month phrases', () => {
     expect(fields('להתקשר בסופש', WED).scheduledFor).toBe('2026-10-09');
   });
 
-  it('"בשבוע הבא" is the next Sunday and differs from "בעוד שבוע" (today + 7)', () => {
-    expect(fields('להתקשר בשבוע הבא', WED).scheduledFor).toBe('2026-10-11');
+  it('"בשבוע הבא" is a plan ending next week\'s Saturday, unlike "בעוד שבוע" (today + 7)', () => {
+    expect(fields('להתקשר בשבוע הבא', WED).scheduledFor).toBe('2026-10-17');
     expect(fields('להתקשר בעוד שבוע', WED).scheduledFor).toBe('2026-10-14');
-    expect(fields('להתקשר בשבוע הבא', SAT).scheduledFor).toBe('2026-10-11');
-    expect(fields('להתקשר בשבוע הבא').scheduledFor).toBe('2026-10-11');
+    expect(fields('להתקשר בשבוע הבא', SAT).scheduledFor).toBe('2026-10-17');
+    expect(fields('להתקשר בשבוע הבא').scheduledFor).toBe('2026-10-17');
   });
 
   it('"בחודש הבא" is the 1st of next month, "סוף החודש" the last day', () => {
@@ -405,10 +421,9 @@ describe('hardDeadline', () => {
     });
   });
 
-  it('"מועד אחרון" alone is just the flag', () => {
+  it('"מועד אחרון" alone is not parsed: a hard deadline needs a date (Phase 1 council)', () => {
     expect(fields('מועד אחרון לשלם ארנונה')).toEqual({
-      title: 'לשלם ארנונה',
-      hardDeadline: true,
+      title: 'מועד אחרון לשלם ארנונה',
       categoryId: 'finance'
     });
   });
@@ -431,7 +446,7 @@ describe('numeric dates: dd/mm, dd.mm, dd/mm/yy(yy), "ב-15/10"', () => {
     ['15.10.2027', '2027-10-15'],
     ['15/10/27', '2027-10-15'],
     ['15.10.27', '2027-10-15'],
-    ['1/1/2026', '2026-01-01'], // an explicit past year is taken literally
+    ['1/10/2026', '2026-10-01'], // an explicit year within the 14-day grace is taken literally
     ['ב-15/10', '2026-10-15'],
     ['ב\u{5BE}15/10', '2026-10-15'],
     ['ב15/10', '2026-10-15'],
@@ -556,7 +571,9 @@ describe('Hebrew month names', () => {
       title: 'פגישה',
       scheduledFor: '2027-10-15'
     });
-    expect(fields('פגישה 15 בינואר 2026').scheduledFor).toBe('2026-01-15');
+    expect(fields('פגישה 25 בספטמבר 2026').scheduledFor).toBe('2026-09-25');
+    // further back than the 14-day grace it is no date at all (council M2)
+    expect(fields('פגישה 15 בינואר 2026').scheduledFor).toBeUndefined();
   });
 
   it('ignores impossible dates', () => {
@@ -580,9 +597,9 @@ describe('dueTime', () => {
     ['בשעה 17:30', '17:30'],
     ['בשעה 17.30', '17:30'],
     ['בשעה 17', '17:00'],
-    ['בשעה 5', '17:00'], // under 8: afternoon
+    ['בשעה 5', '17:00'], // 1–5: afternoon
     ['בשעה 1', '13:00'],
-    ['בשעה 7', '19:00'],
+    // (an unpadded 6 or 7 with no cue is ambiguous since the council: see council.test.ts)
     ['בשעה 8', '08:00'],
     ['בשעה 9', '09:00'],
     ['בשעה 12', '12:00'],
@@ -592,7 +609,7 @@ describe('dueTime', () => {
     ['ב-9:05', '09:05'],
     ['ב-08:15', '08:15'],
     ['השעה 17:30', '17:30'],
-    ['שעה 6', '18:00'],
+    ['שעה 4', '16:00'],
     ['17:30', '17:30'],
     ['8:00', '08:00'],
     ['עד 17:00', '17:00'],
@@ -649,19 +666,19 @@ describe('dueTime', () => {
 // ───────────────────────────── priority ─────────────────────────────
 
 describe('priority', () => {
-  it('"!!" is urgent', () => {
+  it('"!!" is high: emphasis, never urgent on its own (Phase 1 council)', () => {
     expect(fields('לשלם ארנונה !!')).toEqual({
       title: 'לשלם ארנונה',
-      priority: 'urgent',
+      priority: 'high',
       categoryId: 'finance'
     });
-    expect(fields('!! לשלם ארנונה').priority).toBe('urgent');
+    expect(fields('!! לשלם ארנונה').priority).toBe('high');
     expect(fields('לשלם!! ארנונה')).toEqual({
       title: 'לשלם ארנונה',
-      priority: 'urgent',
+      priority: 'high',
       categoryId: 'finance'
     });
-    expect(fields('לשלם ארנונה!!!').priority).toBe('urgent');
+    expect(fields('לשלם ארנונה!!!').priority).toBe('high');
   });
 
   it('a single "!" sets nothing and stays in the title (decision b)', () => {
@@ -686,7 +703,7 @@ describe('priority', () => {
   it('an attached or adjacent "!" belongs to the same phrase, and the highest level wins', () => {
     expect(fields('דחוף! לשלם ארנונה').title).toBe('לשלם ארנונה');
     expect(fields('לשלם ארנונה דחוף !!').title).toBe('לשלם ארנונה');
-    expect(fields('חשוב!! לשלם ארנונה')).toEqual({
+    expect(fields('דחוף!! לשלם ארנונה')).toEqual({
       title: 'לשלם ארנונה',
       priority: 'urgent',
       categoryId: 'finance'
@@ -710,12 +727,16 @@ describe('priority', () => {
   });
 
   it('a lone "!!" input keeps itself as the title', () => {
-    expect(fields('!!')).toEqual({ title: '!!', priority: 'urgent' });
+    expect(fields('!!')).toEqual({ title: '!!' });
     expect(fields('!')).toEqual({ title: '!' });
   });
 });
 
 // ───────────────────────────── recurrence ─────────────────────────────
+
+/** A weekly repeat with no day is this week's plan (Phase 1 council). */
+const weekPlanOf = (freq: string) =>
+  freq === 'weekly' ? { scheduledFor: '2026-10-10', weekPlan: true } : {};
 
 describe('recurrence', () => {
   it.each([
@@ -728,14 +749,9 @@ describe('recurrence', () => {
     ['כל שנה', 'yearly'],
     ['פעם בשנה', 'yearly']
   ])('%s', (phrase, freq) => {
-    expect(fields(`להשקות עציצים ${phrase}`)).toEqual({
-      title: 'להשקות עציצים',
-      recurrence: { freq }
-    });
-    expect(fields(`${phrase} להשקות עציצים`)).toEqual({
-      title: 'להשקות עציצים',
-      recurrence: { freq }
-    });
+    const expected = { title: 'להשקות עציצים', ...weekPlanOf(freq), recurrence: { freq } };
+    expect(fields(`להשקות עציצים ${phrase}`)).toEqual(expected);
+    expect(fields(`${phrase} להשקות עציצים`)).toEqual(expected);
   });
 
   it.each([
@@ -746,7 +762,7 @@ describe('recurrence', () => {
     ['שנתי', 'yearly'],
     ['שנתית', 'yearly']
   ])('adjective %s: at the start or after punctuation, not right after a noun', (word, freq) => {
-    const expected = { title: 'להשקות עציצים', recurrence: { freq } };
+    const expected = { title: 'להשקות עציצים', ...weekPlanOf(freq), recurrence: { freq } };
     expect(fields(`${word} להשקות עציצים`)).toEqual(expected);
     expect(fields(`להשקות עציצים - ${word}`)).toEqual(expected);
     expect(fields(`להשקות עציצים, ${word}`)).toEqual(expected);
@@ -848,8 +864,13 @@ describe('categories', () => {
     words.map((w): [CategoryId, string] => [id, w])
   );
 
+  // council M5: a returns word needs a strong signal (here a clothing item) and "להזמין" a product
+  const objectFor = (id: CategoryId, word: string): string =>
+    id === 'returns' && word !== 'זיכוי' ? 'חולצה' : word === 'להזמין' ? 'ספה' : 'משהו';
+
   it.each(everyKeyword)('%s: %s', (id, word) => {
-    expect(fields(`${word} משהו`)).toEqual({ title: `${word} משהו`, categoryId: id });
+    const title = `${word} ${objectFor(id, word)}`;
+    expect(fields(title)).toEqual({ title, categoryId: id });
   });
 
   it('conditional keywords need their context (M2): שמן, תור, דוד', () => {
@@ -1042,11 +1063,11 @@ describe('multiple fields in one input', () => {
   });
 
   it('returns keyword + "עד" + time + priority', () => {
-    expect(fields('חשוב להחליף נעליים עד יום חמישי בשעה 6')).toEqual({
+    expect(fields('חשוב להחליף נעליים עד יום חמישי בשעה 5')).toEqual({
       title: 'להחליף נעליים',
       priority: 'high',
       dueDate: '2026-10-08',
-      dueTime: '18:00',
+      dueTime: '17:00',
       hardDeadline: true,
       categoryId: 'returns'
     });

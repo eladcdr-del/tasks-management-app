@@ -8,7 +8,6 @@ import {
   addMonths,
   diffDays,
   endOfMonth,
-  endOfWeek,
   nextWeekday,
   startOfWeek,
   toISO,
@@ -97,7 +96,8 @@ import {
   scan,
   type Hit,
   type Normalized,
-  type Span
+  type Span,
+  WORD_CHAR_RE
 } from './text';
 import {
   dayOfMonthDate,
@@ -234,6 +234,8 @@ interface NumericInfo {
   yearful: boolean;
   /** introduced by its own prefix (ב/ל/ה/מ) or by "תאריך". */
   prefixed: boolean;
+  /** "ב-29.9": its prefix has a ב (a dotted one may be a price, council M2). */
+  bet: boolean;
 }
 
 interface DateHit {
@@ -254,6 +256,14 @@ interface DateHit {
   monthTail?: boolean;
   dayPart?: DayPart;
   numeric?: NumericInfo;
+  /** A numeric, month-name or "ה-15" date: it may pair with a weekday before it (council M1). */
+  explicit?: boolean;
+  /** A weekday + date pair that disagree, or "שבוע לפני …": blocks its parts, sets nothing. */
+  void?: boolean;
+  /** "השבוע" / "בשבוע הבא": a week plan unless "עד" introduces it. */
+  week?: 'this' | 'next';
+  /** "לשבת", "לשישי": a target day, only at the end of the line or a clause. */
+  lamed?: boolean;
 }
 
 const RE_REL = rxg(`${PFX_CAPTURE}(${alt(Object.keys(RELATIVE_DAYS))})${AFTER}`);
@@ -298,7 +308,7 @@ const RE_DOM_B = rxg(`ו?[בל]\\s?(\\d{1,2})${OF_MONTH}`);
 interface Period {
   re: RegExp;
   resolve: (today: ISODate) => ISODate;
-  flags: Pick<DateHit, 'period' | 'monthTail'>;
+  flags: Pick<DateHit, 'period' | 'monthTail' | 'week'>;
 }
 
 const period = (
@@ -314,8 +324,9 @@ const PERIODS: readonly Period[] = [
   period(PERIOD_PHRASES.weekend, (today) => nextWeekdayOnOrAfter(today, 5)),
   period(PERIOD_PHRASES.monthEnd, endOfMonth),
   // M1: "השבוע" follows the week bucket, which on Friday/Saturday runs to NEXT Saturday
-  period(PERIOD_PHRASES.thisWeek, weekHorizon, { period: true }),
-  period(PERIOD_PHRASES.nextWeek, nextSunday, { period: true }),
+  period(PERIOD_PHRASES.thisWeek, weekHorizon, { period: true, week: 'this' }),
+  // a week plan ends next week's Saturday; after "עד" it is next Sunday (dateCandidates)
+  period(PERIOD_PHRASES.nextWeek, nextSunday, { period: true, week: 'next' }),
   period(PERIOD_PHRASES.nextMonth, startOfNextMonth, { period: true, monthTail: true }),
   period(PERIOD_PHRASES.nextMonthEnd, (today) => endOfMonth(startOfNextMonth(today))),
   period(PERIOD_PHRASES.nextMonthStart, startOfNextMonth),
@@ -324,10 +335,23 @@ const PERIODS: readonly Period[] = [
   period(PERIOD_PHRASES.dayEnd, (today) => today)
 ];
 
-function explicitYear(day: number, month: number, yearText: string): ISODate | null {
+/** A date with its year written; one further back than the grace days is no date (council M2). */
+function explicitYear(
+  day: number,
+  month: number,
+  yearText: string,
+  today: ISODate
+): ISODate | null {
   const year = yearText.length === 2 ? 2000 + Number(yearText) : Number(yearText);
-  return isValidYMD(year, month, day) ? toISO(year, month, day) : null;
+  if (!isValidYMD(year, month, day)) return null;
+  const iso = toISO(year, month, day);
+  return diffDays(iso, today) < -PAST_GRACE_DAYS ? null : iso;
 }
+
+const RE_SATURDAY_NIGHT = rxg(`${PFX}(?:${alt(SATURDAY_NIGHT_PHRASES)})${AFTER}`);
+const RE_LAMED_DAY = rxg(`ו?ל(${alt(LAMED_DAY_NAMES)})${MODS}${AFTER}`);
+/** Between a weekday and its date: "ביום חמישי, 15/10", "ביום חמישי ה-15/10". */
+const RE_PAIR_GAP = /^,?\s+(?:ה\s?)?$/u;
 
 function offsetDate(today: ISODate, n: number, unit: OffsetUnit): ISODate | null {
   if (!Number.isInteger(n) || n < 1 || n > 999) return null;
@@ -394,6 +418,13 @@ export function collectDateHits(ctx: Ctx): DateHit[] {
   for (const h of scan(RE_YOM_FROM, text)) {
     add(h, onWeekday(group(h.m, 1), next), { weekday: true, needs: 'notLater' });
   }
+  for (const h of scan(RE_LAMED_DAY, text)) {
+    add(h, onWeekday(group(h.m, 1), next), { weekday: true, lamed: true });
+  }
+  // "במוצ"ש": Saturday evening (tonight, on a Saturday)
+  for (const h of scan(RE_SATURDAY_NIGHT, text)) {
+    add(h, nextWeekdayOnOrAfter(today, 6), { dayPart: 'evening' });
+  }
 
   for (const p of PERIODS) {
     for (const h of scan(p.re, text)) add(h, p.resolve(today), p.flags);
@@ -423,16 +454,18 @@ export function collectDateHits(ctx: Ctx): DateHit[] {
     add(
       h,
       yearText
-        ? explicitYear(day, month, yearText)
+        ? explicitYear(day, month, yearText, today)
         : yearlessDate(month, day, today, PAST_GRACE_DAYS),
       {
+        explicit: true,
         numeric: {
           day,
           month,
           sep: group(h.m, 4),
           monthDigits: monthText.length,
           yearful: yearText !== '',
-          prefixed: group(h.m, 1) !== '' || /[בלהמ]/.test(group(h.m, 2))
+          prefixed: group(h.m, 1) !== '' || /[בלהמ]/.test(group(h.m, 2)),
+          bet: group(h.m, 2).includes('ב')
         }
       }
     );
@@ -443,7 +476,9 @@ export function collectDateHits(ctx: Ctx): DateHit[] {
     const day = Number(group(h.m, 2));
     const yearText = group(h.m, 4);
     if (month === undefined) continue;
-    add(h, yearText ? explicitYear(day, month, yearText) : yearlessDate(month, day, today));
+    add(h, yearText ? explicitYear(day, month, yearText, today) : yearlessDate(month, day, today), {
+      explicit: true
+    });
   }
 
   for (const h of scan(RE_DOM_H, text, true)) {
@@ -452,11 +487,37 @@ export function collectDateHits(ctx: Ctx): DateHit[] {
     add(h, dayOfMonthDate(Number(group(h.m, 2)), today, group(h.m, 4) !== ''), {
       // a bare "ה-10" is an ordinal unless "עד" introduces it: "עד ה-10" but not "עד ה-10 ילדים"
       ...(from ? { needs: 'notLater' as const } : ofMonth ? {} : { needs: 'intro' as const }),
-      bare: !ofMonth
+      bare: !ofMonth,
+      explicit: !from
     });
   }
   for (const h of scan(RE_DOM_B, text)) {
     add(h, dayOfMonthDate(Number(group(h.m, 1)), today, group(h.m, 2) !== ''));
+  }
+  return [...out, ...weekdayDatePairs(text, out)];
+}
+
+/**
+ * M1: "ביום חמישי 15/10" is one phrase. When the weekday and the date agree it is that date;
+ * when they disagree it is a void phrase (no chip, nothing consumed, its parts not read alone).
+ */
+function weekdayDatePairs(text: string, hits: readonly DateHit[]): DateHit[] {
+  const out: DateHit[] = [];
+  for (const w of hits) {
+    if (!w.weekday || w.lamed) continue;
+    const index = weekdayIndexOf(text.slice(w.start, w.end));
+    if (index === undefined) continue;
+    for (const e of hits) {
+      if (!e.explicit || e.start < w.end || !RE_PAIR_GAP.test(text.slice(w.end, e.start))) continue;
+      out.push({
+        start: w.start,
+        end: e.end,
+        iso: e.iso,
+        weekday: true,
+        ...(w.needs ? { needs: w.needs } : {}),
+        ...(weekday(e.iso) === index ? {} : { void: true })
+      });
+    }
   }
   return out;
 }
@@ -483,7 +544,7 @@ const RE_BARE_VETO_NEXT = rx1(
 
 /** The introducer, then spaces, or an opening bracket or quote before the date: "עד (מחר)". */
 const RE_INTRO = rx1(
-  `(ו?${lit(UNTIL_WORD)}|${lit(HARD_DEADLINE_PHRASE)}:?|${lit(NOT_LATER_PHRASE)})` +
+  `(ו?${lit(UNTIL_WORD)}|${lit(HARD_DEADLINE_PHRASE)}:?|${lit(NOT_LATER_PHRASE)}|ו?${lit(BEFORE_WORD)})` +
     `(?:\\s+|\\s*([([{"\u{5F4}\u{201C}])\\s*)$`
 );
 /** "(עד מחר)", "״עד מחר״": an opening bracket or quote may precede the introducer. */
@@ -499,7 +560,7 @@ const CLOSERS: Readonly<Record<string, string>> = {
 
 interface Intro {
   start: number;
-  kind: 'until' | 'hard' | 'notLater';
+  kind: 'until' | 'hard' | 'notLater' | 'before';
   /** The closing bracket or quote expected right after the date ("עד (מחר)"). */
   closer?: string;
 }
@@ -511,7 +572,13 @@ function introBefore(text: string, idx: number): Intro | null {
   if (!m) return null;
   if (m.index > 0 && !INTRO_LEAD_RE.test(before.charAt(m.index - 1))) return null;
   const word = group(m, 1);
-  const kind = word.startsWith('מועד') ? 'hard' : word.startsWith('לא') ? 'notLater' : 'until';
+  const kind = word.startsWith('מועד')
+    ? 'hard'
+    : word.startsWith('לא')
+      ? 'notLater'
+      : word.replace(/^ו/, '') === BEFORE_WORD
+        ? 'before'
+        : 'until';
   const closer = CLOSERS[group(m, 2)];
   return { start: idx - before.length + m.index, kind, ...(closer ? { closer } : {}) };
 }
@@ -526,12 +593,29 @@ const RE_LATIN_BEFORE = /(?:^|\s)[A-Za-z][\w+.]*\s+$/;
 const RE_UNIT_AFTER = rx1(`^\\s?(?:${alt(UNIT_WORDS)})${AFTER}`);
 const RE_CURRENCY_BEFORE = rx1('[₪$€£]\\s?$');
 
+/** "שבוע לפני", "3 ימים לפני": an offset before "לפני" that the parser does not read. */
+const RE_BEFORE_OFFSET = rx1(
+  `(?:^|\\s)((?:\\d{1,3}\\s+|(?:${alt(Object.keys(NUMBER_WORDS))})\\s+)?(?:${alt(BEFORE_OFFSET_WORDS)}))\\s+$`
+);
+const RE_LAMED_VETO_BEFORE = lastWordRe(LAMED_DAY_VETO_BEFORE);
+/** "בראשון להתקשר": a leading weekday right before an infinitive. */
+const RE_INFINITIVE_NEXT = rx1(`^\\s+ל\\p{L}{3,}${AFTER}`);
+
 /** C1: may this dd/mm hit be a date? `introduced`: by its own prefix, "תאריך", or an introducer. */
 function numericOk(ctx: Ctx, h: DateHit, info: NumericInfo, introduced: boolean): boolean {
   const { text } = ctx;
   const before = lookback(text, h.start);
   // (d) a quantity or a price, introduced or not: "1/2 קילו", "₪2.5", "ב-3.5 אלף"
   if (RE_UNIT_AFTER.test(text.slice(h.end, h.end + 12)) || RE_CURRENCY_BEFORE.test(before)) {
+    return false;
+  }
+  // "ב-19.9" is as likely a price: a dotted date after ב only near today (council M2)
+  if (
+    info.bet &&
+    info.sep === '.' &&
+    !info.yearful &&
+    diffDays(h.iso, ctx.today) > MAX_BET_DOTTED_DAYS_AHEAD
+  ) {
     return false;
   }
   if (introduced) return true;
@@ -574,9 +658,19 @@ export function dateCandidates(
     if (hit.period && RE_MODIFIER_BEFORE.test(before)) continue; // "סדר היום", "באמצע השבוע"
     if (hit.monthTail && RE_NUMBER_BEFORE.test(before)) continue;
     if (hit.weekday && (RE_EVE_BEFORE.test(before) || RE_VETO_NEXT.test(rest))) continue;
-    if (hit.bare && RE_BARE_VETO_NEXT.test(rest)) continue; // "בשני הילדים"
+    // "בראשון להתקשר לבנק": a weekday leading the line before an infinitive
+    const leadsInfinitive =
+      hit.strict === true && separatedBefore(ctx, hit.start) && RE_INFINITIVE_NEXT.test(rest);
+    if (hit.bare && !leadsInfinitive && RE_BARE_VETO_NEXT.test(rest)) continue; // "בשני הילדים"
     const h = withDayPart(text, hit);
-    if (hit.strict && h === hit && !followerOk(ctx, hit.end, phraseStarts)) continue;
+    if (hit.strict && h === hit && !leadsInfinitive && !followerOk(ctx, hit.end, phraseStarts)) {
+      continue;
+    }
+    if (hit.lamed) {
+      // "להכין עוגה לשבת" but not "מקום לשבת" or "לשבת עם דני"
+      if (RE_LAMED_VETO_BEFORE.test(before)) continue;
+      if (h === hit && !followerOk(ctx, hit.end, phraseStarts)) continue;
+    }
 
     const intro = introBefore(text, hit.start);
     if (hit.needs === 'intro' && !intro) continue;
@@ -586,10 +680,36 @@ export function dateCandidates(
     }
     const dayPart = h.dayPart ? { dayPart: h.dayPart } : {};
     if (intro) {
-      const kind = intro.kind === 'hard' ? 'hard' : 'until';
       // "עד (מחר)": the closing bracket goes with the phrase
       const end = intro.closer && text.startsWith(intro.closer, h.end) ? h.end + 1 : h.end;
-      out.push({ kind: 'due', start: intro.start, end, iso: h.iso, intro: kind, ...dayPart });
+      if (intro.kind === 'before') {
+        // "שבוע לפני 15/10": the offset is not read, so the whole phrase is no date
+        const before2 = lookback(text, intro.start);
+        const off = RE_BEFORE_OFFSET.exec(before2);
+        if (off) {
+          const offStart = intro.start - before2.length + off.index + off[0].indexOf(group(off, 1));
+          out.push({ kind: 'due', start: offStart, end, void: true });
+          continue;
+        }
+      }
+      if (hit.void) {
+        out.push({ kind: 'due', start: intro.start, end, void: true });
+        continue;
+      }
+      const kind = intro.kind === 'hard' ? 'hard' : 'until';
+      // "לפני יום שישי" is due the day before (council M3)
+      const iso = intro.kind === 'before' ? addDays(h.iso, -1) : h.iso;
+      out.push({ kind: 'due', start: intro.start, end, iso, intro: kind, ...dayPart });
+      continue;
+    }
+    if (hit.void) {
+      out.push({ kind: 'date', start: h.start, end: h.end, void: true });
+      continue;
+    }
+    if (hit.week) {
+      // a week plan: "השבוע" ends weekHorizon(today), "בשבוע הבא" ends next week's Saturday
+      const iso = hit.week === 'next' ? addDays(h.iso, 6) : h.iso;
+      out.push({ kind: 'date', start: h.start, end: h.end, iso, week: hit.week, ...dayPart });
       continue;
     }
     let { start, end } = h;
@@ -607,6 +727,24 @@ export function dateCandidates(
     out.push({ kind: 'date', start, end, iso: h.iso, ...dayPart });
   }
   return out;
+}
+
+// ── M4: a day word the line names without a date chip ──
+
+const RE_DAY_WORD = anywhereRe([
+  ...DAY_LIKE_WORDS,
+  ...DAY_ENTRIES.map(([n]) => n),
+  ...MONTHS.flatMap((mo) => mo.names)
+]);
+
+/**
+ * True when the text outside the `consumed` spans names a day, a holiday or a month ("ארוחת שישי",
+ * "ארוחת חג", "באוקטובר"): a lone time then implies no date (council M4).
+ */
+export function namesUnparsedDay(text: string, consumed: readonly Span[]): boolean {
+  let rest = text;
+  for (const [s, e] of consumed) rest = rest.slice(0, s) + ' '.repeat(e - s) + rest.slice(e);
+  return RE_DAY_WORD.test(rest);
 }
 
 // ───────────────────────────── "מועד אחרון" on its own ─────────────────────────────
@@ -627,6 +765,10 @@ interface TimeHit {
   bareColon?: boolean;
   /** A range of bare numbers ("בין 10 ל-12"): needs a clean ending like a C2 day name. */
   needsFollower?: boolean;
+  /** The end of a range ("בין 8 ל-12"). */
+  endClock?: ClockParts;
+  /** "מחר ב-4": a bare number after ב, a time only right after a date and not before a noun. */
+  afterDate?: boolean;
 }
 
 const DP_LEAD = `(?:(${DAY_PART_ALT})\\s+)?`;
@@ -656,6 +798,21 @@ const RE_SCORE_BEFORE = lastWordRe(SCORE_WORDS);
 /** "בשעה 5 ו-10 דקות": more minutes than the phrase captured; better no time than 17:00. */
 const RE_MORE_MINUTES_AFTER = /^\s+ו\s?\d/u;
 const RE_DURATION_AFTER = rx1(`^\\s+(?:${alt(DURATION_WORDS)})${AFTER}`);
+/** "מחר ב-3 קבוצות", "ב-5 שקלים": a plural noun or a unit after the number is a quantity. */
+const RE_QUANTITY_AFTER = rx1(
+  `^\\s+(?:\\p{L}+(?:ים|ות)|${alt([...UNIT_WORDS, ...DURATION_WORDS])})${AFTER}`
+);
+const TIME_CUE_RES = {
+  am: anywhereRe(TIME_CUES.am),
+  pm: anywhereRe(TIME_CUES.pm)
+};
+
+/** A word in the line that settles an ambiguous 6 or 7 (council C1); none, or both, is undefined. */
+export function timeCue(text: string): 'am' | 'pm' | undefined {
+  const am = TIME_CUE_RES.am.test(text);
+  const pm = TIME_CUE_RES.pm.test(text);
+  return am === pm ? undefined : am ? 'am' : 'pm';
+}
 
 function makeClock(
   hourText: string,
@@ -692,19 +849,43 @@ function applyDayPart(hour: number, part: DayPart): number {
 }
 
 /**
- * 'HH:mm' for a clock as written. Its own part-of-day word wins, then the part of day of the date
- * it goes with ("מחר בבוקר בשעה 7"); with neither, an unpadded hour 1–7 is afternoon ("בשעה 5" and
- * "5:30" are 17:00 / 17:30; "05:30" is literal).
+ * 'HH:mm' for a clock as written, or null when it is ambiguous. Its own part-of-day word wins, then
+ * the part of day of the date it goes with ("מחר בבוקר בשעה 7"). With neither (council C1):
+ * - an unpadded hour 1–5 is afternoon ("בשעה 5" and "5:30" are 17:00 / 17:30);
+ * - an unpadded 6 or 7 needs a cue in the line (`cue`: להעיר / טיסה … = AM, ארוחת ערב … = PM),
+ *   else it is ambiguous (null: no time chip);
+ * - a zero-padded hour ("05:30", "07:30") is literal.
  */
-export function resolveClock(c: ClockParts, fallback?: DayPart): string {
+export function resolveClock(c: ClockParts, fallback?: DayPart, cue?: 'am' | 'pm'): string | null {
   let hour = c.hour;
   const part = c.dayPart ?? fallback;
   if (part) {
     if (hour <= 12) hour = applyDayPart(hour, part);
-  } else if (!c.padded && hour >= 1 && hour < AFTERNOON_BEFORE_HOUR) {
+  } else if (!c.padded && hour >= 1 && hour <= PM_UNTIL_HOUR) {
     hour += 12;
+  } else if (!c.padded && AMBIGUOUS_HOURS.includes(hour)) {
+    if (!cue) return null;
+    if (cue === 'pm') hour += 12;
   }
   return `${pad2(hour)}:${pad2(c.minute)}`;
+}
+
+/**
+ * The end of a range, resolved with the same part of day and cue as its start, never before the
+ * start: "בין 10 ל-2" ends 14:00, "בין 4 ל-6 אחה"צ" 18:00, "בין 5 ל-7" 19:00.
+ */
+export function resolveRangeEnd(
+  end: ClockParts,
+  start: string,
+  fallback?: DayPart,
+  cue?: 'am' | 'pm'
+): string {
+  const startMinutes = Number(start.slice(0, 2)) * 60 + Number(start.slice(3, 5));
+  const at = (h: number) => h * 60 + end.minute;
+  const resolved = resolveClock(end, fallback, cue);
+  let hour = resolved ? Number(resolved.slice(0, 2)) : end.hour;
+  if (at(hour) < startMinutes && hour + 12 <= 23 && !end.padded) hour += 12;
+  return `${pad2(hour)}:${pad2(end.minute)}`;
 }
 
 /** Every time-looking phrase, before vetoes. */
@@ -726,7 +907,7 @@ export function collectTimeHits(text: string): TimeHit[] {
   }
   for (const h of scan(RE_TIME_BET, text, true)) {
     const part = group(h.m, 5) || group(h.m, 1);
-    if (part) add(h, makeClock(group(h.m, 3), '', group(h.m, 4), part));
+    add(h, makeClock(group(h.m, 3), '', group(h.m, 4), part), part ? {} : { afterDate: true });
   }
   for (const h of scan(RE_TIME_RANGE, text, true)) {
     const [between, from, hours, bet] = [1, 2, 3, 4].map((i) => group(h.m, i));
@@ -739,7 +920,8 @@ export function collectTimeHits(text: string): TimeHit[] {
     if (!between && !hours && colons < (from ? 1 : 2)) continue;
     if (bet && colons < 2) continue;
     add(h, makeClock(group(h.m, 5), m1, '', part), {
-      needsFollower: colons === 0 && !part
+      needsFollower: colons === 0 && !part,
+      endClock: end
     });
   }
   return out;
@@ -764,7 +946,17 @@ export function timeCandidates(
     if (h.needsFollower && !dateEnds.has(h.start - 1) && !followerOk(ctx, h.end, phraseStarts)) {
       continue;
     }
-    out.push({ kind: 'time', start: h.start, end: h.end, clock: h.clock });
+    // "מחר ב-4 להתקשר" is a time; "מחר ב-3 קבוצות" and a bare "ב-4" alone are not
+    if (h.afterDate && (!dateEnds.has(h.start - 1) || RE_QUANTITY_AFTER.test(text.slice(h.end)))) {
+      continue;
+    }
+    out.push({
+      kind: 'time',
+      start: h.start,
+      end: h.end,
+      clock: h.clock,
+      ...(h.endClock ? { endClock: h.endClock } : {})
+    });
   }
   return out;
 }
@@ -775,7 +967,9 @@ export const LEVEL_RANK = { high: 1, urgent: 2 } as const;
 const PRIORITY_LEVEL = new Map(
   PRIORITY_WORDS.flatMap((p) => p.words.map((w) => [w, p.priority] as const))
 );
-const PRIORITY_WORD_ALT = alt([...PRIORITY_LEVEL.keys()]);
+/** "דחוףףף": a priority word may be stretched by repeating its last letter. */
+const PRIORITY_WORD_ALT = alt([...PRIORITY_LEVEL.keys()], (w) => `${lit(w)}+`);
+const levelOf = (word: string) => PRIORITY_LEVEL.get(word.replace(/(\p{L})\1+$/u, '$1'));
 const PRIORITY_PFX = `[${PRIORITY_PREFIX_LETTERS}]{0,2}`;
 const INTENS_BEFORE = `(?:(?:${alt(INTENSIFIERS_BEFORE)})\\s+){0,2}`;
 const INTENS_AFTER = `(?:\\s+(?:${alt(INTENSIFIERS_AFTER)})${AFTER}){0,2}`;
@@ -787,6 +981,16 @@ const RE_NOT_BEFORE = rx1(`(?:^|\\s)${lit(NEGATION_WORD)}\\s+${INTENS_BEFORE}$`)
 const RE_NEGATED_WORD_BEFORE = rx1(
   `(?:^|\\s)${lit(NEGATION_WORD)}\\s+${INTENS_BEFORE}${PRIORITY_PFX}(?:${PRIORITY_WORD_ALT})${INTENS_AFTER}\\s*$`
 );
+const POS_WORD = `${INTENS_BEFORE}${PRIORITY_PFX}(${PRIORITY_WORD_ALT})${AFTER}${INTENS_AFTER}`;
+const NEG_WORD = `${lit(NEGATION_WORD)}\\s+${INTENS_BEFORE}${PRIORITY_PFX}(?:${PRIORITY_WORD_ALT})${AFTER}${INTENS_AFTER}`;
+const CONTRAST = `,?\\s+(?:${alt(CONTRAST_WORDS)})\\s+`;
+// "לא דחוף אבל חשוב", "חשוב אך לא דחוף": one phrase, the level of the word that is not negated
+const RE_CONTRAST = rxg(`(?:${NEG_WORD}${CONTRAST}${POS_WORD}|${POS_WORD}${CONTRAST}${NEG_WORD})`);
+/** "אם דחוף, להתקשר": a condition. */
+const RE_CONDITION_BEFORE = rx1(`(?:^|\\s)ו?${lit(CONDITION_WORD)}\\s+${INTENS_BEFORE}$`);
+/** "חשוב לי שהילדים…": the word heads a ש-clause. */
+const RE_SHIN_NEXT = rx1(`^\\s+(ש\\p{L}*)`);
+const SHIN_OK = new Set(SHIN_WORDS_NOT_CLAUSE);
 const RE_BANGS = /!+/g;
 const MAX_BANGS = 1000;
 
@@ -802,10 +1006,20 @@ const rank = (level: Marker['level']): number => (level ? LEVEL_RANK[level] : 0)
 export function priorityCandidates(text: string): Cand[] {
   const markers: Marker[] = [];
   for (const h of scan(RE_PRIORITY, text)) {
-    if (RE_NOT_BEFORE.test(lookback(text, h.start))) continue; // "לא דחוף", "לא ממש דחוף"
-    const level = PRIORITY_LEVEL.get(group(h.m, 1));
+    const before = lookback(text, h.start);
+    if (RE_NOT_BEFORE.test(before)) continue; // "לא דחוף", "לא ממש דחוף"
+    if (RE_CONDITION_BEFORE.test(before)) continue; // "אם דחוף"
+    const shin = RE_SHIN_NEXT.exec(text.slice(h.end));
+    if (shin && !SHIN_OK.has(group(shin, 1))) continue; // "חשוב לי שהילדים יאכלו"
+    const level = levelOf(group(h.m, 1));
     if (level) markers.push({ start: h.start, end: h.end, level });
   }
+  for (const h of scan(RE_CONTRAST, text)) {
+    const level = levelOf(group(h.m, 1) || group(h.m, 2));
+    if (level) markers.push({ start: h.start, end: h.end, level });
+  }
+  // punctuation alone is never a priority: "!!" as the whole line is nothing
+  const hasWords = WORD_CHAR_RE.test(text);
   RE_BANGS.lastIndex = 0;
   for (let n = 0; n < MAX_BANGS; n++) {
     const m = RE_BANGS.exec(text);
@@ -813,8 +1027,10 @@ export function priorityCandidates(text: string): Cand[] {
     const start = m.index;
     const end = start + m[0].length;
     if (text.charAt(start - 1) === '?' || text.charAt(end) === '?') continue; // "?!" is a question
+    if (!hasWords) continue;
     if (RE_NEGATED_WORD_BEFORE.test(lookback(text, start))) continue; // "לא דחוף!"
-    markers.push({ start, end, level: m[0].length >= 2 ? 'urgent' : null });
+    // "!!" is emphasis: at most high, never urgent on its own (council)
+    markers.push({ start, end, level: m[0].length >= 2 ? 'high' : null });
   }
   markers.sort((a, b) => a.start - b.start || b.end - a.end);
 

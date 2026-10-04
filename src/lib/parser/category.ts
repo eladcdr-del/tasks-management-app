@@ -10,7 +10,18 @@ import {
   lit,
   type CategoryKeyword
 } from './lexicon';
-import { AFTER, ATTACHED, group, lastWordRe, lookback, rx1, rxg, scan, type Span } from './text';
+import {
+  AFTER,
+  ATTACHED,
+  anywhereRe,
+  group,
+  lastWordRe,
+  lookback,
+  rx1,
+  rxg,
+  scan,
+  type Span
+} from './text';
 
 export interface CategoryHit {
   id: CategoryId;
@@ -29,10 +40,7 @@ interface CompiledKeyword {
   notAfter: RegExp | null;
 }
 
-const LETTER_OR_DIGIT = '\\p{L}\\p{N}';
-/** One of `words`, with 0–2 prefixes, as a whole word anywhere in the text. */
-const anywhere = (words: readonly string[]): RegExp =>
-  rx1(`(?:^|[^${LETTER_OR_DIGIT}])${ATTACHED}(?:${alt(words)})(?![${LETTER_OR_DIGIT}])`);
+const anywhere = anywhereRe;
 
 const ABBREV_MARK = '(?![\u{5F3}\'\u{2019}".])';
 

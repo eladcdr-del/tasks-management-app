@@ -677,7 +677,17 @@ export const CATEGORY_KEYWORDS: readonly {
     id: 'home',
     keywords: [
       ...verbs('לתקן'),
-      ...words('תיקון', 'נזילה', 'אינסטלטור', 'חשמלאי', 'טכנאי', 'מזגן', 'הדברה', 'מנעול', 'מנעולן'),
+      ...words(
+        'תיקון',
+        'נזילה',
+        'אינסטלטור',
+        'חשמלאי',
+        'טכנאי',
+        'מזגן',
+        'הדברה',
+        'מנעול',
+        'מנעולן'
+      ),
       { word: 'נורה', badPrefixEnd: 'מ' }, // "מנורה" is a lamp, not מ+נורה
       ...words('דוד שמש', 'דוד חשמל'),
       { word: 'דוד', needsPrefix: 'הב', badPrefix: 'ל', needs: REPAIR_WORDS },

@@ -113,7 +113,7 @@ describe('C2: ב + a bare weekday name', () => {
     'בראשון לחודש לשלם שכר דירה',
     'לשלם בשני תשלומים',
     'לטפל בשני הילדים',
-    'בשני לקנות חלב',
+    // ("בשני לקנות חלב" IS Monday since the Phase 1 council: a leading weekday before an infinitive)
     'לחלק בשלישי מהכסף'
   ])('"%s" has no weekday and keeps its title', (input) => {
     const r = parse(input);
@@ -141,7 +141,7 @@ describe('C2: ב + a bare weekday name', () => {
     expect(fields('להתקשר בשני!!')).toEqual({
       title: 'להתקשר',
       scheduledFor: '2026-10-05',
-      priority: 'urgent'
+      priority: 'high' // "!!" is at most high (Phase 1 council)
     });
   });
 
@@ -316,7 +316,11 @@ describe('M1: "השבוע" is weekHorizon(today)', () => {
     ['Saturday', SAT, '2026-10-17'],
     ['Saturday 22:30', SAT_LATE, '2026-10-17']
   ])('%s', (_day, now, iso) => {
-    expect(fields('להתקשר השבוע', now)).toEqual({ title: 'להתקשר', scheduledFor: iso });
+    expect(fields('להתקשר השבוע', now)).toEqual({
+      title: 'להתקשר',
+      scheduledFor: iso,
+      weekPlan: true
+    });
   });
 
   it('decision (f): "סוף השבוע" said on Friday is today; on Saturday it is next Friday', () => {
@@ -345,7 +349,7 @@ describe('M2: strong and weak category keywords', () => {
     ['לקנות צבע לקיר', { categoryId: 'home' }],
     ['לתקן את דוד השמש', { categoryId: 'home' }],
     ['דוד חשמל', { categoryId: 'home' }],
-    ['להחזיר ספר לספרייה', { categoryId: 'returns' }],
+    ['להחזיר ספר לספרייה', {}], // council M5: returns needs a strong signal
     ['להחליף מתנה', { categoryId: 'returns' }],
     ['להחזיר טופס לבנק', { categoryId: 'finance' }],
     ['דירה מס׳ 4', {}],
@@ -370,8 +374,7 @@ describe('M2: strong and weak category keywords', () => {
     });
     expect(fields('להחזיר ספר לספרייה עד יום חמישי')).toEqual({
       title: 'להחזיר ספר לספרייה',
-      dueDate: '2026-10-08',
-      categoryId: 'returns'
+      dueDate: '2026-10-08'
     });
     expect(fields('להחליף מצבר בחנות עד מחר').hardDeadline).toBe(true); // store word: strong
     expect(fields('לקבל זיכוי עד 15/10').hardDeadline).toBe(true);
@@ -575,8 +578,8 @@ describe('decision (b): a single "!" no longer sets priority', () => {
     expect(fields('!')).toEqual({ title: '!' });
   });
 
-  it('"!!" is still urgent and "!" still rides along with a priority word', () => {
-    expect(fields('לשלם ארנונה!!').priority).toBe('urgent');
+  it('"!!" is high (Phase 1 council) and "!" still rides along with a priority word', () => {
+    expect(fields('לשלם ארנונה!!').priority).toBe('high');
     expect(fields('חשוב! לשלם')).toEqual({
       title: 'לשלם',
       priority: 'high',
@@ -651,13 +654,18 @@ describe('minors', () => {
       recurrence: { freq: 'yearly' },
       categoryId: 'car'
     });
+    // a weekly repeat with no day is this week's plan (Phase 1 council)
     expect(fields('להשקות עציצים - שבועי')).toEqual({
       title: 'להשקות עציצים',
+      scheduledFor: '2026-10-10',
+      weekPlan: true,
       recurrence: { freq: 'weekly' }
     });
     expect(fields('להשקות עציצים (חודשי)').recurrence).toEqual({ freq: 'monthly' });
     expect(fields('להשקות עציצים באופן שבועי')).toEqual({
       title: 'להשקות עציצים',
+      scheduledFor: '2026-10-10',
+      weekPlan: true,
       recurrence: { freq: 'weekly' }
     });
   });

@@ -140,9 +140,12 @@ describe('M1: a weekday and an explicit date are one phrase', () => {
     'ביום שני 3/1 פגישה',
     'פגישה ביום שני ה-15',
     'פגישה ביום חמישי 16 באוקטובר'
-  ])('%s: the weekday and the date disagree, so no date chip and the title is untouched', (input) => {
-    expectUntouched(input);
-  });
+  ])(
+    '%s: the weekday and the date disagree, so no date chip and the title is untouched',
+    (input) => {
+      expectUntouched(input);
+    }
+  );
 });
 
 // ───────────────────────────── 3. M2: numbers that are not dates ─────────────────────────────
@@ -213,9 +216,7 @@ describe('M3: never consume text a chip does not carry', () => {
     expect(morning.dueTime).toBeUndefined();
     expect(morning.title).toBe('להתקשר');
     expect(chip(morning, 'date')?.label).toBe('מחר בבוקר · יום ב׳ 5/10');
-    expect(chip(parse('להתקשר ביום חמישי בצהריים'), 'date')?.label).toBe(
-      'יום ה׳ 8/10 בצהריים'
-    );
+    expect(chip(parse('להתקשר ביום חמישי בצהריים'), 'date')?.label).toBe('יום ה׳ 8/10 בצהריים');
     expect(chip(parse('להתקשר היום בערב'), 'date')?.label).toBe('היום בערב · יום א׳ 4/10');
     expect(chip(parse('לשלם עד מחר בבוקר'), 'due')?.label).toBe('עד מחר בבוקר · יום ב׳ 5/10');
     expect(chip(parse('חוג כל יום שלישי אחה״צ'), 'recurrence')?.label).toBe(
@@ -565,7 +566,8 @@ describe('fail-safe additions', () => {
     ['חלות לשבת!', 'חלות!', '2026-10-10'],
     ['לקנות יין לשבת הקרובה', 'לקנות יין', '2026-10-10']
   ])('"לשישי" / "לשבת" as the target day: %s', (input, title, iso) => {
-    expect(fields(input)).toEqual({ title, scheduledFor: iso });
+    const { categoryId: _category, ...rest } = fields(input);
+    expect(rest).toEqual({ title, scheduledFor: iso });
   });
 
   it.each(['לשבת עם דני על השיעורים', 'למצוא מקום לשבת', 'כיסא לשבת', 'לחשוב לשני'])(
