@@ -1,6 +1,6 @@
 // owner: step 2.3 — joining with an invite code, leaving, and owner removal.
 
-import { beforeEach, describe, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
   arrayRemove,
@@ -33,6 +33,7 @@ import {
   path,
   seed,
   seedHousehold,
+  seedTask,
   seedTwoMemberHousehold,
   userDoc,
   useRulesEnv
@@ -223,6 +224,29 @@ describe('leave (self)', () => {
 
   it('allowed: the founder/owner may leave too', async () => {
     await assertSucceeds(leaveBatch(as(env(), ALICE), ALICE).commit());
+  });
+
+  it("allowed: leaving releases the leaver's open tasks in the same batch (read budget is per document, not per task)", async () => {
+    const ids = Array.from({ length: 30 }, (_, i) => `mine-${i}`);
+    for (const id of ids) {
+      await seedTask(env(), id, { ownerId: BOB, requestedBy: ALICE, requestedAt: inDays(-1) });
+    }
+    await assertSucceeds(leaveBatch(as(env(), BOB), BOB, HID, ids).commit());
+    const released = await getDoc(doc(as(env(), ALICE), path.task('mine-7')));
+    expect(released.data()).toMatchObject({
+      ownerId: null,
+      requestedBy: null,
+      requestedAt: null,
+      updatedBy: BOB
+    });
+  });
+
+  it('denied: a released event cannot ride in the leave batch (the leaver is no longer a member after it)', async () => {
+    await seedTask(env(), 'mine-1', { ownerId: BOB });
+    const db = as(env(), BOB);
+    const b = leaveBatch(db, BOB, HID, ['mine-1']);
+    b.set(doc(db, path.event('left-1')), eventDoc(BOB, 'released', { taskId: 'mine-1' }));
+    await assertFails(b.commit());
   });
 
   it('the founder, after leaving, cannot come back as owner without an invite', async () => {

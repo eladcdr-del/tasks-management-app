@@ -35,24 +35,32 @@ export interface RouteMeta {
   fab: boolean;
   /** Only reachable in dev / E2E builds; tree-shaken from production. */
   devOnly?: boolean;
+  /**
+   * Who may see the route (boot gating in App.svelte reads this, never a hard-coded list):
+   * 'public'    — always reachable (setup, welcome, join)
+   * 'auth'      — signed in, household not required (onboarding)
+   * 'household' — signed in AND member of a household (everything else)
+   */
+  access: RouteAccess;
 }
+export type RouteAccess = 'public' | 'auth' | 'household';
 
 export const ROUTE_META: Readonly<Record<RouteName, RouteMeta>> = {
-  home: { tab: 'home', fab: true },
-  memory: { tab: 'memory', fab: true },
-  jar: { tab: 'jar', fab: false },
-  household: { tab: 'household', fab: false },
-  settings: { fab: false },
-  task: { fab: false },
-  new: { tab: 'home', fab: true }, // renders Home; the router canonicalises it to #/ + QuickAdd
-  welcome: { fab: false },
-  onboardingProfile: { fab: false },
-  onboardingHousehold: { fab: false },
-  onboardingInstall: { fab: false },
-  onboardingNotifications: { fab: false },
-  join: { fab: false },
-  setup: { fab: false },
-  devGallery: { devOnly: true, fab: false }
+  home: { tab: 'home', fab: true, access: 'household' },
+  memory: { tab: 'memory', fab: true, access: 'household' },
+  jar: { tab: 'jar', fab: false, access: 'household' },
+  household: { tab: 'household', fab: false, access: 'household' },
+  settings: { fab: false, access: 'household' },
+  task: { fab: false, access: 'household' },
+  new: { tab: 'home', fab: true, access: 'household' }, // renders Home; the router canonicalises it to #/ + QuickAdd
+  welcome: { fab: false, access: 'public' },
+  onboardingProfile: { fab: false, access: 'auth' },
+  onboardingHousehold: { fab: false, access: 'auth' },
+  onboardingInstall: { fab: false, access: 'auth' },
+  onboardingNotifications: { fab: false, access: 'auth' },
+  join: { fab: false, access: 'public' },
+  setup: { fab: false, access: 'public' },
+  devGallery: { devOnly: true, fab: false, access: 'public' }
 };
 
 /** The root route of each tab (all param-less, so `href(TAB_ROUTE[tab])` type-checks). */
@@ -95,17 +103,19 @@ export type SheetSpec =
   | { name: 'complete'; taskId: string }
   | { name: 'request'; taskId: string }
   | { name: 'snooze'; taskId: string }
-  | { name: 'jarSetup' };
+  | { name: 'jarSetup' }
+  | { name: 'photo'; photoId: string }; // full-screen photo viewer (3.3 TaskDetail, 4.1 Memory); Back closes it
 
 export type SheetName = SheetSpec['name'];
 
-const SHEET_NAMES: readonly SheetName[] = ['quickAdd', 'complete', 'request', 'snooze', 'jarSetup'];
+const SHEET_NAMES: readonly SheetName[] = ['quickAdd', 'complete', 'request', 'snooze', 'jarSetup', 'photo'];
 
 /** Validates an unknown value (e.g. from `history.state`) as a SheetSpec. */
 export function isSheetSpec(value: unknown): value is SheetSpec {
   if (typeof value !== 'object' || value === null) return false;
-  const v = value as { name?: unknown; taskId?: unknown };
+  const v = value as { name?: unknown; taskId?: unknown; photoId?: unknown };
   if (typeof v.name !== 'string' || !SHEET_NAMES.includes(v.name as SheetName)) return false;
+  if (v.name === 'photo') return typeof v.photoId === 'string' && v.photoId.length > 0;
   if (v.name === 'complete' || v.name === 'request' || v.name === 'snooze') {
     return typeof v.taskId === 'string' && v.taskId.length > 0;
   }

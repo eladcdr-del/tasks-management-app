@@ -9,18 +9,21 @@ export const DEFAULT_CATEGORIES: Category[] = [
   {
     id: 'car',
     label: 'רכב',
+    short: 'רכב',
     icon: 'car',
     keywords: ['רכב', 'מוסך', 'טסט', 'צמיג', 'צמיגים', 'מצבר', 'שמן', "פנצ'ר", 'ביטוח רכב']
   },
   {
     id: 'shopping',
     label: 'קניות',
+    short: 'קניות',
     icon: 'shopping-bag',
     keywords: ['לקנות', 'לרכוש', 'להזמין', 'סופר', 'קניות']
   },
   {
     id: 'home',
     label: 'בית ותיקונים',
+    short: 'בית',
     icon: 'wrench',
     keywords: [
       'לתקן',
@@ -38,12 +41,14 @@ export const DEFAULT_CATEGORIES: Category[] = [
   {
     id: 'health',
     label: 'בריאות',
+    short: 'בריאות',
     icon: 'heart-pulse',
     keywords: ['רופא', 'רופאת', 'תור', 'בדיקה', 'מרפאה', 'שיניים', 'תרופה', 'מרשם', 'קופת חולים']
   },
   {
     id: 'finance',
     label: 'כספים וניירת',
+    short: 'כספים',
     icon: 'receipt',
     keywords: [
       'ארנונה',
@@ -62,16 +67,18 @@ export const DEFAULT_CATEGORIES: Category[] = [
   {
     id: 'returns',
     label: 'החזרות והחלפות',
+    short: 'החזרות',
     icon: 'repeat-2',
     keywords: ['להחזיר', 'להחליף', 'החזרה', 'החלפה', 'זיכוי']
   },
   {
     id: 'family',
     label: 'משפחה ואירועים',
+    short: 'משפחה',
     icon: 'gift',
     keywords: ['יום הולדת', 'מתנה', 'אירוע', 'חתונה', 'ברית']
   },
-  { id: 'other', label: 'אחר', icon: 'circle-dot', keywords: [] }
+  { id: 'other', label: 'אחר', short: 'אחר', icon: 'circle-dot', keywords: [] }
 ];
 
 /** Category ids in display order ("other" last). */

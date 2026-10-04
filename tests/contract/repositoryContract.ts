@@ -21,7 +21,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { RepoError, type NewMemberProfile, type Repository } from '$lib/data/repository';
-import { addDays, addMonths, todayISO } from '$lib/domain/dates';
+import { addDays, addMonths, endOfWeek, todayISO } from '$lib/domain/dates';
 import { isInviteCode } from '$lib/domain/ids';
 import { applyRedeem } from '$lib/domain/jar';
 import { nextTaskId } from '$lib/domain/recurrence';
@@ -585,10 +585,9 @@ export function runRepositoryContract(
     // ── leaving ──────────────────────────────────────────────────────────────
 
     describe('leaveHousehold', () => {
-      it('removes me; my tasks stay, and a remaining member can take them', async () => {
+      it('removes me from the household and clears my household pointer', async () => {
         const { hid, A, B } = await pair();
         await env.asUser(B);
-        const id = await newTask(hid, { title: 'לתקן את הברז', ownerId: B });
         await repo.leaveHousehold(hid);
         expect(await repo.getMyHouseholdId()).toBeNull();
 
@@ -596,10 +595,43 @@ export function runRepositoryContract(
         const h = await householdOf(hid, (h) => h.memberCount === 1);
         expect(h.memberIds).toEqual([A]);
         await membersOf(hid, (ms) => ms.length === 1 && ms[0]!.uid === A);
-        expect((await existing(hid, id)).ownerId).toBe(B);
-        // A former member's task counts as unowned ("waiting"), so it can be taken.
-        expect(await repo.takeTask(hid, id)).toEqual({ ok: true });
-        await existing(hid, id, (t) => t.ownerId === A);
+      });
+
+      it("leaving releases my open tasks (owner and request cleared); finished and others' tasks stay", async () => {
+        const { hid, A, B } = await pair();
+        const requested = await newTask(hid, { title: 'לתקן את הברז', ownerId: B }); // A asks B
+        await existing(hid, requested, (t) => t.requestedBy === A);
+        await env.asUser(B);
+        const mine = await newTask(hid, { title: 'לקנות נורות', ownerId: B });
+        const finished = await newTask(hid, { title: 'לשלם חשמל', ownerId: B });
+        await repo.completeTask(hid, finished, NO_DOCS, []);
+        await env.asUser(A);
+        const theirs = await newTask(hid, { title: 'לסדר מרפסת', ownerId: A });
+        await env.asUser(B);
+        await tick();
+        await repo.leaveHousehold(hid);
+        expect(await repo.getMyHouseholdId()).toBeNull();
+
+        await env.asUser(A);
+        for (const id of [requested, mine]) {
+          const t = await existing(hid, id, (t) => t.ownerId === null);
+          expect(t).toMatchObject({
+            requestedBy: null,
+            requestedAt: null,
+            updatedBy: B,
+            status: 'open'
+          });
+          expect(t.updatedAt).toBeGreaterThan(t.createdAt);
+        }
+        expect(await existing(hid, finished)).toMatchObject({ status: 'done', ownerId: B });
+        expect(await existing(hid, theirs)).toMatchObject({ ownerId: A, updatedBy: A });
+        // No events ride along: the leaver is no longer a member once the leave commits.
+        const es = await eventsOf(hid, hasEvent('completed', finished));
+        expect(es.some((e) => e.type === 'released')).toBe(false);
+
+        // Released tasks are "waiting", so a remaining member can take them.
+        expect(await repo.takeTask(hid, requested)).toEqual({ ok: true });
+        await existing(hid, requested, (t) => t.ownerId === A);
       });
     });
 
@@ -684,6 +716,17 @@ export function runRepositoryContract(
         });
       });
 
+      it('a week-plan draft stores weekPlan with its Saturday', async () => {
+        const { hid } = await solo();
+        const saturday = endOfWeek(today());
+        const id = await newTask(hid, {
+          title: 'לתקן את הברז',
+          scheduledFor: saturday,
+          weekPlan: true
+        });
+        expect(await existing(hid, id)).toMatchObject({ scheduledFor: saturday, weekPlan: true });
+      });
+
       it('an undated recurring draft stays unanchored until its first completion', async () => {
         const { hid } = await solo();
         const id = await newTask(hid, { title: 'להשקות עציצים', recurrence: { freq: 'weekly' } });
@@ -762,6 +805,48 @@ export function runRepositoryContract(
         const e = findEvent(es, 'edited', id);
         expectEventShape(e, 'edited', B);
         expect(e.taskTitle).toBe('לתקן את המדף בסלון');
+      });
+
+      it('updateTask can set a week plan (weekPlan round-trips, with its Saturday)', async () => {
+        const { hid } = await solo();
+        const id = await newTask(hid, { title: 'לתקן את הברז' });
+        expect((await existing(hid, id)).weekPlan).toBe(false);
+
+        const saturday = endOfWeek(today());
+        repo.updateTask(hid, id, { scheduledFor: saturday, weekPlan: true });
+        expect(await existing(hid, id, (t) => t.weekPlan)).toMatchObject({
+          scheduledFor: saturday,
+          weekPlan: true
+        });
+
+        const day = addDays(today(), 1);
+        repo.updateTask(hid, id, { scheduledFor: day, weekPlan: false });
+        expect(await existing(hid, id, (t) => !t.weekPlan)).toMatchObject({
+          scheduledFor: day,
+          weekPlan: false
+        });
+
+        // A patch that leaves weekPlan out leaves it as it was.
+        repo.updateTask(hid, id, { scheduledFor: saturday, weekPlan: true });
+        await existing(hid, id, (t) => t.weekPlan);
+        repo.updateTask(hid, id, { title: 'לתקן את הברז במטבח' });
+        expect(await existing(hid, id, (t) => t.title === 'לתקן את הברז במטבח')).toMatchObject({
+          scheduledFor: saturday,
+          weekPlan: true
+        });
+      });
+
+      it('a week plan needs a date: weekPlan true without scheduledFor is rejected through onWriteError', async () => {
+        const { hid } = await solo();
+        const id = await newTask(hid, { title: 'לסדר ארון' });
+        const cap = captureWriteErrors();
+        repo.updateTask(hid, id, { weekPlan: true });
+        const bad = repo.createTask(hid, { title: 'משימה בלי תאריך', weekPlan: true });
+        await waitFor(() => cap.errors.length >= 2, 'both rejected writes to be reported');
+        cap.stop();
+        expect(cap.errors.every((e) => e.code === 'permission')).toBe(true);
+        await taskOf(hid, bad, (t) => t === null);
+        expect((await existing(hid, id)).weekPlan).toBe(false);
       });
 
       it('keeps the recurrence anchor unless the date or frequency changes', async () => {

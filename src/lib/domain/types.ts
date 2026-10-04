@@ -28,6 +28,7 @@ export interface Task {
   requestedBy: string | null; requestedAt: Millis | null;   // set when someone asked the owner
   createdBy: string; createdAt: Millis; updatedBy: string; updatedAt: Millis;
   scheduledFor: ISODate | null;           // soft plan (היום / השבוע / date)
+  weekPlan: boolean;                      // true: scheduledFor is the Saturday ending the planned week ("השבוע" / "בשבוע הבא") and is shown as a week, not a day
   dueDate: ISODate | null; dueTime: string | null /* 'HH:mm' */; hardDeadline: boolean;
   recurrence: { freq: RecurrenceFreq; anchor?: ISODate } | null; seriesId: string | null; // anchor = series base date (set on create/first completion; never shifted by snooze)
   status: 'open'|'done';
@@ -35,8 +36,8 @@ export interface Task {
   completedAt: Millis | null; completedBy: string | null; completion: Completion | null;
   pending?: boolean;                       // client-only: has unsynced local writes
 }
-export type TaskDraft = Pick<Task,'title'> & Partial<Pick<Task,'notes'|'categoryId'|'priority'|'ownerId'|'scheduledFor'|'dueDate'|'dueTime'|'hardDeadline'|'recurrence'>>;
-export type TaskPatch = Partial<Pick<Task,'title'|'notes'|'categoryId'|'priority'|'scheduledFor'|'dueDate'|'dueTime'|'hardDeadline'|'recurrence'>>;
+export type TaskDraft = Pick<Task,'title'> & Partial<Pick<Task,'notes'|'categoryId'|'priority'|'ownerId'|'scheduledFor'|'weekPlan'|'dueDate'|'dueTime'|'hardDeadline'|'recurrence'>>;
+export type TaskPatch = Partial<Pick<Task,'title'|'notes'|'categoryId'|'priority'|'scheduledFor'|'weekPlan'|'dueDate'|'dueTime'|'hardDeadline'|'recurrence'>>;
 export type EventType = 'created'|'taken'|'requested'|'released'|'completed'|'reopened'|'snoozed'|'edited'|'deleted'|'jar_filled'|'jar_redeemed'|'member_joined';
 export interface ActivityEvent {
   id: string; type: EventType; actorId: string; taskId: string | null; taskTitle: string | null;
@@ -49,6 +50,6 @@ export interface InvitePreview { householdName: string; inviterName: string; mem
 export interface DeviceToken { deviceId: string; householdId: string; token: string; userAgent: string; createdAt: Millis; updatedAt: Millis }
 export interface Photo { id: string; taskId: string; dataUrl: string /* jpeg ≤ ~270k chars */; thumbDataUrl: string /* ≤ 20k */; width: number; height: number; createdBy: string; createdAt: Millis }
 export interface EncodedPhoto { dataUrl: string /* jpeg data URL ≤ 300k chars */; thumbDataUrl: string /* ≤ 20k chars */; width: number; height: number } // produced by platform/image.ts (client-side canvas); adapters only store it
-export interface Category { id: CategoryId; label: string; icon: string /* lucide name */; keywords: string[] }
+export interface Category { id: CategoryId; label: string; short: string /* ≤ 8 chars, for card meta rows */; icon: string /* lucide name */; keywords: string[] }
 export interface AuthUser { uid: string; displayName: string; email: string; photoURL: string | null }
 export type SyncState = { status: 'synced'|'saving'|'offline'; pendingWrites: number };
