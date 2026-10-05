@@ -16,7 +16,7 @@
 // (household, tasks) never reject; they use the snackbar.
 
 import { RepoError, type NewMemberProfile, type Repository } from '$lib/data/repository';
-import type { AuthUser, Unsubscribe } from '$lib/domain/types';
+import type { AuthUser, MemberColor, Unsubscribe } from '$lib/domain/types';
 import {
   createRepository,
   resolveMode,
@@ -58,6 +58,8 @@ export interface SessionStoreOptions {
   repoStores?: RepoStore[];
   /** Errors outside the boot (e.g. a later household lookup). Default: ui.pushError. */
   onError?: (e: unknown) => void;
+  /** After a join, how long to wait for the other members (colour check). Default 15 s. */
+  joinColorCheckMs?: number;
 }
 
 export interface BootOptions {
@@ -69,6 +71,15 @@ export interface BootOptions {
 
 /** Waits for `signIn`'s auth emission when an adapter reports it after the sign-in resolves. */
 const SIGN_IN_SETTLE_MS = 10_000;
+/** The member colours in the swatch picker's order (the first free one replaces a clash). */
+const MEMBER_COLORS: readonly MemberColor[] = [
+  'terracotta',
+  'sage',
+  'slate',
+  'plum',
+  'ochre',
+  'teal'
+];
 
 const toRepoError = (e: unknown): RepoError =>
   e instanceof RepoError ? e : new RepoError('unknown', e instanceof Error ? e.message : String(e));
@@ -99,6 +110,7 @@ export class SessionStore {
   #scoped: ScopedStore[];
   #repoStores: RepoStore[];
   #onError: (e: unknown) => void;
+  #joinColorCheckMs: number;
   #attached: HouseholdScope | null = null;
   #unsubAuth: Unsubscribe | null = null;
   /** Auth emissions are applied one at a time, in order. */
@@ -113,6 +125,7 @@ export class SessionStore {
     this.#scoped = opts.scoped ?? [defaultHousehold, defaultTasks];
     this.#repoStores = opts.repoStores ?? [defaultSync, defaultUi];
     this.#onError = opts.onError ?? ((e) => defaultUi.pushError(e));
+    this.#joinColorCheckMs = opts.joinColorCheckMs ?? 15_000;
   }
 
   /**
@@ -204,6 +217,7 @@ export class SessionStore {
     }
     takePendingInvite();
     this.#setHousehold(hid);
+    this.#keepColorUnique(repo, hid, profile.color);
     return hid;
   }
 
@@ -220,6 +234,35 @@ export class SessionStore {
       this.#setHousehold(hid);
       throw toRepoError(e);
     }
+  }
+
+  /**
+   * A joiner picks a colour without seeing the others' (members are readable only once joined).
+   * When the members list arrives and someone already uses that colour, mine moves to the first
+   * free one, so two people never share a colour (the household editor keeps it that way).
+   */
+  #keepColorUnique(repo: Repository, hid: string, color: MemberColor): void {
+    const uid = this.user?.uid;
+    if (!uid) return;
+    let stop: Unsubscribe | null = null;
+    let done = false;
+    const finish = () => {
+      done = true;
+      clearTimeout(timer);
+      stop?.();
+      stop = null;
+    };
+    const timer = setTimeout(finish, this.#joinColorCheckMs);
+    stop = repo.watchMembers(hid, (members) => {
+      // A list with only me may be my own write echoed from the local cache: wait for the rest.
+      if (done || members.length < 2 || !members.some((m) => m.uid === uid)) return;
+      finish();
+      const taken = new Set(members.filter((m) => m.uid !== uid).map((m) => m.color));
+      const free = MEMBER_COLORS.find((c) => !taken.has(c));
+      if (!taken.has(color) || !free || this.householdId !== hid) return;
+      repo.updateMember(hid, { color: free }).catch((e: unknown) => this.#onError(e));
+    });
+    if (done) finish(); // the list was delivered synchronously
   }
 
   // ── boot ──────────────────────────────────────────────────────────────────
