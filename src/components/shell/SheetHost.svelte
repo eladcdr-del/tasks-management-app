@@ -66,7 +66,7 @@
         {:else if spec.name === 'snooze'}
           <SnoozeSheet taskId={spec.taskId} onClose={close} />
         {:else if spec.name === 'jarSetup'}
-          <JarSetupSheet onClose={close} />
+          <JarSetupSheet onClose={close} next={spec.next === true} />
         {/if}
       {/key}
     </div>
