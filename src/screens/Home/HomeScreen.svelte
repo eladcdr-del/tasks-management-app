@@ -3,9 +3,9 @@
    * Home (step 3.2; feature "home": calm with many tasks). "A clear picture in one second", and a
    * list that stays short however many tasks the family adds.
    *   header      greeting + name (clock.wall), today's date, sync pill, the household's avatars
-   *   pulse       attention / today / waiting numerals + the "ביקשו ממך" row + the balance row.
-   *               Tap: attention / requests scroll to their block; today shows tab "היום"; waiting
-   *               shows tab "הכל" with chip "פנויות"
+   *   pulse       attention / today / waiting numerals, then one line: the "ביקשו ממך" link and the
+   *               balance. Tap: attention / requests scroll to their block; today shows tab "היום"
+   *               (chip "הכל"); waiting shows tab "הכל" with chip "פנויות"
    *   jar strip   JarMini
    *   attention   "דורש תשומת לב" (only when non-empty): at most three, then "עוד N"; free ones
    *               carry the small take action, an urgent request to me its two answers
