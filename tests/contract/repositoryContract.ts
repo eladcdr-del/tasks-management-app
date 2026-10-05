@@ -1684,6 +1684,141 @@ export function runRepositoryContract(
       });
     });
 
+    // ── deleting the jar and earned treats ───────────────────────────────────
+
+    describe('deleting the jar and earned treats', () => {
+      /** Fills a together jar of `target` (signed in as whoever is) and redeems it. */
+      async function earn(hid: string, treat: string, target = 3): Promise<void> {
+        repo.setJar(hid, { treat, target });
+        const jar = await jarOf(hid, (j) => j.treat === treat);
+        for (let i = 0; i < target; i++) {
+          await repo.completeTask(hid, await newTask(hid, { title: `${treat} ${i}` }), NO_DOCS, []);
+        }
+        await jarOf(hid, (j) => j.count >= target);
+        await tick();
+        repo.redeemJar(hid);
+        await jarOf(hid, (j) => j.round === jar.round + 1);
+      }
+
+      it('deleteJar: the jar goes, earned treats stay, and a new jar starts at the next round', async () => {
+        const { hid, A } = await solo();
+        await earn(hid, 'גלידה בנמל');
+        await repo.completeTask(hid, await newTask(hid, { title: 'בסבב 2' }), NO_DOCS, []);
+        await jarOf(hid, (j) => j.round === 2 && j.count === 1);
+
+        repo.deleteJar(hid);
+        const h = await householdOf(hid, (h) => h.jar === null);
+        expect(h.nextJarRound).toBe(3); // round 2 is never used again
+        expect((await treatsOf(hid)).map((t) => [t.id, t.treat])).toEqual([['1', 'גלידה בנמל']]);
+        // No event: deleting the jar is a setting, like setting it up.
+        const es = await eventsOf(hid);
+        expect(es.filter((e) => e.type.startsWith('jar_')).map((e) => e.type)).toEqual([
+          'jar_redeemed',
+          'jar_filled'
+        ]);
+
+        // A new jar starts at round 3 (a round is never used twice), from zero.
+        await tick();
+        repo.setJar(hid, { treat: 'ערב סרט', mode: 'each', share: 1 });
+        const fresh = await jarOf(hid, (j) => j.treat === 'ערב סרט');
+        expect(fresh).toMatchObject({ round: 3, count: 0, counts: {}, mode: 'each', share: 1 });
+        expect(fresh.startedAt).toBeGreaterThanOrEqual(h.createdAt);
+        // It fills and is redeemed into treats/3; the history keeps both.
+        const r = await repo.completeTask(hid, await newTask(hid, { title: 'א' }), NO_DOCS, []);
+        expect(r.jarFilled).toBe(true);
+        await jarOf(hid, (j) => j.counts?.[A] === 1);
+        await tick();
+        repo.redeemJar(hid);
+        expect(await jarOf(hid, (j) => j.round === 4)).toMatchObject({ count: 0, counts: {} });
+        const ts = await treatsOf(hid, (ts) => ts.length === 2);
+        expect(ts.map((t) => [t.id, t.treat])).toEqual([
+          ['3', 'ערב סרט'],
+          ['1', 'גלידה בנמל']
+        ]);
+      });
+
+      it('deleteJar of a jar in its first round: the next one starts at round 2', async () => {
+        const { hid } = await solo();
+        repo.setJar(hid, { treat: 'פיצה', target: 5 });
+        await jarOf(hid);
+        repo.deleteJar(hid);
+        expect((await householdOf(hid, (h) => h.jar === null)).nextJarRound).toBe(2);
+        repo.setJar(hid, { treat: 'סושי', target: 4 });
+        expect(await jarOf(hid, (j) => j.treat === 'סושי')).toMatchObject({ round: 2, count: 0 });
+      });
+
+      it('deleteJar without a jar changes nothing', async () => {
+        const { hid } = await solo();
+        const cap = captureWriteErrors();
+        repo.deleteJar(hid);
+        await sentinel(hid);
+        cap.stop();
+        expect(cap.errors).toEqual([]);
+        const h = await householdOf(hid);
+        expect(h.jar).toBeNull();
+        expect(h.nextJarRound).toBeUndefined();
+      });
+
+      it('completions after a delete touch no jar; a reopen from the deleted round leaves the new jar alone', async () => {
+        const { hid } = await solo();
+        repo.setJar(hid, { treat: 'גלידה', target: 5 });
+        await jarOf(hid);
+        const old = await newTask(hid, { title: 'נסגרה בצנצנת שנמחקה' });
+        await repo.completeTask(hid, old, NO_DOCS, []);
+        await jarOf(hid, (j) => j.count === 1);
+        repo.deleteJar(hid);
+        await householdOf(hid, (h) => h.jar === null);
+        const r = await repo.completeTask(
+          hid,
+          await newTask(hid, { title: 'בלי צנצנת' }),
+          NO_DOCS,
+          []
+        );
+        expect(r.jarFilled).toBe(false);
+        await tick();
+        repo.setJar(hid, { treat: 'סרט', target: 5 });
+        await jarOf(hid, (j) => j.treat === 'סרט');
+        repo.reopenTask(hid, old);
+        await existing(hid, old, (t) => t.status === 'open');
+        await sentinel(hid);
+        expect(await jarOf(hid)).toMatchObject({ treat: 'סרט', count: 0, counts: {}, round: 2 });
+      });
+
+      it('deleteTreat removes one earned treat; the other treats and the jar stay', async () => {
+        const { hid } = await solo();
+        await earn(hid, 'גלידה בנמל');
+        await earn(hid, 'סרט בקולנוע');
+        const jar = await jarOf(hid, (j) => j.round === 3);
+        repo.deleteTreat(hid, '1');
+        const ts = await treatsOf(hid, (ts) => ts.length === 1);
+        expect(ts.map((t) => [t.id, t.treat])).toEqual([['2', 'סרט בקולנוע']]);
+        expect(await jarOf(hid)).toEqual(jar);
+        // An unknown treat: nothing happens, no error.
+        const cap = captureWriteErrors();
+        repo.deleteTreat(hid, '9');
+        repo.deleteTreat(hid, 'nope');
+        await sentinel(hid);
+        cap.stop();
+        expect(cap.errors).toEqual([]);
+        expect(await treatsOf(hid)).toHaveLength(1);
+      });
+
+      it('a non-member can delete neither the jar nor a treat', async () => {
+        const { hid, A } = await solo();
+        await earn(hid, 'גלידה בנמל');
+        await env.asUser(user('stranger'));
+        const cap = captureWriteErrors();
+        repo.deleteTreat(hid, '1');
+        repo.deleteJar(hid);
+        await waitFor(() => cap.errors.length >= 2, 'two write errors');
+        cap.stop();
+        expect(cap.errors.map((e) => e.code)).toEqual(['permission', 'permission']);
+        await env.asUser(A);
+        expect(await treatsOf(hid)).toHaveLength(1);
+        expect(await jarOf(hid)).toMatchObject({ treat: 'גלידה בנמל', round: 2 });
+      });
+    });
+
     // ── jar goal modes ───────────────────────────────────────────────────────
 
     describe('jar goal modes ("כל אחד תורם")', () => {

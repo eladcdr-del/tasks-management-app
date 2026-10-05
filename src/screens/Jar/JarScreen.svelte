@@ -10,10 +10,11 @@
    *   full     "עשינו את זה ביחד" + "מימשנו! צנצנת חדשה" → household.redeemJar(), then the setup
    *            sheet for the next treat. The CelebrationOverlay once per round (remembered per
    *            household and round on this device)
-   *   history  earned treats, with who took part
+   *   history  earned treats, with who took part (TreatHistory: each can be deleted, with undo)
    * Marbles added since this device last looked drop in when the screen opens (the jar is drawn
-   * once this round's done tasks are in, at most DONE_WAIT_MS later). No jar yet: an invitation
-   * to set one up.
+   * once this round's done tasks are in, at most DONE_WAIT_MS later). No jar yet (or deleted from
+   * the edit sheet): an invitation to set one up; focus that the deleted jar's controls took with
+   * them lands on that invitation.
    */
   import { untrack } from 'svelte';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -23,12 +24,14 @@
   import Users from '@lucide/svelte/icons/users';
   import Sparkles from '@lucide/svelte/icons/sparkles';
   import Header from '$components/shell/Header.svelte';
-  import { AvatarStack, Button, Card, EmptyState, IconButton, SectionHeader } from '$components/ui';
+  import { AvatarStack, Button, Card, EmptyState, IconButton } from '$components/ui';
   import { EmptyJar } from '$components/illustrations';
   import ProgressJar from '$components/jar/ProgressJar.svelte';
   import JarParts from '$components/jar/JarParts.svelte';
   import CelebrationOverlay from '$components/jar/CelebrationOverlay.svelte';
+  import TreatHistory from '$components/jar/TreatHistory.svelte';
   import { jarPicture } from '$components/jar/marbles';
+  import { refocusWhenLost } from '$components/jar/refocus';
   import {
     bonusOf,
     contributors,
@@ -39,8 +42,7 @@
     required,
     shareOf
   } from '$lib/domain/jar';
-  import type { EarnedTreat, Member } from '$lib/domain/types';
-  import { formatDate } from '$lib/i18n/format';
+  import type { Member } from '$lib/domain/types';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
   import { haptic } from '$lib/platform/haptics';
@@ -128,14 +130,25 @@
   const openSetup = () => router.openSheet({ name: 'jarSetup' });
   const today = $derived(clock.today);
 
-  /** Who took part in an earned treat, in the household's order (treats earned since goal modes know). */
-  const tookPart = (e: EarnedTreat): Member[] =>
-    household.members.filter((m) => (e.counts?.[m.uid] ?? 0) > 0);
+  // The jar went away while on screen (deleted here or on another phone): the controls that held
+  // focus went with it (the edit sheet's opener, the redeem button), so focus lands on the
+  // invitation to start a new one.
+  let setupCta: HTMLElement | undefined = $state();
+  /** Focus lands here when the last earned treat is deleted. */
+  let titleEl: HTMLElement | undefined = $state();
+  let hadJar = untrack(() => jar !== null);
+  $effect(() => {
+    const has = jar !== null;
+    if (hadJar && !has) {
+      refocusWhenLost(() => setupCta?.querySelector<HTMLElement>('button') ?? null, 1600);
+    }
+    hadJar = has;
+  });
 </script>
 
 <section class="jar-screen" aria-labelledby="jar-title">
   <Header>
-    <h1 id="jar-title" class="title">{t.title}</h1>
+    <h1 id="jar-title" class="title" tabindex="-1" bind:this={titleEl}>{t.title}</h1>
     {#snippet actions()}
       {#if jar}
         <IconButton icon={Pencil} label={t.edit} variant="tonal" onclick={openSetup} />
@@ -150,7 +163,8 @@
       <div class="empty" data-jar="none">
         <EmptyState title={t.empty.title} body={t.empty.body}>
           {#snippet illustration()}<EmptyJar />{/snippet}
-          {#snippet action()}<Button icon={Gift} onclick={openSetup}>{t.empty.cta}</Button
+          {#snippet action()}<span class="cta" bind:this={setupCta}
+              ><Button icon={Gift} onclick={openSetup}>{t.empty.cta}</Button></span
             >{/snippet}
         </EmptyState>
       </div>
@@ -208,41 +222,13 @@
       </Card>
     {/if}
 
-    {#if household.treats.length > 0}
-      <section class="history" aria-labelledby="jar-history">
-        <SectionHeader id="jar-history" title={t.history} count={household.treats.length} />
-        <ul class="treats">
-          {#each household.treats as e (e.id)}
-            {@const who = tookPart(e)}
-            <li class="treat-row" data-treat={e.id}>
-              <span class="badge" aria-hidden="true"><Gift size={18} /></span>
-              <span class="treat-text">
-                <span class="treat-name" dir={textDir(e.treat)}>{e.treat}</span>
-                <span class="treat-meta">
-                  {#if e.redeemedAt !== null}
-                    {t.redeemedOn(formatDate(e.redeemedAt, { today }))}
-                  {:else}
-                    {t.filledOn(formatDate(e.filledAt, { today }))} · {t.waiting}
-                  {/if}
-                </span>
-              </span>
-              <span class="treat-end">
-                {#if who.length > 0}
-                  <AvatarStack
-                    people={who}
-                    size="xs"
-                    max={4}
-                    backdrop="var(--surface)"
-                    label={t.tookPart(who.map((m) => m.displayName).join(', '))}
-                  />
-                {/if}
-                <span class="round">{t.round(Number(e.id) || 0)}</span>
-              </span>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    {/if}
+    <TreatHistory
+      treats={household.treats}
+      members={household.members}
+      {today}
+      onDelete={(id) => household.deleteTreat(id)}
+      focusFallback={() => titleEl ?? null}
+    />
   </div>
 </section>
 
@@ -263,6 +249,16 @@
   .title {
     font: var(--font-title);
     color: var(--ink);
+    border-radius: var(--r-sm);
+  }
+
+  .title:focus {
+    outline: none;
+  }
+
+  .title:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 4px;
   }
 
   .content {
@@ -369,76 +365,6 @@
     margin-block-start: var(--s3);
     font: var(--font-caption);
     color: var(--accent-ink);
-  }
-
-  .history {
-    display: grid;
-    gap: var(--s3);
-  }
-
-  .treats {
-    display: grid;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    border-radius: var(--r-lg);
-    background: var(--surface);
-    border: var(--edge);
-    box-shadow: var(--sh-1);
-    overflow: hidden;
-  }
-
-  .treat-row {
-    display: flex;
-    align-items: center;
-    gap: var(--s3);
-    padding: var(--s3) var(--card-pad);
-  }
-
-  .treat-row + .treat-row {
-    border-block-start: 1px solid var(--line);
-  }
-
-  .badge {
-    display: grid;
-    place-items: center;
-    flex: none;
-    inline-size: 40px;
-    block-size: 40px;
-    border-radius: var(--r-pill);
-    background: var(--accent-soft);
-    color: var(--accent-ink);
-  }
-
-  .treat-text {
-    display: grid;
-    flex: 1;
-    gap: 2px;
-    min-inline-size: 0;
-  }
-
-  .treat-name {
-    font: var(--font-body);
-    font-weight: 500;
-    color: var(--ink);
-  }
-
-  .treat-meta {
-    font: var(--font-caption);
-    font-weight: 400;
-    color: var(--ink-2);
-  }
-
-  .treat-end {
-    display: grid;
-    justify-items: end;
-    gap: 4px;
-    flex: none;
-  }
-
-  .round {
-    font: var(--font-caption);
-    color: var(--ink-3);
   }
 
   .empty {

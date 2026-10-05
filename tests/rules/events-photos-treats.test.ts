@@ -241,7 +241,7 @@ describe('treats', () => {
         updateDoc(doc(as(env(), BOB), path.treat(1)), { redeemedAt: serverTimestamp() })
       );
     });
-    it('denied: other fields, a past redeemedAt, a second redeem, delete, outsider', async () => {
+    it('denied: other fields, a past redeemedAt, a second redeem, outsider', async () => {
       const ref = doc(as(env(), BOB), path.treat(1));
       await assertFails(updateDoc(ref, { treat: 'אחר' }));
       await assertFails(updateDoc(ref, { redeemedAt: Timestamp.fromMillis(0) }));
@@ -250,7 +250,10 @@ describe('treats', () => {
       );
       await assertSucceeds(updateDoc(ref, { redeemedAt: serverTimestamp() }));
       await assertFails(updateDoc(ref, { redeemedAt: serverTimestamp() }));
-      await assertFails(deleteDoc(ref));
+    });
+    it('allowed: a member deletes it from the history (an outsider cannot)', async () => {
+      await assertFails(deleteDoc(doc(as(env(), EVE), path.treat(1))));
+      await assertSucceeds(deleteDoc(doc(as(env(), BOB), path.treat(1))));
     });
   });
 });

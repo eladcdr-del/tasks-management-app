@@ -55,6 +55,16 @@ describe('normalizeRecurrence (the app rule, read defensively)', () => {
   });
 });
 
+describe('a deleted jar', () => {
+  it('reads as no jar; the remembered round does not matter here', () => {
+    expect(normalizeHousehold('hh', { jar: null, nextJarRound: 3 }).jar).toBeNull();
+  });
+
+  it('a map without a treat is no jar (a refused completion on a deleted jar)', () => {
+    expect(normalizeHousehold('hh', { jar: { count: 1, counts: { a: 1 } } }).jar).toBeNull();
+  });
+});
+
 describe('the jar (goal modes)', () => {
   const base = {
     treat: 'ארוחה במסעדה',

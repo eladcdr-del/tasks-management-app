@@ -538,7 +538,11 @@ describe('jar_filled', () => {
         'the treat was already redeemed (a new round started after the fill)',
         { ...JAR_FULL, count: 0, round: 2, startedAt: SUN('08:45').getTime() }
       ],
-      ['the jar is gone', null]
+      ['the jar is gone (deleted)', null],
+      [
+        'the jar was deleted and a new one set up (even a full one) after the fill',
+        { ...JAR_FULL, treat: 'ערב סרט', count: 12, startedAt: SUN('08:45').getTime() }
+      ]
     ] as [string, PlanInput['household']['jar']][])('is skipped when %s', (_label, j) => {
       const out = withJar(j);
       expect(out.sends).toEqual([]);

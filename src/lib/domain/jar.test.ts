@@ -12,7 +12,9 @@ import {
   contributors,
   eachTarget,
   filled,
+  freshJarRound,
   isFull,
+  jarDeletion,
   modeOf,
   partsOf,
   progress,
@@ -278,6 +280,40 @@ describe('null passes through', () => {
 
   it('a degenerate target reads as no progress', () => {
     expect(progress(jar({ target: 0, count: 3 }), TWO)).toBe(0);
+  });
+});
+
+describe('deleting a jar, and the round a new one starts at', () => {
+  it('a deleted jar leaves the round after its own for the next jar; progress and settings go', () => {
+    expect(jarDeletion(each({ round: 3 }))).toEqual({ jar: null, nextJarRound: 4 });
+    expect(jarDeletion(jar({ round: 1, count: 10 }))).toEqual({ jar: null, nextJarRound: 2 });
+  });
+
+  it('a broken round still moves past round 1', () => {
+    expect(jarDeletion(jar({ round: 0 })).nextJarRound).toBe(2);
+    expect(jarDeletion(jar({ round: Number.NaN })).nextJarRound).toBe(2);
+  });
+
+  it('a new jar starts at the remembered round, else at 1', () => {
+    expect(freshJarRound({ nextJarRound: 3 })).toBe(3);
+    expect(freshJarRound({})).toBe(1);
+    expect(freshJarRound(null)).toBe(1);
+    expect(freshJarRound(undefined)).toBe(1);
+  });
+
+  it('a malformed remembered round reads as 1', () => {
+    for (const r of [0, -2, 2.5, Number.NaN, '3' as unknown as number]) {
+      expect(freshJarRound({ nextJarRound: r })).toBe(1);
+    }
+  });
+
+  it('delete → new jar → redeem never uses a round twice', () => {
+    // Round 3 was being filled (treats 1 and 2 exist). Deleted, then a new jar: round 4.
+    const next = freshJarRound(jarDeletion(each({ round: 3 })));
+    expect(next).toBe(4);
+    // Redeeming it records treats/4 and moves on to 5: rounds only go up.
+    const fresh: TreatJar = { ...each({ round: next, counts: { [M]: 5, [D]: 5 } }) };
+    expect(applyRedeem(fresh, 2_000)!.round).toBe(5);
   });
 });
 

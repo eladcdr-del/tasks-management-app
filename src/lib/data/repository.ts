@@ -41,9 +41,11 @@ export interface Repository {
   reopenTask(hid: string, id: string): void;                     // undo: status open, jar back (applyReopen, this round's completions only), delete auto-created next instance if untouched
   deleteTask(hid: string, id: string): void;                     // UI delays call 5s for Undo
   getPhoto(hid: string, photoId: string): Promise<Photo | null>;
-  setJar(hid: string, j: JarSettings, backfill?: Record<string, number>): void; // domain/jar.ts cleanJarSettings; a first call starts round 1. backfill: backfillCounts (switching to 'each' mid-round)
+  setJar(hid: string, j: JarSettings, backfill?: Record<string, number>): void; // domain/jar.ts cleanJarSettings; without a jar it starts one at freshJarRound (1, or after a deleteJar the round after the deleted one). backfill: backfillCounts (switching to 'each' mid-round)
   redeemJar(hid: string): void;                                  // writes treats/{round} (who took part), starts the next round (applyRedeem)
+  deleteJar(hid: string): void;                                  // jar → null and nextJarRound = its round + 1 (domain jarDeletion; a round is never used twice); earned treats stay; a later setJar starts there. No jar: no-op. UI delays the call for Undo
   watchTreats(hid: string, cb: (t: EarnedTreat[]) => void): Unsubscribe;
+  deleteTreat(hid: string, id: string): void;                    // removes treats/{id} from the history; nothing else changes. Unknown id: no-op. UI delays the call for Undo
   watchRecentEvents(hid: string, limit: number, cb: (e: ActivityEvent[]) => void): Unsubscribe;
   registerDevice(d: Omit<DeviceToken,'createdAt'|'updatedAt'>): Promise<void>;
   unregisterDevice(deviceId: string): Promise<void>;

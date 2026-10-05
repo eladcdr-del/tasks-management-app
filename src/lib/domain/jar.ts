@@ -17,7 +17,7 @@
 // Firestore rules mirror isFull exactly (firestore.rules jarFull), so the client never offers a
 // redeem the server would refuse.
 
-import type { JarMode, Millis, Task, TreatJar } from './types';
+import type { Household, JarMode, Millis, Task, TreatJar } from './types';
 
 export const SHARE_MIN = 1;
 export const SHARE_MAX = 20;
@@ -195,6 +195,27 @@ export function applyRedeem(jar: TreatJar | null, now: Date | Millis): TreatJar 
     round: jar.round + 1,
     startedAt: typeof now === 'number' ? now : now.getTime()
   };
+}
+
+/**
+ * Deleting the jar (deleteJar): the jar goes, and the household remembers the round a new jar
+ * starts at, `nextJarRound` = the deleted round + 1. Round numbers only go up and none is ever
+ * used twice: every earlier round may have a treat in the history (treats/{round}), and each round
+ * names one jar for good (what a device remembers per round, like a celebration, stays right).
+ * The earned treats stay.
+ */
+export function jarDeletion(jar: TreatJar): { jar: null; nextJarRound: number } {
+  return { jar: null, nextJarRound: Math.max(1, Math.floor(whole(jar.round))) + 1 };
+}
+
+/**
+ * The round a new jar starts at (setJar on a household without one): `nextJarRound` when a jar
+ * was deleted (the round after it), else 1. The rules require exactly this (firestore.rules jarTransitionOk), so a
+ * new jar's treats/{round} can never collide with an earned treat.
+ */
+export function freshJarRound(h: Pick<Household, 'nextJarRound'> | null | undefined): number {
+  const r = h?.nextJarRound;
+  return typeof r === 'number' && Number.isInteger(r) && r >= 1 ? r : 1;
 }
 
 /** The settings a member chooses in the setup sheet. A legacy `{treat, target}` is 'together'. */

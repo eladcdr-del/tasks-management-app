@@ -6,10 +6,12 @@
    *   each      one short bar per member, in their colour (their own part; no names, no order)
    * When a completion lands, a marble drops into the little jar and it bumps; a member's bar that
    * just completed gets a glint. Full: a small celebration card. Renders nothing while no jar is
-   * set (the Jar tab invites to set one up). Members come from the household store, so the only
-   * prop stays `jar`.
+   * set (the Jar tab invites to set one up); when the jar goes (deleted) or comes (set up, or an
+   * undo) while Home shows, the strip folds away or in (reduced motion: a short crossfade).
+   * Members come from the household store, so the only prop stays `jar`.
    */
   import { untrack } from 'svelte';
+  import { fade, slide } from 'svelte/transition';
   import PartyPopper from '@lucide/svelte/icons/party-popper';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import { ProgressBar } from '$components/ui';
@@ -17,7 +19,7 @@
   import { filled, isFull, modeOf, partsOf, progress, required, tallyOf } from '$lib/domain/jar';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
-  import { reducedMotion } from '$lib/platform/motion';
+  import { easeOut, REDUCED_MAX, reducedMotion } from '$lib/platform/motion';
   import { href } from '$lib/router/routes';
   import { household } from '$lib/state/household.svelte';
 
@@ -83,10 +85,17 @@
 
   const uid = $props.id();
   const clipId = `${uid}-clip`;
+
+  /** The strip folds in or out as a jar appears or goes (not on Home's first render). */
+  const strip = (node: Element) =>
+    reducedMotion.current
+      ? fade(node, { duration: REDUCED_MAX })
+      : slide(node, { duration: 280, easing: easeOut });
 </script>
 
 {#if jar}
   <a
+    transition:strip
     class={['mini', { full }]}
     href={href('jar')}
     data-jar-mini={full ? 'full' : 'filling'}
