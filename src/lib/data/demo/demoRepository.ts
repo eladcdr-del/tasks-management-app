@@ -479,29 +479,29 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
   function dropRequest(hid: string, id: string, as: 'asked' | 'asker'): void {
     queued((st, uid) => {
       const rec = memberHousehold(st, hid, uid);
-      const task = getTask(rec, id);
-      const members = rec.household.memberIds;
-      const to = pendingRequestOf(task, members);
-      if (to === null || (as === 'asked' && to !== uid)) return;
-      const asker = task.requestedBy;
-      if (uid !== to && uid !== asker) {
-        throw new RepoError(
-          'permission',
-          'only the asked member or the asker can cancel a request'
-        );
-      }
-      const t = now();
-      task.requestedOf = null;
-      task.requestedBy = null;
-      task.requestedAt = null;
-      touch(task, uid, t);
-      // The asker hears a "no" (unless they left); a cancel is quiet.
-      if (as === 'asked' && asker !== null && members.includes(asker)) {
-        pushEvent(rec, 'declined', uid, task, t, asker);
-      } else {
-        pushEvent(rec, 'released', uid, task, t, to);
-      }
+      drop(rec, getTask(rec, id), uid, as);
     });
+  }
+
+  function drop(rec: HouseholdRecord, task: Task, uid: string, as: 'asked' | 'asker'): void {
+    const members = rec.household.memberIds;
+    const to = pendingRequestOf(task, members);
+    if (to === null || (as === 'asked' && to !== uid)) return;
+    const asker = task.requestedBy;
+    if (uid !== to && uid !== asker) {
+      throw new RepoError('permission', 'only the asked member or the asker can cancel a request');
+    }
+    const t = now();
+    task.requestedOf = null;
+    task.requestedBy = null;
+    task.requestedAt = null;
+    touch(task, uid, t);
+    // The asker hears a "no" (unless they left); a cancel is quiet.
+    if (as === 'asked' && asker !== null && members.includes(asker)) {
+      pushEvent(rec, 'declined', uid, task, t, asker);
+    } else {
+      pushEvent(rec, 'released', uid, task, t, to);
+    }
   }
 
   // ── window integration: save before the page goes away ─────────────────────
@@ -845,6 +845,11 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
       queued((st, uid) => {
         const rec = memberHousehold(st, hid, uid);
         const task = getTask(rec, id);
+        // Nobody holds a request that waits: "back to the list" withdraws it (asker or asked).
+        if (pendingRequestOf(task, rec.household.memberIds) !== null) {
+          drop(rec, task, uid, 'asker');
+          return;
+        }
         const t = now();
         task.ownerId = null;
         task.requestedOf = null;

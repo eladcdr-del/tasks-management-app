@@ -1183,6 +1183,27 @@ export function runRepositoryContract(
         expect(es.filter((e) => e.taskId === id).map((e) => e.type)).toEqual(['created']);
       });
 
+      it('releaseTask on a waiting request withdraws it, and only for the asker or the asked', async () => {
+        const { hid, A, B, C } = await trio();
+        const id = await asked(hid, B);
+        await env.asUser(C);
+        const cap = captureWriteErrors();
+        repo.releaseTask(hid, id);
+        await waitFor(() => cap.errors.length > 0, 'write error');
+        expect(cap.errors[0]!.code).toBe('permission');
+        cap.stop();
+        await env.asUser(A);
+        repo.releaseTask(hid, id);
+        expect(await existing(hid, id, (t) => t.requestedOf === null)).toMatchObject({
+          ownerId: null,
+          requestedBy: null
+        });
+        await eventsOf(
+          hid,
+          hasEvent('released', id, (e) => e.targetId === B && e.actorId === A)
+        );
+      });
+
       it('asking someone else replaces a waiting request', async () => {
         const { hid, A, B, C } = await trio();
         const id = await asked(hid, B);

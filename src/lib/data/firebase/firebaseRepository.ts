@@ -1000,30 +1000,38 @@ export async function createFirebaseRepositoryImpl(
     queued(async (uid) => {
       const task = await mustReadTask(hid, id);
       const memberIds = (await tryReadHousehold(hid))?.memberIds;
-      const to = pendingRequestOf(task, memberIds);
-      if (to === null || (as === 'asked' && to !== uid)) return null;
-      const asker = task.requestedBy;
-      if (uid !== to && uid !== asker) {
-        throw new RepoError(
-          'permission',
-          'only the asked member or the asker can cancel a request'
-        );
-      }
-      const b = newBatch();
-      b.update(taskRef(hid, id), {
-        requestedOf: null,
-        requestedBy: null,
-        requestedAt: null,
-        ...touch(uid)
-      });
-      // The asker hears a "no" (unless they left); a cancel is quiet.
-      if (as === 'asked' && asker !== null && (memberIds?.includes(asker) ?? true)) {
-        b.set(newEventRef(hid), eventDoc('declined', uid, task, asker));
-      } else {
-        b.set(newEventRef(hid), eventDoc('released', uid, task, to));
-      }
-      return b;
+      return dropBatch(hid, task, uid, memberIds, as);
     });
+  }
+
+  /** The decline / cancel batch for `task`, or null when nothing waits (for my answer). */
+  function dropBatch(
+    hid: string,
+    task: Task,
+    uid: string,
+    memberIds: string[] | undefined,
+    as: 'asked' | 'asker'
+  ): TrackedBatch | null {
+    const to = pendingRequestOf(task, memberIds);
+    if (to === null || (as === 'asked' && to !== uid)) return null;
+    const asker = task.requestedBy;
+    if (uid !== to && uid !== asker) {
+      throw new RepoError('permission', 'only the asked member or the asker can cancel a request');
+    }
+    const b = newBatch();
+    b.update(taskRef(hid, task.id), {
+      requestedOf: null,
+      requestedBy: null,
+      requestedAt: null,
+      ...touch(uid)
+    });
+    // The asker hears a "no" (unless they left); a cancel is quiet.
+    if (as === 'asked' && asker !== null && (memberIds?.includes(asker) ?? true)) {
+      b.set(newEventRef(hid), eventDoc('declined', uid, task, asker));
+    } else {
+      b.set(newEventRef(hid), eventDoc('released', uid, task, to));
+    }
+    return b;
   }
 
   // ── the Repository ─────────────────────────────────────────────────────────
@@ -1521,6 +1529,13 @@ export async function createFirebaseRepositoryImpl(
     releaseTask(hid: string, id: string): void {
       queued(async (uid) => {
         const task = await mustReadTask(hid, id);
+        // Nobody holds a request that waits: "back to the list" withdraws it (asker or asked).
+        if (task.ownerId === null && (task.requestedOf ?? null) !== null) {
+          const memberIds = (await tryReadHousehold(hid))?.memberIds;
+          if (pendingRequestOf(task, memberIds) !== null) {
+            return dropBatch(hid, task, uid, memberIds, 'asker');
+          }
+        }
         const b = newBatch();
         b.update(taskRef(hid, id), {
           ownerId: null,

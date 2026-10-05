@@ -34,7 +34,7 @@ export interface Repository {
   acceptRequest(hid: string, id: string): Promise<TakeResult>;   // the asked member: ownerId=me, requestedOf=null (requestedBy/At kept), 'accepted' event → requester. Same tx/answers as takeTask (a request gone meanwhile = a plain take)
   declineRequest(hid: string, id: string): void;                 // the asked member: requestedOf/By/At=null (waits for anyone), 'declined' event → requester. Nothing waiting for me: no-op
   cancelRequest(hid: string, id: string): void;                  // the asker (or the asked member): requestedOf/By/At=null, 'released' event (targetId = the asked member). Nothing waiting: no-op
-  releaseTask(hid: string, id: string): void;                    // ownerId=null
+  releaseTask(hid: string, id: string): void;                    // ownerId=null; on a request that waits it is cancelRequest
   snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
   completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: EncodedPhoto[]): Promise<CompleteResult>; // photos already compressed+thumbnailed by platform/image.ts; ≤3 stored
   reopenTask(hid: string, id: string): void;                     // undo: status open, jar −1, delete auto-created next instance if untouched
