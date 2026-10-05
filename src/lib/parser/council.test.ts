@@ -730,3 +730,22 @@ describe('launch audit CON-8: a plan, a deadline and one time', () => {
     });
   });
 });
+
+describe('launch audit MOM-6 / CON-13: car words and hair dye', () => {
+  it.each([
+    ['לתקן את האוטו', 'car'],
+    ['לתקן את המכונית', 'car'],
+    ['לשטוף את האוטו', 'car'],
+    ['לטפל באוטו', 'car'],
+    ['לקחת את המכונית לטסט', 'car'],
+    ['לקנות צבע לשיער', 'shopping'],
+    ['לקנות צבע שיער', 'shopping'],
+    ['לקנות צבע לקיר', 'home']
+  ])('%s → %s', (input, categoryId) => {
+    expect(parse(input).categoryId).toBe(categoryId);
+  });
+
+  it('"אוטובוס" is not a car word', () => {
+    expect(parse('אוטובוס לטיול').categoryId).toBeUndefined();
+  });
+});

@@ -659,7 +659,18 @@ export const CATEGORY_KEYWORDS: readonly {
   {
     id: 'car',
     keywords: [
-      ...words('רכב', 'מוסך', 'טסט', 'צמיג', 'צמיגים', 'מצבר', "פנצ'ר", 'ביטוח רכב'),
+      ...words(
+        'רכב',
+        'אוטו',
+        'מכונית',
+        'מוסך',
+        'טסט',
+        'צמיג',
+        'צמיגים',
+        'מצבר',
+        "פנצ'ר",
+        'ביטוח רכב'
+      ),
       {
         word: 'שמן',
         needs: ['רכב', 'מנוע', 'החלפת', 'החלפה', 'להחליף', 'מוסך'],
@@ -706,7 +717,7 @@ export const CATEGORY_KEYWORDS: readonly {
       { word: 'נורה', badPrefixEnd: 'מ' }, // "מנורה" is a lamp, not מ+נורה
       ...words('דוד שמש', 'דוד חשמל'),
       { word: 'דוד', needsPrefix: 'הב', badPrefix: 'ל', needs: REPAIR_WORDS },
-      { word: 'צבע', badPrefix: 'ב' }
+      { word: 'צבע', badPrefix: 'ב', notBefore: ['שיער', 'לשיער', 'השיער'] } // hair dye
     ]
   },
   {
