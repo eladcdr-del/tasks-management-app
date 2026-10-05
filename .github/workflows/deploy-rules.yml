@@ -1,0 +1,52 @@
+# Publishes firestore.rules to the live Firebase project whenever it changes on the main branch,
+# so the rules never have to be pasted into the console again (SETUP.md, step 3). Uses the
+# FIREBASE_SERVICE_ACCOUNT secret. Manual runs: Actions → deploy-rules → Run workflow.
+name: deploy-rules
+
+on:
+  push:
+    branches: [main, ccr-4db4aa05-kbrwag]
+    paths: [firestore.rules]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Release even if the live rules already match
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-rules
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Guard (needs the secret)
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT secret missing (SETUP.md, step 6)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/notify/package-lock.json
+
+      - run: npm ci --prefix scripts/notify --no-audit --no-fund
+
+      - name: Publish firestore.rules
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FORCE: ${{ inputs.force && '--force' || '' }}
+        run: npx --prefix scripts/notify tsx scripts/notify/deploy-rules.ts $FORCE
