@@ -21,7 +21,8 @@ export const errors = {
   full: 'הבית הזה כבר מלא. אפשר עד שישה בני בית.',
   'already-member': 'אתם כבר בבית הזה. אין צורך להצטרף שוב.',
   permission: 'אין הרשאה לעשות את זה.',
-  'popup-blocked': 'חלון ההתחברות נחסם. אפשרו חלונות קופצים ונסו שוב.',
+  /** Also a redirect sign-in that came back without the user (ERROR_DETAIL.redirectLost). */
+  'popup-blocked': 'ההתחברות עם Google לא הושלמה. נסו שוב, ואם זה חוזר, פתחו את האפליקציה בכרום.',
   network: 'אין חיבור כרגע. נסו שוב כשהאינטרנט יחזור.',
   conflict: 'מישהו עדכן את זה ממש עכשיו. הרשימה כבר מתעדכנת.',
   unknown: GENERIC,

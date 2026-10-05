@@ -15,7 +15,9 @@ export const ERROR_DETAIL = {
   /** Firebase Auth rejected the page's domain (it is not in "Authorized domains"). */
   unauthorizedDomain: 'unauthorized-domain',
   /** Client-side validation (mirrors firestore.rules) rejected the data before any write. */
-  invalidPrefix: 'invalid:'
+  invalidPrefix: 'invalid:',
+  /** A redirect sign-in came back without a user (its result was lost on the way). */
+  redirectLost: 'redirect-lost'
 } as const;
 
 const FIRESTORE_CODES: Record<string, Code> = {
@@ -52,6 +54,16 @@ function codeOf(e: unknown): string | undefined {
   return typeof c === 'string' ? c : undefined;
 }
 
+/**
+ * auth/internal-error is also what the SDK raises when Google's sign-in script cannot load
+ * (its <script> error event rides along as customData), i.e. no usable connection.
+ */
+function isConnectionFailure(e: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const data = (e as { customData?: unknown } | null)?.customData;
+  return typeof Event !== 'undefined' && data instanceof Event;
+}
+
 function messageOf(e: unknown): string {
   if (e instanceof Error) return e.message;
   return typeof e === 'string' ? e : 'unknown error';
@@ -64,6 +76,9 @@ export function toRepoError(e: unknown): RepoError {
   if (code) {
     const auth = AUTH_CODES[code];
     if (auth) return new RepoError(auth[0], auth[1] ?? code);
+    if (code === 'auth/internal-error' && isConnectionFailure(e)) {
+      return new RepoError('network', code);
+    }
     // Firestore codes are bare ('permission-denied'); the compat layer may prefix 'firestore/'.
     const fs = FIRESTORE_CODES[code.replace(/^firestore\//, '')];
     if (fs) return new RepoError(fs, `${code}: ${messageOf(e)}`);

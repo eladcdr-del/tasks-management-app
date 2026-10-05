@@ -3,6 +3,8 @@
   // After a successful sign-in the boot gate takes over (no household → onboarding, member → Home,
   // a pending invite → #/join/:code); a first-timer without a pending invite goes to the profile
   // step first. Errors show inline (Banner); a closed popup stays quiet.
+  // Auth starts without Google's sign-in script (init.ts), so the first tap loads it: in Firebase
+  // mode the page preconnects to Google and the auth domain to make that tap quicker.
   import { AppMark } from '$components/illustrations';
   import { Banner, Button } from '$components/ui';
   import { he } from '$lib/i18n/he';
@@ -10,9 +12,14 @@
   import { isCancelled, repoErrorMessage } from '$lib/data/firebase/errors';
   import { router } from '$lib/router/router.svelte';
   import { peekPendingInvite, session } from '$lib/state/session.svelte';
+  import { firebaseConfig } from '../../../firebase-config';
   import OnboardingFrame from './OnboardingFrame.svelte';
 
   const t = he.onboarding.welcome;
+  const preconnect =
+    session.mode === 'firebase'
+      ? ['https://apis.google.com', `https://${firebaseConfig.authDomain}`]
+      : [];
   let busy = $state(false);
   let error = $state<string | null>(null);
 
@@ -37,6 +44,12 @@
     }
   }
 </script>
+
+<svelte:head>
+  {#each preconnect as origin (origin)}
+    <link rel="preconnect" href={origin} />
+  {/each}
+</svelte:head>
 
 <OnboardingFrame screen="welcome" title={t.title} lead={t.valueProp} centered>
   {#snippet hero()}
