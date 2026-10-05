@@ -19,6 +19,7 @@ interface TaskLite {
   completion: { note: string; cost: number | null; photoIds: string[] } | null;
 }
 interface Hooks {
+  actAs(uid: string): Promise<void>;
   state: {
     tasks: { open: TaskLite[]; done: TaskLite[]; byId(id: string): TaskLite | null };
     ui: { current: { message: string; action?: string; onAction?: () => void } | null };
@@ -126,11 +127,11 @@ test('quick add parses Hebrew into chips, a chip can be dismissed, adding stays 
   // The hard deadline came from the returns category, so it goes with it (fields stay coherent).
   await expect(due).not.toHaveAttribute('data-hard', 'true');
 
-  // Explicit picks: priority "דחוף" (no "מי" is pre-selected).
+  // Explicit picks: priority "דחופה" (no "מי" is pre-selected).
   await expect(sheet.locator('[data-picker="owner"]')).toContainText('בחירה');
   await sheet.locator('[data-picker="priority"]').click();
   await sheet.locator('[data-priority="urgent"]').click();
-  await expect(sheet.locator('[data-picker="priority"]')).toContainText('דחוף');
+  await expect(sheet.locator('[data-picker="priority"]')).toContainText('דחופה');
 
   await input.press('Enter');
   await expect(sheet.getByRole('status')).toContainText('נוסף ✓');
@@ -242,6 +243,14 @@ test('delete leaves at once and can be undone within 5 seconds', async ({ page }
 
   await snackAction(page, /המשימה נמחקה/);
   await expect.poll(async () => (await taskById(page, 'seed-bulbs'))?.title).toBe('לקנות נורות לסלון');
+});
+
+test('the owner block speaks to the viewer about a request', async ({ page }) => {
+  await openApp(page, '#/task/seed-post'); // דני asked מיכל
+  const line = page.getByTestId('owner-block').locator('[data-request-line]');
+  await expect(line).toHaveText('דני ביקש ממך');
+  await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('dani'));
+  await expect(line).toHaveText('ביקשת ממיכל');
 });
 
 /** Pixels from the bottom of the snackbar on screen to the top of `selector` (≥ 0: no overlap). */
