@@ -117,6 +117,33 @@ export const jar = {
     bodyEach: 'כל אחד עשה את החלק שלו. מגיע לנו:',
     close: 'איזה כיף'
   },
+  /** Deleting the jar: the edit sheet's quiet action, its confirmation and the snackbar. */
+  remove: {
+    action: 'מחיקת הצנצנת',
+    title: 'למחוק את הצנצנת?',
+    /** Exactly what happens. `full`: its treat was not redeemed yet; `history`: treats earned. */
+    body: (o: { full: boolean; history: boolean }) =>
+      [
+        o.full
+          ? 'הצנצנת וכל מה שנאסף בה יימחקו, גם הצ׳ופר שעוד לא מימשנו.'
+          : 'הצנצנת וכל מה שנאסף בה עד עכשיו יימחקו.',
+        o.history
+          ? 'מה שכבר הרווחנו נשאר ב״צ׳ופרים שהרווחנו״, ואפשר להתחיל צנצנת חדשה מתי שרוצים.'
+          : 'אפשר להתחיל צנצנת חדשה מתי שרוצים.'
+      ].join(' '),
+    confirm: 'מחיקה',
+    done: 'הצנצנת נמחקה'
+  },
+  /** Deleting an earned treat from the history. */
+  removeTreat: {
+    /** The quiet "⋯" on a history row. */
+    menu: (treat: string) => `אפשרויות ל״${treat}״`,
+    action: 'מחיקה מההיסטוריה',
+    title: (treat: string) => `למחוק את ״${treat}״ מההיסטוריה?`,
+    body: 'הצנצנת הנוכחית לא משתנה.',
+    confirm: 'מחיקה',
+    done: 'הצ׳ופר נמחק מההיסטוריה'
+  },
   /** The "בוצע" snackbar after a completion, when it is a jar moment. */
   snack: {
     shareDone: 'בוצע · סגרת את החלק שלך בצנצנת',
