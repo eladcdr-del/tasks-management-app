@@ -259,9 +259,12 @@
   }
 </script>
 
-<!-- A free task's row: take it, or ask someone. -->
+<!-- A free task's row: take it, or ask someone. A request to me answers below the meta line instead,
+     with nothing at the end (no dashed "?": the line already says who asked). -->
 {#snippet quickTake(task: Task)}
-  <QuickTake taskId={task.id} me={me ?? 'n'} canRequest={others.length > 0} />
+  {#if !askedMe(task)}
+    <QuickTake taskId={task.id} me={me ?? 'n'} canRequest={others.length > 0} />
+  {/if}
 {/snippet}
 
 <!-- A request waiting for my answer: yes, or a gentle no. -->
@@ -342,7 +345,7 @@
             labelledby="home-attention"
             variant="row"
             trailing={quickTake}
-            withTrailing={takeable}
+            withTrailing={isUnowned}
             actions={requestActions}
             withActions={askedMe}
           >
@@ -377,6 +380,7 @@
             tasks={groups.requested}
             labelledby="home-requested"
             variant="row"
+            trailing={quickTake}
             actions={requestActions}
           />
         </section>

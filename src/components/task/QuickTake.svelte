@@ -20,7 +20,7 @@
   const t = he.taskCard;
 </script>
 
-<div class="quick">
+<div class={['quick', { 'with-ask': canRequest }]}>
   <button type="button" class="take" data-action="take" onclick={() => takeTask(taskId)}>
     <span class="face">{t.take(me)}</span>
   </button>
@@ -40,8 +40,12 @@
   .quick {
     display: flex;
     align-items: center;
-    /* The icon's 44px hit area overlaps the pill's padding, not its face. */
     gap: 0;
+  }
+
+  /* The icon's face is 32px inside a 44px hit area: let that spare room reach into the row's own
+     padding, so the icon lines up with the avatars of the owned rows. */
+  .quick.with-ask {
     margin-inline-end: calc(var(--s2) * -1);
   }
 
