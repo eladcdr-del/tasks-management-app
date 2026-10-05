@@ -144,13 +144,15 @@
     if (picks.owner === household.uid) return td.pick.me;
     return household.memberById(picks.owner)?.displayName ?? null;
   });
+  // "מתי" is the plan, as in the task screen; a parsed due date keeps its own "עד …" chip above.
+  // Without a due date the time is the plan's.
   const whenText = $derived(
     whenChip(
       {
         scheduledFor: draft.scheduledFor ?? null,
         weekPlan: draft.weekPlan ?? false,
-        dueDate: draft.dueDate ?? null,
-        dueTime: draft.dueTime ?? null
+        dueDate: null,
+        dueTime: draft.dueDate ? null : (draft.dueTime ?? null)
       },
       today,
       clock.wall
@@ -161,7 +163,7 @@
   function clearField(name: PickerName) {
     const fields: Record<PickerName, MatchField[]> = {
       owner: [],
-      when: ['scheduledFor', 'dueDate', 'dueTime', 'hardDeadline'],
+      when: draft.dueDate ? ['scheduledFor'] : ['scheduledFor', 'dueTime'],
       priority: ['priority'],
       category: ['categoryId'],
       recurrence: ['recurrence']

@@ -106,7 +106,13 @@
   const planText = $derived(
     task
       ? (whenChip(
-          { scheduledFor: task.scheduledFor, weekPlan: task.weekPlan, dueDate: null, dueTime: null },
+          // without a due date the time is the plan's (or stands alone): it shows under מתי
+          {
+            scheduledFor: task.scheduledFor,
+            weekPlan: task.weekPlan,
+            dueDate: null,
+            dueTime: task.dueDate ? null : task.dueTime
+          },
           today
         )?.text ?? null)
       : null

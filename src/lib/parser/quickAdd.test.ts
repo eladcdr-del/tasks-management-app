@@ -885,7 +885,7 @@ describe('categories', () => {
   it('keeps the keyword in the title and reports it as a "category" match', () => {
     const r = parse('לקחת את האוטו למוסך');
     expect(r.title).toBe('לקחת את האוטו למוסך');
-    expect(r.matches).toMatchObject([{ kind: 'category', start: 14, end: 19, text: 'למוסך' }]);
+    expect(r.matches).toMatchObject([{ kind: 'category', start: 8, end: 13, text: 'האוטו' }]);
   });
 
   it('accepts Hebrew prefixes on keywords', () => {
@@ -1124,10 +1124,10 @@ describe('no owner/member parsing', () => {
 describe('matches: offsets into the ORIGINAL input', () => {
   it('reports kind/start/end/text for each recognised phrase, sorted by position', () => {
     const input = 'לקחת את האוטו למוסך מחר';
-    const iCat = input.indexOf('למוסך');
+    const iCat = input.indexOf('האוטו');
     const iDate = input.indexOf('מחר');
     expect(parse(input).matches).toMatchObject([
-      { kind: 'category', start: iCat, end: iCat + 'למוסך'.length, text: 'למוסך' },
+      { kind: 'category', start: iCat, end: iCat + 'האוטו'.length, text: 'האוטו' },
       { kind: 'date', start: iDate, end: iDate + 3, text: 'מחר' }
     ]);
   });
@@ -1256,7 +1256,7 @@ describe('deletePhraseFromInput (deprecated alias: removeMatch)', () => {
     const input = 'לקחת את האוטו למוסך מחר';
     const m = parse(input).matches.find((x) => x.kind === 'category');
     expect(m).toBeDefined();
-    if (m) expect(deletePhraseFromInput(input, m)).toBe('לקחת את האוטו מחר');
+    if (m) expect(deletePhraseFromInput(input, m)).toBe('לקחת את למוסך מחר');
   });
 
   it('round-trips: re-parsing the result drops exactly that chip and keeps the others', () => {

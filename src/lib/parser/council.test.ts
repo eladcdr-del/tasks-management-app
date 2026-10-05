@@ -290,31 +290,48 @@ describe('M3: never consume text a chip does not carry', () => {
 
 // ───────────────────────────── 5. M4: a lone time next to a day word ─────────────────────────────
 
+// A time with no day was once saved on its own, where no screen shows it (launch audit CON-1): now
+// it is not read at all and stays in the title, next to the day word that blocked the date.
 describe('M4: a lone time next to an unconsumed day word implies no date', () => {
   it.each([
     'ארוחת שישי אצל סבתא 19:30',
     'ארוחת חג אצל סבתא 19:30',
     'הצגה באוקטובר בשעה 20:00',
-    'מוצאי חג בשעה 20:00'
-  ])('%s', (input) => {
-    const r = parse(input);
-    expect(r.dueTime).toBeDefined();
-    expect(r.scheduledFor).toBeUndefined();
-    expect(chip(r, 'time')?.alsoSets).toBeUndefined();
-    expect(chip(r, 'time')?.label).toMatch(/^\d\d:\d\d$/);
+    'מוצאי חג בשעה 20:00',
+    // CON-1: the name שני, Friday dinner and the kindergarten's Kabbalat Shabbat
+    'לאסוף את שני מהגן ב-16:30',
+    'להתקשר לשני ב-4',
+    'ארוחת שישי אצל סבתא ב-19:30',
+    'קבלת שבת בגן ב-12',
+    'קבלת שבת בגן ב-12:00',
+    'לקנות שני כרטיסים להצגה ב-20:00',
+    'לשבת עם הילדים על שיעורי בית ב-17:00',
+    'תור ראשון לפיזיותרפיה ב-10:00',
+    'אסיפת הורים של שני בשעה 19:00'
+  ])('%s: no date, so the time stays in the title', (input) => {
+    expectUntouched(input);
+    expect(chip(parse(input), 'time')).toBeUndefined();
   });
 
-  it('the title keeps the day word', () => {
-    expect(fields('ארוחת שישי אצל סבתא 19:30')).toEqual({
-      title: 'ארוחת שישי אצל סבתא',
-      dueTime: '19:30'
-    });
+  it('the title keeps the day word and the time', () => {
+    expect(fields('ארוחת שישי אצל סבתא 19:30')).toEqual({ title: 'ארוחת שישי אצל סבתא 19:30' });
   });
 
-  it('a dismissed date leaves the time without an invented date', () => {
+  it('a dismissed date leaves the time in the title too, without an invented date', () => {
     const r = parse('מחר 19:30 להתקשר לסבתא', NOW, ['date:מחר']);
-    expect(r.dueTime).toBe('19:30');
+    expect(r.dueTime).toBeUndefined();
     expect(r.scheduledFor).toBeUndefined();
+    expect(r.title).toBe('מחר 19:30 להתקשר לסבתא');
+  });
+
+  it.each([
+    ['השבוע ב-17:00 להתקשר', 'ב-17:00 להתקשר'],
+    ['כל שבוע ב-17:00 חוג', 'ב-17:00 חוג']
+  ])('a week plan has no time of day: %s keeps the time in the title', (input, title) => {
+    const r = parse(input);
+    expect(r.weekPlan).toBe(true);
+    expect(r.dueTime).toBeUndefined();
+    expect(r.title).toBe(title);
   });
 
   it('with no day word in the line a lone time still implies today or tomorrow', () => {
@@ -560,14 +577,32 @@ describe('fail-safe additions', () => {
     expect(fields('לקנות מחר ב-5 שקלים').dueTime).toBeUndefined();
   });
 
+  // "לשבת" (for Shabbat) is planned for the Friday before it: challah and flowers are bought, and
+  // the food cooked, before Shabbat (launch audit CON-2)
   it.each([
-    ['להכין עוגה לשבת', 'להכין עוגה', '2026-10-10'],
+    ['להכין עוגה לשבת', 'להכין עוגה', '2026-10-09'],
     ['לקנות פרחים לשישי.', 'לקנות פרחים', '2026-10-09'],
-    ['חלות לשבת!', 'חלות!', '2026-10-10'],
-    ['לקנות יין לשבת הקרובה', 'לקנות יין', '2026-10-10']
+    ['חלות לשבת!', 'חלות!', '2026-10-09'],
+    ['לקנות יין לשבת הקרובה', 'לקנות יין', '2026-10-09'],
+    ['לקנות חלות לשבת', 'לקנות חלות', '2026-10-09'],
+    ['להכין אוכל לשבת', 'להכין אוכל', '2026-10-09']
   ])('"לשישי" / "לשבת" as the target day: %s', (input, title, iso) => {
     const { categoryId: _category, ...rest } = fields(input);
     expect(rest).toEqual({ title, scheduledFor: iso });
+  });
+
+  it('"לשבת" is never planned on Shabbat itself, whatever day it is said', () => {
+    expect(chip(parse('לקנות חלות לשבת', FRI), 'date')?.label).toBe('היום · יום ו׳ 9/10');
+    expect(fields('לקנות חלות לשבת', SAT).scheduledFor).toBe('2026-10-16');
+  });
+
+  it('with a time or a part of day, "לשבת" names a time on Shabbat itself', () => {
+    expect(fields('להזמין את סבתא לשבת ב-12:00')).toEqual({
+      title: 'להזמין את סבתא',
+      scheduledFor: '2026-10-10',
+      dueTime: '12:00'
+    });
+    expect(chip(parse('להכין קידוש לשבת בבוקר'), 'date')?.label).toBe('שבת 10/10 בבוקר');
   });
 
   it.each(['לשבת עם דני על השיעורים', 'למצוא מקום לשבת', 'כיסא לשבת', 'לחשוב לשני'])(
@@ -613,4 +648,104 @@ describe('fail-safe additions', () => {
       expect(parse(input).scheduledFor).toBeUndefined();
     }
   );
+});
+
+// ───────────────────────────── 12. launch audit ─────────────────────────────
+
+describe('launch audit CON-3: a date inside a name, a quotation or a ש-clause is no date', () => {
+  it.each([
+    'לשלם על החוג של יום שלישי',
+    'להכין את הרשימה של מחר',
+    "להחזיר את ספר 'היום שאחרי'",
+    'לקנות ספר "מחר בבוקר"',
+    'לשלם "מחר"',
+    'לראות את הסרט ״סוף השבוע״',
+    'לבדוק מה עם החבילה שהזמנו ביום ראשון',
+    'לבדוק את החבילה שקנינו ביום ראשון',
+    'להחזיר לסבתא את הסיר שהיא נתנה בשבת',
+    'להגיד לדני שהאסיפה ביום שלישי'
+  ])('%s', (input) => {
+    expectUntouched(input);
+  });
+
+  it.each([
+    ['לשלם על החוג ביום שלישי', 'לשלם על החוג', '2026-10-06'],
+    ['לבשל הערב', 'לבשל', '2026-10-04'],
+    ['להזמין שולחן במסעדה ליום שישי', 'להזמין שולחן במסעדה', '2026-10-09'],
+    ['לקנות שמלה ביום שישי', 'לקנות שמלה', '2026-10-09'],
+    ['טיפול שגרתי למזגן ביום שלישי', 'טיפול שגרתי למזגן', '2026-10-06'],
+    ['לקחת את הרכב שלנו למוסך ביום שלישי', 'לקחת את הרכב שלנו למוסך', '2026-10-06'],
+    ['לתקן את הברז שהתקלקל, מחר', 'לתקן את הברז שהתקלקל', '2026-10-05'],
+    ['מחר לבדוק את החבילה שהזמנו', 'לבדוק את החבילה שהזמנו', '2026-10-05'],
+    [
+      'לבדוק את החבילה שהזמנו ולהתקשר לחברה מחר',
+      'לבדוק את החבילה שהזמנו ולהתקשר לחברה',
+      '2026-10-05'
+    ]
+  ])('%s: still a date (a noun with ש, a possessive, or after the clause)', (input, title, iso) => {
+    const r = parse(input);
+    expect(r.scheduledFor).toBe(iso);
+    expect(r.title).toBe(title);
+  });
+
+  it('a quoted "עד" phrase is still a deadline', () => {
+    expect(fields('לשלם "עד מחר"')).toMatchObject({ title: 'לשלם', dueDate: '2026-10-05' });
+  });
+});
+
+describe('launch audit CON-8: a plan, a deadline and one time', () => {
+  it('a time next to the plan stays in the title: as dueTime it would read as the deadline', () => {
+    expect(fields('תור לרופא מחר ב-10 עד יום חמישי')).toEqual({
+      title: 'תור לרופא ב-10',
+      scheduledFor: '2026-10-05',
+      dueDate: '2026-10-08',
+      categoryId: 'health'
+    });
+    const r = parse('להזמין אינסטלטור דחוף מחר בבוקר ב-8:30 עד יום חמישי מועד אחרון');
+    expect(r).toMatchObject({
+      title: 'להזמין אינסטלטור ב-8:30',
+      scheduledFor: '2026-10-05',
+      dueDate: '2026-10-08',
+      hardDeadline: true
+    });
+    expect(r.dueTime).toBeUndefined();
+    expect(chip(r, 'time')).toBeUndefined();
+  });
+
+  it('a time right after the deadline is the deadline time, steered by its own part of day', () => {
+    expect(fields('מחר בבוקר להתחיל, עד יום חמישי בשעה 5 להגיש')).toEqual({
+      title: 'להתחיל, להגיש',
+      scheduledFor: '2026-10-05',
+      dueDate: '2026-10-08',
+      dueTime: '17:00'
+    });
+    expect(fields('מחר להתחיל, עד יום חמישי בערב בשעה 8').dueTime).toBe('20:00');
+  });
+
+  it('with a deadline and no plan the time is the deadline time, as before', () => {
+    expect(fields('להחזיר חולצה עד יום חמישי בשעה 17:30')).toMatchObject({
+      title: 'להחזיר חולצה',
+      dueDate: '2026-10-08',
+      dueTime: '17:30'
+    });
+  });
+});
+
+describe('launch audit MOM-6 / CON-13: car words and hair dye', () => {
+  it.each([
+    ['לתקן את האוטו', 'car'],
+    ['לתקן את המכונית', 'car'],
+    ['לשטוף את האוטו', 'car'],
+    ['לטפל באוטו', 'car'],
+    ['לקחת את המכונית לטסט', 'car'],
+    ['לקנות צבע לשיער', 'shopping'],
+    ['לקנות צבע שיער', 'shopping'],
+    ['לקנות צבע לקיר', 'home']
+  ])('%s → %s', (input, categoryId) => {
+    expect(parse(input).categoryId).toBe(categoryId);
+  });
+
+  it('"אוטובוס" is not a car word', () => {
+    expect(parse('אוטובוס לטיול').categoryId).toBeUndefined();
+  });
 });

@@ -402,9 +402,17 @@ describe('whenChip (date + time chip with a tone)', () => {
     now?: { hour: number; minute: number }
   ) => whenChip({ dueDate: null, scheduledFor: null, dueTime: null, ...over }, TODAY, now);
 
-  it('is null when the task has no date', () => {
+  it('is null when the task has no date and no time', () => {
     expect(chip({})).toBeNull();
-    expect(chip({ dueTime: '17:30' })).toBeNull();
+    expect(chip({ dueTime: 'nope' })).toBeNull();
+  });
+
+  it('a time with no date still shows (launch audit CON-1: quick add once saved one)', () => {
+    expect(chip({ dueTime: '16:30' })).toEqual({ text: '16:30', tone: 'normal' });
+    expect(chip({ dueTime: '9:05' }, { hour: 23, minute: 0 })).toEqual({
+      text: '09:05',
+      tone: 'normal'
+    });
   });
 
   it('a due date is prefixed with "עד"; a soft plan is not', () => {

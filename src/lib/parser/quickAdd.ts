@@ -156,8 +156,12 @@ export interface ParseOptions {
  *   An un-introduced dd/mm more than 120 days ahead, a fraction, a decimal, or a number after
  *   "דירה / מידה / ציון / גרסה…" or a Latin word is not a date.
  * - A time with no date is today if still ahead of `now`, else tomorrow (a range: always today),
- *   unless the line names a day it did not parse ("ארוחת שישי 19:30"). An unpadded hour 1–5 is
- *   afternoon; an unpadded 6 or 7 needs a part of day or a cue word, else it is no time at all.
+ *   unless the line names a day it did not parse ("ארוחת שישי 19:30") or a date chip was dismissed:
+ *   then it is no time at all and stays in the title, as does a time with only a week plan. With a
+ *   plan and a deadline, a time is read only right after the deadline ("עד יום חמישי ב-17:00").
+ *   An unpadded hour 1–5 is afternoon; an unpadded 6 or 7 needs a part of day or a cue word, else
+ *   it is no time at all.
+ * - "לשבת" (for Shabbat) alone plans the Friday before it.
  * - "עד <date>" (or "מועד אחרון <date>", "לא יאוחר מ<date>") sets dueDate instead of scheduledFor;
  *   "לפני <date>" sets dueDate to the day before. "מועד אחרון" without a date is not parsed.
  * - Only the first phrase per field is consumed; a second date etc. stays in the title.
@@ -364,7 +368,19 @@ function parseUnsafe(
     !date && !due && recurrence?.freq === 'weekly' && !recurrence.iso
       ? weekHorizon(today)
       : undefined;
-  const dayPart = (date ?? due ?? recurrence)?.dayPart;
+  // The day phrase a time belongs to. Right after "עד <date>" it is the deadline's time. With both a
+  // plan and a deadline, a time elsewhere is the plan's, and the one dueTime field would show it as
+  // the deadline's ("מחר ב-10 עד יום חמישי"), so it has no day. A week has no time of day.
+  const timeAfterDue =
+    time !== undefined &&
+    due !== undefined &&
+    time.start >= due.end &&
+    /^,?\s*$/u.test(text.slice(due.end, time.start));
+  let timeDay: Cand | undefined;
+  if (due) timeDay = !date || timeAfterDue ? due : undefined;
+  else if (date) timeDay = date.week ? undefined : date;
+  else if (recurrenceDate) timeDay = recurrence;
+  const dayPart = (timeDay ?? recurrence)?.dayPart;
   const cue = timeCue(text);
   const clock = time?.clock ? (resolveClock(time.clock, dayPart, cue) ?? undefined) : undefined;
   const endClock =
@@ -383,6 +399,8 @@ function parseUnsafe(
       impliedDate = endClock || (h ?? 0) * 60 + (m ?? 0) > minutes ? today : addDays(today, 1);
     }
   }
+  // A time with no day would be saved where nothing shows it: it stays in the title (no chip).
+  const dueTime = clock && (timeDay || impliedDate) ? clock : undefined;
 
   // ── chips ──
   const span = (start: number, end: number): MatchSpan => {
@@ -418,13 +436,13 @@ function parseUnsafe(
       ...(hard ? { extra: [span(hard.start, hard.end)] } : {})
     });
   }
-  if (time && clock) {
+  if (time && dueTime) {
     matches.push({
       kind: 'time',
       ...base('time', time),
       field: 'dueTime',
-      value: clock,
-      label: timeLabel(clock, impliedDate, today, endClock),
+      value: dueTime,
+      label: timeLabel(dueTime, impliedDate, today, endClock),
       ...(impliedDate ? { alsoSets: { scheduledFor: impliedDate } } : {})
     });
   }
@@ -468,7 +486,7 @@ function parseUnsafe(
   if (scheduledFor) result.scheduledFor = scheduledFor;
   if (date?.week || (scheduledFor && scheduledFor === weeklyPlan)) result.weekPlan = true;
   if (due?.iso) result.dueDate = due.iso;
-  if (clock) result.dueTime = clock;
+  if (dueTime) result.dueTime = dueTime;
   if (hardDeadline) result.hardDeadline = true;
   if (priority?.priority) result.priority = priority.priority;
   if (category) result.categoryId = category.id;

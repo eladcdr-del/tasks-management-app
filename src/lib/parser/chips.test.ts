@@ -26,10 +26,10 @@ describe('every match carries key, field, value and a Hebrew label', () => {
     expect(parse(input).matches).toEqual([
       {
         kind: 'category',
-        start: 14,
-        end: 19,
-        text: 'למוסך',
-        key: 'category:למוסך',
+        start: 8,
+        end: 13,
+        text: 'האוטו',
+        key: 'category:האוטו',
         field: 'categoryId',
         value: 'car',
         label: 'רכב'
