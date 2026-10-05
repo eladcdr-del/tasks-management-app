@@ -355,11 +355,11 @@ describe('jar_filled', () => {
     expect(out.eventMarks).toEqual([{ eventId: 'j1', push: 'sent' }]);
   });
 
-  it('is not coalesced with completions and has a fallback when the jar is gone', () => {
+  it('is not coalesced with completions and has a fallback when the treat is blank', () => {
     const base = input();
     const out = plan({
       ...base,
-      household: { ...base.household, jar: null },
+      household: { ...base.household, jar: { ...JAR_FULL, treat: '  ' } },
       events: [
         jar,
         ev('e1', 'completed', 'u-michal', SUN('08:30').getTime(), {
@@ -388,6 +388,32 @@ describe('jar_filled', () => {
     expect(undone.eventMarks).toEqual([{ eventId: 'j1', push: 'skipped' }]);
     const noTask = plan(input({ tasks: [task('t1')], events: [{ ...jar, taskId: null }] }));
     expect(noTask.sends.map((s) => s.type)).toEqual(['jar_filled']);
+  });
+
+  describe('checks the jar as it is now (the app writes fills with taskId null)', () => {
+    const fill = { ...jar, taskId: null, taskTitle: null };
+    const withJar = (j: PlanInput['household']['jar']) => {
+      const base = input({ events: [fill] });
+      return plan({ ...base, household: { ...base.household, jar: j } });
+    };
+
+    it.each([
+      ['the filling completion was undone (back to 9 of 10)', { ...JAR_FULL, count: 9 }],
+      [
+        'the treat was already redeemed (a new round started after the fill)',
+        { ...JAR_FULL, count: 0, round: 2, startedAt: SUN('08:45').getTime() }
+      ],
+      ['the jar is gone', null]
+    ] as [string, PlanInput['household']['jar']][])('is skipped when %s', (_label, j) => {
+      const out = withJar(j);
+      expect(out.sends).toEqual([]);
+      expect(out.eventMarks).toEqual([{ eventId: 'j1', push: 'skipped' }]);
+    });
+
+    it('is sent while the jar is still full in the same round, surplus included', () => {
+      expect(withJar(JAR_FULL).sends.map((s) => s.type)).toEqual(['jar_filled']);
+      expect(withJar({ ...JAR_FULL, count: 11 }).sends.map((s) => s.type)).toEqual(['jar_filled']);
+    });
   });
 });
 

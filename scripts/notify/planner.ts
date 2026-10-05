@@ -191,6 +191,10 @@ export function plan(input: PlanInput): Plan {
 
   const openTasks = input.tasks.filter((t) => t.status === 'open').sort(byId);
   const openById = new Map(openTasks.map((t) => [t.id, t]));
+  const jar = input.household.jar;
+  /** The jar a fill event filled is still full now: no undo took a marble out, no redeem since. */
+  const jarStillFull = (e: ActivityEvent): boolean =>
+    jar !== null && jar.count >= jar.target && jar.startedAt <= e.createdAt;
 
   const sends: Send[] = [];
   const eventMarks: EventMark[] = [];
@@ -233,8 +237,11 @@ export function plan(input: PlanInput): Plan {
       if (e.type === 'completed' || e.type === 'jar_filled') {
         const stale = nowMs - e.createdAt > COMPLETED_STALE_MS;
         // A completion whose task is open again was undone (reopenTask) before we got to it; so was
-        // a jar fill whose completing task (its taskId, when set) is open again.
-        const undone = e.taskId !== null && openById.has(e.taskId);
+        // a jar fill whose completing task (its taskId, when set) is open again. The app writes a
+        // jar fill without a taskId, so a fill also needs the jar to be full still, in its round.
+        const undone =
+          (e.taskId !== null && openById.has(e.taskId)) ||
+          (e.type === 'jar_filled' && !jarStillFull(e));
         const recipients =
           stale || undone
             ? []
@@ -249,7 +256,7 @@ export function plan(input: PlanInput): Plan {
               keys: [`ev:${e.id}:${m.uid}`],
               uid: m.uid,
               type: 'jar_filled',
-              ...copy.jarFilled(input.household.jar?.treat),
+              ...copy.jarFilled(jar?.treat),
               url: copy.jarUrl(),
               tag: `jar:${e.id}`,
               eventIds: [e.id]

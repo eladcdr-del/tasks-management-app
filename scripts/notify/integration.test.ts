@@ -196,6 +196,21 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     expect(sender.calls).toHaveLength(7);
   });
 
+  it.each([
+    ['the filling completion was undone', { 'jar.count': 9 }],
+    [
+      'the treat was redeemed already',
+      { 'jar.count': 0, 'jar.round': 2, 'jar.startedAt': Timestamp.fromMillis(NOW.getTime() - MIN) }
+    ]
+  ])('does not announce a full jar when %s', async (_label, jar) => {
+    await seedDemo(db, NOW);
+    await db.doc(`households/${HID}`).update(jar);
+    const sender = new FakeSender();
+    await run({ db, sender, now: NOW });
+    expect(sender.calls.map((c) => c.msg.title)).not.toContain('הצנצנת התמלאה!');
+    expect(await push('ev-jar')).toBe('skipped');
+  });
+
   it('retries a transient failure on the next run, then goes quiet', async () => {
     await seedDemo(db, NOW);
     const sender = new FakeSender();
