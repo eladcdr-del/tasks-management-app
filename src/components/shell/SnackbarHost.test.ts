@@ -46,4 +46,35 @@ describe('SnackbarHost', () => {
     expect(errors).toEqual([]);
     expect(onAction).toHaveBeenCalledTimes(1);
   });
+
+  it('a snackbar still fading out when its timer fires removes only itself, and throws nothing', () => {
+    vi.useFakeTimers();
+    const errors: unknown[] = [];
+    const onError = (e: ErrorEvent) => {
+      errors.push(e.error);
+      e.preventDefault();
+    };
+    window.addEventListener('error', onError);
+    try {
+      render(SnackbarHost);
+      ui.show('נמחקה', { action: 'ביטול', onAction: () => {}, duration: 5000 });
+      flushSync();
+      // Something else ends it first (an undo window committing), so the queue is empty while
+      // this snackbar is still on screen, fading out.
+      ui.dismiss();
+      flushSync();
+      expect(ui.current).toBeNull();
+      vi.advanceTimersByTime(3000);
+      const next = ui.show('הבא', { duration: 5000 });
+      flushSync();
+      // The fading snackbar's own 5 s run out now; the next message still has 2.5 s to go.
+      vi.advanceTimersByTime(2500);
+      flushSync();
+      expect(errors).toEqual([]);
+      expect(ui.current?.id).toBe(next);
+    } finally {
+      window.removeEventListener('error', onError);
+      vi.useRealTimers();
+    }
+  });
 });

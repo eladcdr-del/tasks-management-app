@@ -1,10 +1,10 @@
 <script lang="ts">
   // owner: step 3.1. The one live region for Snackbars ("בוצע · ביטול", 5 s, with action/undo).
   // The queue lives in ui.svelte.ts (2.4); the Snackbar primitive runs the timer and calls
-  // onDismiss, which removes that snackbar from the queue. `{#key id}` restarts the timer per
-  // message. Sits above the bottom nav when there is one, else above the safe area; and above the
-  // FAB while it shows (Home, Memory) and a screen's fixed action bar (task detail: בוצע / דחייה),
-  // so the main buttons never hide behind a message.
+  // onDismiss, which removes that snackbar from the queue. A keyed item per message restarts the
+  // timer per message. Sits above the bottom nav when there is one, else above the safe area; and
+  // above the FAB while it shows (Home, Memory) and a screen's fixed action bar (task detail:
+  // בוצע / דחייה), so the main buttons never hide behind a message.
   import { Snackbar } from '$components/ui';
   import { he } from '$lib/i18n/he';
   import { ui } from '$lib/state/ui.svelte';
@@ -22,19 +22,20 @@
   aria-label={he.shell.snackbarRegion}
   data-snackbar-host
 >
-  {#if snack}
-    {#key snack.id}
-      <div class="slot">
-        <Snackbar
-          message={snack.message}
-          actionLabel={snack.action}
-          onAction={snack.onAction}
-          duration={snack.duration}
-          onDismiss={() => ui.dismiss(snack.id)}
-        />
-      </div>
-    {/key}
-  {/if}
+  <!-- One keyed item per message (the timer restarts per message). The item keeps its own
+       message while it fades out, so a timer firing then removes only that message, even after
+       the queue moved on or emptied. -->
+  {#each snack ? [snack] : [] as item (item.id)}
+    <div class="slot">
+      <Snackbar
+        message={item.message}
+        actionLabel={item.action}
+        onAction={item.onAction}
+        duration={item.duration}
+        onDismiss={() => ui.dismiss(item.id)}
+      />
+    </div>
+  {/each}
 </div>
 
 <style>
