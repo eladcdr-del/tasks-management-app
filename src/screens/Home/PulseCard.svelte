@@ -1,7 +1,8 @@
 <script lang="ts">
   // Pulse card (Home, step 3.2): three large tappable numerals that answer "what needs me?" at a
-  // glance, a "ביקשו ממך N" row while someone asked me for something (tap → that list), and a quiet
-  // balance row (open tasks per member: counts only, never advice).
+  // glance, then one quiet line: "ביקשו ממך N" while someone asked me for something (tap → that
+  // block), and the balance (open tasks per member: counts only, never advice). The line wraps when
+  // a big family does not fit beside the request link.
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import HandHelping from '@lucide/svelte/icons/hand-helping';
   import { Card, MemberChip } from '$components/ui';
@@ -42,25 +43,28 @@
         </button>
       {/each}
     </div>
-    {#if pulse.requested > 0}
-      <button
-        type="button"
-        class="requested"
-        aria-label={t.go(pulse.requested, t.requested)}
-        onclick={() => onpick('requested')}
-      >
-        <HandHelping strokeWidth={1.75} aria-hidden="true" />
-        <span class="rl" aria-hidden="true">{t.requested}</span>
-        <span class="rn num" data-pulse="requested" aria-hidden="true">{pulse.requested}</span>
-        <ChevronLeft aria-hidden="true" />
-      </button>
-    {/if}
-    {#if members.length > 0}
-      <div class="balance" aria-label={he.home.balance.label} role="group">
-        {#each members as m, i (m.uid)}
-          {#if i > 0}<span class="sep" aria-hidden="true">·</span>{/if}
-          <MemberChip person={m} count={counts[m.uid] ?? 0} />
-        {/each}
+    {#if pulse.requested > 0 || members.length > 0}
+      <div class="foot">
+        {#if pulse.requested > 0}
+          <button
+            type="button"
+            class="requested"
+            aria-label={t.go(pulse.requested, t.requested)}
+            onclick={() => onpick('requested')}
+          >
+            <HandHelping strokeWidth={1.75} aria-hidden="true" />
+            <span class="rl" aria-hidden="true">{t.requested}</span>
+            <span class="rn num" data-pulse="requested" aria-hidden="true">{pulse.requested}</span>
+            <ChevronLeft aria-hidden="true" />
+          </button>
+        {/if}
+        {#if members.length > 0}
+          <div class="balance" aria-label={he.home.balance.label} role="group">
+            {#each members as m (m.uid)}
+              <MemberChip person={m} count={counts[m.uid] ?? 0} />
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
   </section>
@@ -69,8 +73,10 @@
 <style>
   .stats {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    padding: var(--s2);
+    /* The waiting label is the longest: its column gets a little more room, so all three labels
+       keep to one line at the default text size. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.25fr);
+    padding: var(--s1-5);
   }
 
   .stat {
@@ -78,9 +84,8 @@
     display: grid;
     align-content: start;
     justify-items: start;
-    gap: 2px;
-    min-block-size: 92px;
-    padding: var(--s3) var(--s3) var(--s2);
+    gap: 0;
+    padding: var(--s2) var(--s2-5) var(--s2-5);
     border-radius: var(--r-md);
     text-align: start;
     transition: background-color var(--d-fast) var(--ease-out);
@@ -90,7 +95,7 @@
   .stat + .stat::before {
     content: '';
     position: absolute;
-    inset-block: var(--s4);
+    inset-block: var(--s3);
     inset-inline-start: 0;
     border-inline-start: 1px solid var(--line);
   }
@@ -106,6 +111,8 @@
 
   .n {
     font: var(--font-numeral);
+    font-size: 1.75rem;
+    line-height: 2.125rem;
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
     color: var(--ink);
@@ -126,14 +133,25 @@
     text-wrap: balance;
   }
 
+  /* One line under the numerals: the request link at the start, the balance at the end. */
+  .foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0 var(--s2);
+    padding: 0 var(--s2-5);
+    border-block-start: 1px solid var(--line);
+  }
+
   .requested {
     display: flex;
     align-items: center;
-    gap: var(--s2);
-    inline-size: 100%;
+    gap: var(--s1-5);
     min-block-size: var(--tap-min);
-    padding: var(--s2) var(--s4);
-    border-block-start: 1px solid var(--line);
+    padding-inline: var(--s1);
+    margin-inline-start: calc(var(--s1) * -1);
+    border-radius: var(--r-control-sm);
     color: var(--accent-ink);
     font: var(--font-callout);
     font-weight: 500;
@@ -157,10 +175,6 @@
     block-size: var(--icon-sm);
   }
 
-  .rl {
-    flex: 1;
-  }
-
   .rn {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -170,12 +184,8 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--s2);
-    padding: var(--s3) var(--s4) var(--s4);
-    border-block-start: 1px solid var(--line);
-  }
-
-  .sep {
-    color: var(--ink-3);
+    gap: var(--s1);
+    min-block-size: var(--tap-min);
+    margin-inline-start: auto;
   }
 </style>

@@ -109,6 +109,8 @@ test('opened offline after one visit: Home opens, and unsent changes stay counte
     TITLES
   );
   // On screen means applied to the local cache (Firestore stores the write before showing it).
+  // Undated, so they are listed under "הכל" (and "בהמשך"), not on the default "היום".
+  await page.getByRole('radio', { name: /הכל/ }).click();
   for (const title of TITLES) await expect(page.getByText(title)).toBeVisible();
   await expect.poll(() => syncState(page)).toEqual({ status: 'offline', pendingWrites: 2 });
   await expect(page.getByRole('status').filter({ hasText: 'אין רשת' })).toContainText(
@@ -118,6 +120,7 @@ test('opened offline after one visit: Home opens, and unsent changes stay counte
   // Reopened while still offline: the app opens, with the tasks and the waiting count.
   await page.reload();
   await expect(page.locator('[data-me]')).toHaveText('מיכל', { timeout: 15_000 });
+  await page.getByRole('radio', { name: /הכל/ }).click();
   for (const title of TITLES) await expect(page.getByText(title)).toBeVisible();
   await expect.poll(() => syncState(page)).toEqual({ status: 'offline', pendingWrites: 2 });
   await expect(page.getByRole('status').filter({ hasText: 'אין רשת' })).toContainText(

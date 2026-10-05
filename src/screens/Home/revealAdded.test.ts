@@ -64,7 +64,7 @@ describe('revealTarget', () => {
 });
 
 describe('revealAdded', () => {
-  it('scrolls a target below the fold into sight and rings every new card', async () => {
+  it('scrolls a target below the fold into sight and marks every new card', async () => {
     const root = page({ waiting: ['w1', 'n1', 'n2'], plan: ['n1'] });
     placeAt(card(root, 'waiting', 'n1'), 1500);
     vi.spyOn(window, 'scrollY', 'get').mockReturnValue(100);
@@ -83,6 +83,32 @@ describe('revealAdded', () => {
     placeAt(card(root, 'waiting', 'n1'), -400);
     await revealAdded(root, new Set(['n1']), { reducedMotion: true });
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: 'auto' });
+  });
+
+  it('clears the sticky bar: a card under it, or just below the fold, lands below it', async () => {
+    const root = page({ plan: ['p1', 'n1'] });
+    placeAt(card(root, 'plan', 'n1'), 40); // on screen, but under a 100px bar
+    vi.spyOn(window, 'scrollY', 'get').mockReturnValue(500);
+    await revealAdded(root, new Set(['n1']), { reducedMotion: true, topInset: 100 });
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 500 + 40 - 72 - 100, behavior: 'auto' });
+
+    // A section target holds the bar itself: no extra room.
+    const fresh = page({ plan: ['n2'] });
+    placeAt(fresh.querySelector('[data-section="plan"]')!, 1200);
+    await revealAdded(fresh, new Set(['n2']), { reducedMotion: true, topInset: 100 });
+    expect(window.scrollTo).toHaveBeenLastCalledWith({ top: 500 + 1200 - 16, behavior: 'auto' });
+  });
+
+  it('washes the surface of each new card (its article when it has one)', async () => {
+    const root = page({ plan: ['n1'] });
+    const surface = document.createElement('article');
+    card(root, 'plan', 'n1').append(surface);
+    placeAt(card(root, 'plan', 'n1'), 200);
+    await revealAdded(root, new Set(['n1']), { reducedMotion: false });
+    const animate = Element.prototype.animate as unknown as ReturnType<typeof vi.fn>;
+    expect(animate.mock.contexts).toEqual([surface]);
+    const [frames] = animate.mock.calls[0] as [Keyframe[]];
+    expect(frames[0]!.backgroundColor).toMatch(/^color-mix\(in srgb, /);
   });
 
   it('waits for an open sheet to close first', async () => {

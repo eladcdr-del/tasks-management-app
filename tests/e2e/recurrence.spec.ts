@@ -59,6 +59,7 @@ test('quick add reads "כל ראשון ורביעי": weekly on Sunday and Wedne
   });
 
   await openApp(page, '#/', { reset: false });
+  await page.getByRole('radio', { name: /השבוע/ }).click();
   const card = page.locator(`[data-task-id="${task.id}"]`);
   await expect(card).toContainText('בימים א׳ וד׳');
 });

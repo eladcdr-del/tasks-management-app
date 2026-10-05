@@ -1,38 +1,54 @@
 <script lang="ts">
   /*
-   * Home (step 3.2): "a clear picture in one second".
+   * Home (step 3.2; feature "home": calm with many tasks). "A clear picture in one second", and a
+   * list that stays short however many tasks the family adds.
    *   header      greeting + name (clock.wall), today's date, sync pill, the household's avatars
-   *   pulse       attention / today / waiting numerals (tap → that list) + balance row
+   *   pulse       attention / today / waiting numerals + the "ביקשו ממך" row + the balance row.
+   *               Tap: attention / requests scroll to their block; today shows tab "היום"; waiting
+   *               shows tab "הכל" with chip "פנויות"
    *   jar strip   JarMini
-   *   attention   "דורש תשומת לב" (only when non-empty)
-   *   requested   "ביקשו ממך": requests waiting for my answer, whatever the date tab (only when
+   *   attention   "דורש תשומת לב" (only when non-empty): at most three, then "עוד N"; free ones
+   *               carry the small take action, an urgent request to me its two answers
+   *   requested   "ביקשו ממך": requests waiting for my answer, whatever the tab (only when
    *               non-empty), each with "אני לוקח/ת" / "לא מתאים לי". Not mine until I accept
-   *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty), including
-   *               requests waiting for someone else's answer (a quiet "ביקשת מדני · מחכה לתשובה" /
-   *               "מיכל ביקשה מדני" line). Kept while alone too: an undated new task shows nowhere
-   *               else on the default "today" tab
-   *   plan        היום | השבוע | בהמשך + member filter, then the TaskCards (unowned ones muted)
-   * Every list comes from tasks.groups (domain groupTasks); nothing is bucketed here.
+   *   bar         sticky: time tabs "היום · השבוע · בהמשך · הכל" with counts, and the chips
+   *               "הכל · שלי · פנויות · <member>"; they combine (homeView, kept for the session)
+   *   list        the open tasks of that view, minus what the blocks above already show
+   *               (domain/homeList). Free tasks sit in it with a small "אני לוקח/ת" and a hand icon
+   *               to ask someone; owned ones show the owner's avatar. Past six tasks it folds into
+   *               category groups of three with "עוד N" (HomeList)
+   * Adding: quick add's last task (homeView.lastAdded) and a list's tasks (homeView.addedBatch)
+   * switch the bar to a view that lists them, stay in sight even inside a folded group
+   * (homeView.fresh), and are scrolled to and washed for a moment (revealAdded.ts). Alone in the
+   * household, nothing changes but the missing "ask" icon: a new undated task is found the same way.
    */
-  import { tick } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Header from '$components/shell/Header.svelte';
   import {
     AvatarStack,
     Button,
-    Chip,
     EmptyState,
-    MemberChip,
     SectionHeader,
-    SegmentedControl,
     Skeleton,
     SyncIndicator
   } from '$components/ui';
   import { EmptyHome } from '$components/illustrations';
   import JarMini from '$components/jar/JarMini.svelte';
   import TaskList from '$components/task/TaskList.svelte';
-  import { acceptRequest, declineRequest, openRequest, takeTask } from '$components/task/actions';
+  import QuickTake from '$components/task/QuickTake.svelte';
+  import { acceptRequest, declineRequest } from '$components/task/actions';
   import { isRequestFor } from '$lib/domain/buckets';
+  import {
+    homeList,
+    isFree,
+    matchesWho,
+    nextTabWithTasks,
+    preview,
+    tabCounts,
+    type HomeTab,
+    type HomeView
+  } from '$lib/domain/homeList';
   import type { Task } from '$lib/domain/types';
   import { formatLongDate, greeting } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';
@@ -44,144 +60,211 @@
   import { sync } from '$lib/state/sync.svelte';
   import { reducedMotion } from '$lib/platform/motion';
   import PulseCard from './PulseCard.svelte';
-  import { homeView, type HomeBucket } from './homeView.svelte';
+  import HomeControls from './HomeControls.svelte';
+  import HomeList from './HomeList.svelte';
+  import MoreToggle from './MoreToggle.svelte';
+  import { homeView } from './homeView.svelte';
   import { revealAdded } from './revealAdded';
 
   const t = he.home;
 
   const me = $derived(household.me);
   const others = $derived(household.members.filter((m) => m.uid !== household.uid));
-  const memberIds = $derived(new Set(household.members.map((m) => m.uid)));
   const groups = $derived(tasks.groups);
+  const memberIds = $derived(household.memberIds);
 
-  /**
-   * Unowned (or a former member's): highlighted in "waiting", quieter in the time lists. A request
-   * is unowned until it is accepted, also for the one it waits for.
-   */
-  const isUnowned = (task: Task): boolean =>
-    task.ownerId === null || (memberIds.size > 0 && !memberIds.has(task.ownerId));
+  /** Nobody holds it (a request waiting for someone's answer included). */
+  const isUnowned = (task: Task): boolean => isFree(task, household.memberIds);
   /** A request waiting for my answer (it may sit in attention, with accept / decline). */
   const askedMe = (task: Task): boolean => isRequestFor(task, household.uid, household.memberIds);
+  const takeable = (task: Task): boolean => isUnowned(task) && !askedMe(task);
 
-  // A filter on a member who left falls back to everyone.
+  // A chip on a member who left falls back to everyone.
   $effect(() => {
     const f = homeView.filter;
-    if (f !== 'all' && f !== 'mine' && household.loaded && !others.some((m) => m.uid === f)) {
+    if (
+      !['all', 'mine', 'free'].includes(f) &&
+      household.loaded &&
+      !others.some((m) => m.uid === f)
+    ) {
       homeView.filter = 'all';
     }
   });
 
-  function matches(task: Task): boolean {
-    const f = homeView.filter;
-    if (f === 'all') return true;
-    if (f === 'mine') return task.ownerId !== null && task.ownerId === household.uid;
-    return task.ownerId === f;
+  const view = $derived<HomeView>({ tab: homeView.bucket, who: homeView.filter });
+  const list = $derived(homeList(groups, view, household.uid, memberIds));
+  const counts = $derived(tabCounts(groups, homeView.filter, household.uid, memberIds));
+
+  const weekend = $derived(clock.wall.weekday >= 5);
+  const tabLabel = (tab: HomeTab): string =>
+    tab === 'week' && weekend ? t.buckets.weekAhead : t.buckets[tab];
+  const tabOptions = $derived(
+    (['today', 'week', 'later', 'all'] as const).map((value) => ({
+      value,
+      label: tabLabel(value),
+      count: counts[value]
+    }))
+  );
+
+  /** Switches the view; a new view lets go of the "just added" tasks it kept in sight. */
+  function setView(next: HomeView) {
+    if (next.tab === homeView.bucket && next.who === homeView.filter) return;
+    homeView.bucket = next.tab;
+    homeView.filter = next.who;
+    homeView.fresh = [];
   }
 
-  const filtered = $derived({
-    today: groups.today.filter(matches),
-    week: groups.week.filter(matches),
-    later: groups.later.filter(matches)
-  });
-  const list = $derived(filtered[homeView.bucket]);
+  let planEl: HTMLElement | undefined = $state();
+  let stuck = $state(false);
+  let barHeight = $state(0);
 
-  // A task just added in quick add can land where the current view does not show it (an undated
-  // task with an owner, a request I sent, something for next week): once the sheet closes, switch
-  // to its tab, dropping a member filter that hides it. Waits until the task is in the lists.
+  /** The user picked a tab or chip: once the list is scrolled under the bar, start it at the top. */
+  async function pickView(next: HomeView) {
+    const wasStuck = stuck;
+    setView(next);
+    if (!wasStuck) return;
+    await tick();
+    planEl?.scrollIntoView({ block: 'start' });
+  }
+
+  // ── Bringing just-added tasks into sight ───────────────────────────────────────
+  let homeEl: HTMLElement | undefined = $state();
+
+  /**
+   * Lists `ids` (all already in the time buckets): keeps the current tab and chip when they show
+   * every one of them, else the closest view that does (their tab, or "הכל" when they span tabs;
+   * chip "הכל" when the chip hides one). `prefer` replaces that choice when it lists them all.
+   */
+  function showTasks(ids: readonly string[], prefer?: HomeView) {
+    const added = ids
+      .map((id) => tasks.open.find((task) => task.id === id))
+      .filter((task): task is Task => !!task);
+    const lists = (v: HomeView) => {
+      const shown = new Set(homeList(groups, v, household.uid, memberIds).map((x) => x.id));
+      return added.every((task) => shown.has(task.id));
+    };
+    let next: HomeView = { tab: homeView.bucket, who: homeView.filter };
+    if (prefer && lists(prefer)) next = prefer;
+    else if (!lists(next)) {
+      const tabs = new Set(
+        added.map((task) =>
+          (['today', 'week', 'later'] as const).find((b) => groups[b].some((x) => x.id === task.id))
+        )
+      );
+      const tab: HomeTab =
+        next.tab === 'all' || tabs.size !== 1 ? 'all' : ([...tabs][0] as HomeTab);
+      const who = added.every((task) =>
+        matchesWho(task, next.who, household.uid, household.memberIds)
+      )
+        ? next.who
+        : 'all';
+      next = { tab, who };
+    }
+    setView(next);
+    homeView.fresh = [...new Set([...homeView.fresh, ...added.map((task) => task.id)])];
+    void tick().then(() => {
+      if (homeEl) {
+        void revealAdded(homeEl, new Set(ids), {
+          reducedMotion: reducedMotion.current,
+          topInset: barHeight
+        });
+      }
+    });
+  }
+
+  // Tasks just added in quick add (it stays open for the next one, so there may be several): once
+  // the sheet closes and the last one is in the lists, list them. The ones above the bar
+  // (attention, a request to me) are in sight already.
+  let quickAdds: string[] = [];
   $effect(() => {
     const id = homeView.lastAdded;
-    if (id === null || router.sheet !== null) return;
-    const has = (list: Task[]) => list.some((task) => task.id === id);
-    if (has(groups.attention) || has(groups.requested) || has(groups.waiting)) {
-      homeView.lastAdded = null;
-      return;
-    }
-    const bucket = (['today', 'week', 'later'] as const).find((b) => has(groups[b]));
-    if (!bucket) return;
+    if (id === null) return;
+    if (!quickAdds.includes(id)) quickAdds = [...quickAdds, id];
+    if (router.sheet !== null) return;
+    const has = (l: readonly Task[], x: string) => l.some((task) => task.id === x);
+    const inBuckets = (x: string) =>
+      has(groups.today, x) || has(groups.week, x) || has(groups.later, x);
+    if (!inBuckets(id) && !has(groups.attention, id) && !has(groups.requested, id)) return;
     homeView.lastAdded = null;
-    if (!has(filtered[bucket])) homeView.filter = 'all';
-    homeView.bucket = bucket;
+    const ids = quickAdds.filter((x) => inBuckets(x) && !has(groups.requested, x));
+    quickAdds = [];
+    if (ids.length > 0) untrack(() => showTasks(ids));
   });
 
-  // Many tasks added at once (quick add's list mode): once the sheet has closed and they are
-  // listed, scroll to them and ring them for a moment (revealAdded.ts).
-  let homeEl: HTMLElement | undefined = $state();
+  // Many tasks added at once (quick add's list mode): show them with chip "פנויות" (nobody has
+  // taken them), under "הכל", then scroll to them and wash them for a moment.
   $effect(() => {
     const ids = homeView.addedBatch;
     if (ids.length === 0 || router.sheet !== null || !homeEl) return;
     const added = new Set(ids);
     if (!tasks.open.some((task) => added.has(task.id))) return;
     homeView.addedBatch = [];
-    void revealAdded(homeEl, added, { reducedMotion: reducedMotion.current });
+    untrack(() => {
+      const listed = ids.filter((id) => !groups.attention.some((x) => x.id === id));
+      showTasks(listed, { tab: 'all', who: 'free' });
+    });
   });
 
-  const weekend = $derived(clock.wall.weekday >= 5);
-  const bucketOptions = $derived<{ value: HomeBucket; label: string; count: number }[]>([
-    { value: 'today', label: t.buckets.today, count: filtered.today.length },
-    {
-      value: 'week',
-      label: weekend ? t.buckets.weekAhead : t.buckets.week,
-      count: filtered.week.length
-    },
-    { value: 'later', label: t.buckets.later, count: filtered.later.length }
-  ]);
-
+  // ── Empty states ───────────────────────────────────────────────────────────────
   const nothingOpen = $derived(tasks.openLoaded && tasks.open.length === 0);
   /**
-   * An empty Today is calm only when nothing waits above it, and it points to the first tab that
-   * actually has tasks (not always "השבוע").
+   * An empty list says why, and points to the first tab that has tasks under the same chip. An
+   * empty Today is calm only when nothing waits above it or for someone to take it.
    */
   const emptyCopy = $derived.by((): { title: string; body?: string; calm?: boolean } => {
-    if (homeView.filter !== 'all') return t.empty.filtered;
-    if (homeView.bucket !== 'today') return t.empty[homeView.bucket];
-    const next = bucketOptions.find((o) => o.value !== 'today' && o.count > 0);
+    const { tab, who } = view;
+    const next = nextTabWithTasks(counts, tab);
+    const pointer = next && tab !== 'all' ? t.empty.today.body(tabLabel(next)) : undefined;
+    if (who === 'free') {
+      return { title: counts.all === 0 ? t.empty.free.none : t.empty.free.title, body: pointer };
+    }
+    if (who !== 'all')
+      return { title: t.empty.filtered.title, body: pointer ?? t.empty.filtered.body };
+    if (tab === 'all') return { title: t.empty.allTab.title };
+    if (tab !== 'today') return t.empty[tab];
     const calm =
       groups.attention.length === 0 && groups.requested.length === 0 && groups.waiting.length === 0;
     return {
       title: calm ? t.empty.today.title : t.empty.today.rest,
-      body: next ? t.empty.today.body(next.label) : undefined,
+      body: pointer,
       calm
     };
   });
 
+  // ── Attention: three, then "עוד N" ────────────────────────────────────────────
+  const freshSet = $derived(new Set(homeView.fresh));
+  const attentionOpen = $derived(homeView.expanded.includes('attention'));
+  const attention = $derived(preview(groups.attention, attentionOpen, freshSet));
+  const attentionFoldable = $derived(
+    attentionOpen && preview(groups.attention, false, freshSet).hidden > 0
+  );
+  function toggleAttention() {
+    homeView.expanded = attentionOpen
+      ? homeView.expanded.filter((k) => k !== 'attention')
+      : [...homeView.expanded, 'attention'];
+  }
+
+  // ── Pulse ──────────────────────────────────────────────────────────────────────
   let attentionEl: HTMLElement | undefined = $state();
   let requestedEl: HTMLElement | undefined = $state();
-  let waitingEl: HTMLElement | undefined = $state();
-  let planEl: HTMLElement | undefined = $state();
 
   async function pick(key: 'attention' | 'today' | 'waiting' | 'requested') {
     let target: HTMLElement | undefined;
-    if (key === 'today') {
-      homeView.bucket = 'today';
+    if (key === 'today' || key === 'waiting') {
+      setView(key === 'today' ? { tab: 'today', who: 'all' } : { tab: 'all', who: 'free' });
       await tick();
       target = planEl;
     } else {
-      target = key === 'attention' ? attentionEl : key === 'requested' ? requestedEl : waitingEl;
-      if (!target) {
-        // Nothing to show there: the plan list is the closest useful place.
-        target = planEl;
-      }
+      // Nothing to show there: the list is the closest useful place.
+      target = (key === 'attention' ? attentionEl : requestedEl) ?? planEl;
     }
     target?.scrollIntoView({ behavior: reducedMotion.current ? 'auto' : 'smooth', block: 'start' });
   }
 </script>
 
-{#snippet unownedActions(task: Task)}
-  {#if askedMe(task)}
-    {@render requestActions(task)}
-  {:else}
-    <Button size="sm" onclick={() => takeTask(task.id)} data-action="take"
-      >{he.taskCard.take(me ?? 'n')}</Button
-    >
-    {#if others.length > 0}
-      <Button
-        size="sm"
-        variant="secondary"
-        onclick={() => openRequest(task.id)}
-        data-action="request">{he.taskCard.request}</Button
-      >
-    {/if}
-  {/if}
+<!-- A free task's row: take it, or ask someone. -->
+{#snippet quickTake(task: Task)}
+  <QuickTake taskId={task.id} me={me ?? 'n'} canRequest={others.length > 0} />
 {/snippet}
 
 <!-- A request waiting for my answer: yes, or a gentle no. -->
@@ -244,7 +327,12 @@
       </div>
     {:else}
       {#if groups.attention.length > 0}
-        <section class="block" bind:this={attentionEl} data-section="attention">
+        <section
+          class="block"
+          bind:this={attentionEl}
+          data-section="attention"
+          aria-labelledby="home-attention"
+        >
           <SectionHeader
             id="home-attention"
             title={t.sections.attention}
@@ -252,16 +340,37 @@
             tone="danger"
           />
           <TaskList
-            tasks={groups.attention}
-            label={t.sections.attention}
-            actions={unownedActions}
-            withActions={isUnowned}
-          />
+            id="home-attention-list"
+            tasks={attention.shown}
+            labelledby="home-attention"
+            variant="row"
+            trailing={quickTake}
+            withTrailing={takeable}
+            actions={requestActions}
+            withActions={askedMe}
+          >
+            {#snippet footer()}
+              {#if attention.hidden > 0 || attentionFoldable}
+                <MoreToggle
+                  open={attentionOpen}
+                  hidden={attention.hidden}
+                  name={t.sections.attention}
+                  controls="home-attention-list"
+                  ontoggle={toggleAttention}
+                />
+              {/if}
+            {/snippet}
+          </TaskList>
         </section>
       {/if}
 
       {#if groups.requested.length > 0}
-        <section class="block" bind:this={requestedEl} data-section="requested">
+        <section
+          class="block"
+          bind:this={requestedEl}
+          data-section="requested"
+          aria-labelledby="home-requested"
+        >
           <SectionHeader
             id="home-requested"
             title={t.sections.requested}
@@ -269,68 +378,50 @@
           />
           <TaskList
             tasks={groups.requested}
-            label={t.sections.requested}
+            labelledby="home-requested"
+            variant="row"
             actions={requestActions}
           />
         </section>
       {/if}
 
-      {#if groups.waiting.length > 0}
-        <section class="block" bind:this={waitingEl} data-section="waiting">
-          <SectionHeader
-            id="home-waiting"
-            title={t.sections.waiting}
-            count={groups.waiting.length}
-          />
-          <TaskList tasks={groups.waiting} label={t.sections.waiting} actions={unownedActions} />
-        </section>
-      {/if}
-
-      <section class="block plan" bind:this={planEl} data-section="plan">
-        <SegmentedControl
-          options={bucketOptions}
-          bind:value={homeView.bucket}
-          label={t.buckets.label}
-          haptics
+      <section
+        class="block plan"
+        bind:this={planEl}
+        data-section="plan"
+        aria-labelledby="home-list-title"
+        style:--home-bar-h="{barHeight}px"
+      >
+        <h2 id="home-list-title" class="visually-hidden">{t.sections.list}</h2>
+        <HomeControls
+          tabs={tabOptions}
+          tab={homeView.bucket}
+          who={homeView.filter}
+          {others}
+          onpick={pickView}
+          bind:stuck
+          bind:height={barHeight}
         />
-        {#if others.length > 0}
-          <div class="filters" role="group" aria-label={t.filters.label}>
-            <Chip
-              label={t.filters.all}
-              selected={homeView.filter === 'all'}
-              onclick={() => (homeView.filter = 'all')}
-            />
-            <Chip
-              label={t.filters.mine}
-              selected={homeView.filter === 'mine'}
-              onclick={() => (homeView.filter = 'mine')}
-            />
-            {#each others as m (m.uid)}
-              <MemberChip
-                person={m}
-                prefix={t.filters.ofPrefix}
-                selected={homeView.filter === m.uid}
-                onclick={() => (homeView.filter = m.uid)}
+        {#key `${view.tab}|${view.who}`}
+          <div class="view" data-view={`${view.tab}|${view.who}`}>
+            {#if list.length > 0}
+              <HomeList
+                tasks={list}
+                label={tabLabel(view.tab)}
+                trailing={quickTake}
+                withTrailing={takeable}
               />
-            {/each}
+            {:else}
+              <div class="bucket-empty" data-empty={view.tab}>
+                <EmptyState title={emptyCopy.title} body={emptyCopy.body} compact level={3}>
+                  {#snippet illustration()}
+                    {#if emptyCopy.calm}<EmptyHome />{/if}
+                  {/snippet}
+                </EmptyState>
+              </div>
+            {/if}
           </div>
-        {/if}
-
-        {#if list.length > 0}
-          <TaskList
-            tasks={list}
-            label={bucketOptions.find((o) => o.value === homeView.bucket)?.label ?? ''}
-            muted={isUnowned}
-          />
-        {:else}
-          <div class="bucket-empty" data-empty={homeView.bucket}>
-            <EmptyState title={emptyCopy.title} body={emptyCopy.body} compact level={3}>
-              {#snippet illustration()}
-                {#if emptyCopy.calm}<EmptyHome />{/if}
-              {/snippet}
-            </EmptyState>
-          </div>
-        {/if}
+        {/key}
       </section>
     {/if}
   </div>
@@ -354,30 +445,59 @@
 
   .head-actions {
     display: flex;
-    flex-direction: column;
-    align-items: flex-end;
+    flex-wrap: wrap-reverse;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--s2);
-    padding-block-start: var(--s2);
+    padding-block-start: var(--s1);
   }
 
   .content {
     display: grid;
-    gap: var(--s4);
+    gap: var(--s3-5);
     padding-inline: var(--screen-pad);
-    padding-block-start: var(--s3);
+    padding-block-start: var(--s1);
   }
 
   .block {
     display: grid;
-    gap: var(--s3);
-    margin-block-start: var(--s3);
+    gap: var(--s1-5);
     scroll-margin-block-start: var(--s4);
   }
 
-  .filters {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s2);
+  /* A heading, not a control: no tap-height needed. */
+  .block :global(.section-header) {
+    min-block-size: 28px;
+  }
+
+  /* Home's header sits a little closer to the top than other screens' (the list needs the room). */
+  .home > :global(.header) {
+    padding-block-start: calc(var(--safe-top) + var(--s3));
+  }
+
+  .plan {
+    display: block;
+    scroll-margin-block-start: 0;
+  }
+
+  .plan :global([data-home-controls]) {
+    margin-block-end: var(--s3);
+  }
+
+  .view {
+    animation: view-in var(--d-base) var(--ease-out);
+  }
+
+  @keyframes view-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .view {
+      animation: none;
+    }
   }
 
   .loading {
