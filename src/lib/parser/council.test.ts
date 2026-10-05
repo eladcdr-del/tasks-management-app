@@ -577,14 +577,32 @@ describe('fail-safe additions', () => {
     expect(fields('לקנות מחר ב-5 שקלים').dueTime).toBeUndefined();
   });
 
+  // "לשבת" (for Shabbat) is planned for the Friday before it: challah and flowers are bought, and
+  // the food cooked, before Shabbat (launch audit CON-2)
   it.each([
-    ['להכין עוגה לשבת', 'להכין עוגה', '2026-10-10'],
+    ['להכין עוגה לשבת', 'להכין עוגה', '2026-10-09'],
     ['לקנות פרחים לשישי.', 'לקנות פרחים', '2026-10-09'],
-    ['חלות לשבת!', 'חלות!', '2026-10-10'],
-    ['לקנות יין לשבת הקרובה', 'לקנות יין', '2026-10-10']
+    ['חלות לשבת!', 'חלות!', '2026-10-09'],
+    ['לקנות יין לשבת הקרובה', 'לקנות יין', '2026-10-09'],
+    ['לקנות חלות לשבת', 'לקנות חלות', '2026-10-09'],
+    ['להכין אוכל לשבת', 'להכין אוכל', '2026-10-09']
   ])('"לשישי" / "לשבת" as the target day: %s', (input, title, iso) => {
     const { categoryId: _category, ...rest } = fields(input);
     expect(rest).toEqual({ title, scheduledFor: iso });
+  });
+
+  it('"לשבת" is never planned on Shabbat itself, whatever day it is said', () => {
+    expect(chip(parse('לקנות חלות לשבת', FRI), 'date')?.label).toBe('היום · יום ו׳ 9/10');
+    expect(fields('לקנות חלות לשבת', SAT).scheduledFor).toBe('2026-10-16');
+  });
+
+  it('with a time or a part of day, "לשבת" names a time on Shabbat itself', () => {
+    expect(fields('להזמין את סבתא לשבת ב-12:00')).toEqual({
+      title: 'להזמין את סבתא',
+      scheduledFor: '2026-10-10',
+      dueTime: '12:00'
+    });
+    expect(chip(parse('להכין קידוש לשבת בבוקר'), 'date')?.label).toBe('שבת 10/10 בבוקר');
   });
 
   it.each(['לשבת עם דני על השיעורים', 'למצוא מקום לשבת', 'כיסא לשבת', 'לחשוב לשני'])(

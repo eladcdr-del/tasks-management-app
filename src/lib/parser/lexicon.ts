@@ -157,7 +157,10 @@ export const BARE_DAY_VETO_NEXT = ['לפני'];
 export const EVE_WORD = 'ערב';
 /** "במוצ"ש", "במוצאי שבת" → Saturday evening (tonight, when said on Saturday). */
 export const SATURDAY_NIGHT_PHRASES = ['מוצ"ש', 'מוצאי שבת', 'מוצאי השבת'];
-/** "לשישי", "לשבת" (for Friday / Shabbat): a target day, only at the end of the line or a clause. */
+/**
+ * "לשישי", "לשבת" (for Friday / Shabbat): a target day, only at the end of the line or a clause.
+ * What is for Shabbat is done before it: "לשבת" alone plans the Friday.
+ */
 export const LAMED_DAY_NAMES = ['שישי', 'ששי', 'שבת'];
 /** "מקום לשבת", "צריך לשבת": here לשבת is the verb "to sit", not "for Shabbat". */
 export const LAMED_DAY_VETO_BEFORE = [

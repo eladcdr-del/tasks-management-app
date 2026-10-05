@@ -161,6 +161,7 @@ export interface ParseOptions {
  *   plan and a deadline, a time is read only right after the deadline ("עד יום חמישי ב-17:00").
  *   An unpadded hour 1–5 is afternoon; an unpadded 6 or 7 needs a part of day or a cue word, else
  *   it is no time at all.
+ * - "לשבת" (for Shabbat) alone plans the Friday before it.
  * - "עד <date>" (or "מועד אחרון <date>", "לא יאוחר מ<date>") sets dueDate instead of scheduledFor;
  *   "לפני <date>" sets dueDate to the day before. "מועד אחרון" without a date is not parsed.
  * - Only the first phrase per field is consumed; a second date etc. stays in the title.

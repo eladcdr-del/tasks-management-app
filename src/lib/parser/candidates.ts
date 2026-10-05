@@ -724,7 +724,12 @@ export function dateCandidates(
     // "החל מ-1/11", "החל ממחר"
     const starting = RE_STARTING_BEFORE.exec(before);
     if (starting && text.charAt(h.start) === 'מ') start -= group(starting, 1).length;
-    out.push({ kind: 'date', start, end, iso: h.iso, ...dayPart });
+    // "לקנות חלות לשבת": what is for Shabbat gets done before it, so it is planned for the Friday.
+    // With a part of day or a time after it ("לשבת בבוקר", "לשבת ב-12:00") it is Shabbat itself.
+    const forShabbat =
+      hit.lamed === true && h === hit && weekday(h.iso) === 6 && !phraseStarts.has(h.end + 1);
+    const iso = forShabbat ? addDays(h.iso, -1) : h.iso;
+    out.push({ kind: 'date', start, end, iso, ...dayPart });
   }
   return out;
 }
