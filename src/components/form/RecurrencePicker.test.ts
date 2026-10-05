@@ -14,14 +14,13 @@ function setup(value: RecurrenceRule | null, date: string | null = null) {
   return { onChange, ...view };
 }
 
-const pressed = (name: string) =>
-  screen.getByRole('button', { name, exact: true }).getAttribute('aria-pressed');
+const pressed = (name: string) => screen.getByRole('button', { name }).getAttribute('aria-pressed');
 
 describe('RecurrencePicker', () => {
   it('offers the presets and "אחר", with the current one selected', () => {
     setup(null);
     for (const name of ['לא חוזרת', 'כל יום', 'כל שבוע', 'כל חודש', 'כל שנה', 'אחר']) {
-      expect(screen.getByRole('button', { name, exact: true })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
     expect(pressed('לא חוזרת')).toBe('true');
     expect(pressed('כל יום')).toBe('false');
@@ -31,11 +30,11 @@ describe('RecurrencePicker', () => {
 
   it('a one-tap preset is settled; "כל שבוע" leads on to its days', async () => {
     const { onChange } = setup(null);
-    await fireEvent.click(screen.getByRole('button', { name: 'כל יום', exact: true }));
+    await fireEvent.click(screen.getByRole('button', { name: 'כל יום' }));
     expect(onChange).toHaveBeenLastCalledWith({ freq: 'daily' }, true);
-    await fireEvent.click(screen.getByRole('button', { name: 'לא חוזרת', exact: true }));
+    await fireEvent.click(screen.getByRole('button', { name: 'לא חוזרת' }));
     expect(onChange).toHaveBeenLastCalledWith(null, true);
-    await fireEvent.click(screen.getByRole('button', { name: 'כל שבוע', exact: true }));
+    await fireEvent.click(screen.getByRole('button', { name: 'כל שבוע' }));
     expect(onChange).toHaveBeenLastCalledWith({ freq: 'weekly' }, false);
   });
 
@@ -83,7 +82,7 @@ describe('RecurrencePicker', () => {
 
   it('"אחר" starts every 2 weeks and shows "כל [N] [unit]"', async () => {
     const { onChange, rerender } = setup(null);
-    await fireEvent.click(screen.getByRole('button', { name: 'אחר', exact: true }));
+    await fireEvent.click(screen.getByRole('button', { name: 'אחר' }));
     expect(onChange).toHaveBeenLastCalledWith({ freq: 'weekly', interval: 2 }, false);
     await rerender({ value: { freq: 'weekly', interval: 2 }, date: null, onChange });
     const custom = screen.getByTestId('repeat-custom');
@@ -117,7 +116,7 @@ describe('RecurrencePicker', () => {
       within(screen.getByTestId('repeat-custom')).getByRole('button', { name: 'הפחתה' })
     );
     expect(onChange).toHaveBeenLastCalledWith({ freq: 'weekly' }, false);
-    await fireEvent.click(screen.getByRole('button', { name: 'אחר', exact: true }));
+    await fireEvent.click(screen.getByRole('button', { name: 'אחר' }));
     await rerender({ value: { freq: 'weekly' }, date: null, onChange });
     const units = within(screen.getByTestId('repeat-custom')).getAllByRole('radio');
     expect(units.map((u) => u.textContent?.trim())).toEqual(['יום', 'שבוע', 'חודש', 'שנה']);
