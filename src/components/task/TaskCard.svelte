@@ -155,9 +155,13 @@
     cancelPress();
   });
 
-  /** Android shows a link's menu on a long press: not while the press is choosing the card. */
+  /**
+   * On a phone, contextmenu IS the platform's long press (Android would show the link's menu, or
+   * select text): it chooses the card now, whichever comes first, and the menu stays away.
+   */
   function oncontextmenu(e: MouseEvent) {
-    if (pressed || press || selecting) e.preventDefault();
+    if (press) firePress();
+    if (pressed || selecting) e.preventDefault();
   }
 
   // ── Swipe ───────────────────────────────────────────────────────────────────
@@ -181,6 +185,15 @@
     press = null;
   }
 
+  /** The press held: choose this card (and start choosing). */
+  function firePress() {
+    cancelPress();
+    pressed = true;
+    drag = null; // a long press is not a swipe
+    haptic('select');
+    selection?.begin(task.id);
+  }
+
   function onpointerdown(e: PointerEvent) {
     if (selecting || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const target = e.target as HTMLElement;
@@ -194,12 +207,7 @@
         x: e.clientX,
         y: e.clientY,
         timer: setTimeout(() => {
-          if (press?.id !== id) return;
-          press = null;
-          pressed = true;
-          drag = null; // a long press is not a swipe
-          haptic('select');
-          selection?.begin(task.id);
+          if (press?.id === id) firePress();
         }, LONG_PRESS_MS)
       };
     }
@@ -652,8 +660,11 @@
     border-radius: 0;
   }
 
+  /* A row is pressed, not read like a page: no callout, no text selection on a long press. */
   .row .card {
     -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
     align-items: center;
     gap: 0;
     min-block-size: 50px;

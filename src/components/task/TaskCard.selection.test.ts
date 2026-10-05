@@ -114,6 +114,31 @@ describe('TaskCard selection', () => {
     expect(menu.defaultPrevented).toBe(true);
   });
 
+  it("the phone's own long press (contextmenu) chooses at once, and its menu stays away", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    render(TaskCard, { task: task('seed-bulbs'), variant: 'row', selection });
+    const opts = { pointerId: 9, clientX: 100, clientY: 20, pointerType: 'touch', button: 0 };
+    await fireEvent.pointerDown(article(), opts);
+    vi.advanceTimersByTime(300);
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    article().dispatchEvent(menu);
+    flushSync();
+    expect(menu.defaultPrevented).toBe(true);
+    expect([...selection.ids]).toEqual(['seed-bulbs']);
+    // The timer does not fire a second time.
+    vi.advanceTimersByTime(LONG_PRESS_MS);
+    expect([...selection.ids]).toEqual(['seed-bulbs']);
+    await fireEvent.pointerUp(article(), opts);
+  });
+
+  it('a right click outside a press keeps the browser menu', () => {
+    render(TaskCard, { task: task('seed-bulbs'), variant: 'row', selection });
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+    article().dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(false);
+    expect(selection.active).toBe(false);
+  });
+
   it('a press that moves (a scroll) or ends early starts nothing', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     render(TaskCard, { task: task('seed-bulbs'), variant: 'row', selection });
