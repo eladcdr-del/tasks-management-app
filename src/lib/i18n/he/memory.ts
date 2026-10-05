@@ -17,7 +17,12 @@ export const memory = {
   emptyTitle: 'הזיכרון עוד ריק',
   emptyBody: 'כל משימה שתסתיים תישמר כאן, עם מי עשה, מתי וכמה עלה.',
   noMatchTitle: 'לא מצאנו',
+  /** No results: a search word and a category / member chip are both set. */
   noMatchBody: 'נסו מילה אחרת, או בטלו את הסינון.',
+  /** No results for a search word alone (the button is clearSearch). */
+  noMatchSearch: 'נסו לחפש במילה אחרת.',
+  /** No results for the chips alone. */
+  noMatchFilter: 'אין משימות שמתאימות לסינון הזה.',
   clearFilters: 'ביטול הסינון',
   photo: 'תמונה',
   photoMissing: 'התמונה לא נמצאה',

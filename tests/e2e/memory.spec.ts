@@ -31,10 +31,13 @@ test('search finds the battery replacement with its garage and cost', async ({ p
   await expect(memory.getByTestId('memory-card').first()).toContainText('החלפת מצבר');
   await shot(page, 'memory-search');
 
-  // A search with no match offers to clear it.
+  // A search with no match offers to clear it (no word about a filter nobody set).
   await search.fill('טלסקופ');
-  await expect(memory.getByRole('heading', { name: 'לא מצאנו' })).toBeVisible();
-  await memory.getByRole('button', { name: 'ביטול הסינון' }).click();
+  const empty = memory.locator('.empty');
+  await expect(empty.getByRole('heading', { name: 'לא מצאנו' })).toBeVisible();
+  await expect(empty).toContainText('נסו לחפש במילה אחרת.');
+  await expect(empty).not.toContainText('סינון');
+  await empty.getByRole('button', { name: 'ניקוי החיפוש' }).click();
   await expect(search).toHaveValue('');
 
   // Tap → the task detail with its documentation.
@@ -65,4 +68,18 @@ test('category and member filters narrow the memory', async ({ page }) => {
   await memory.locator(`button[data-member="michal"]`).click();
   await memory.locator(`button[data-category="car"]`).click();
   await expect(cards).toHaveCount(all);
+
+  // A word and a chip with no match: the copy names both, and the button drops the chip only.
+  await memory.locator(`button[data-category="car"]`).click();
+  const search = memory.getByRole('searchbox', { name: 'חיפוש בזיכרון הבית' });
+  await search.fill('הדברה');
+  const empty = memory.locator('.empty');
+  await expect(empty).toContainText('נסו מילה אחרת, או בטלו את הסינון.');
+  await empty.getByRole('button', { name: 'ביטול הסינון' }).click();
+  await expect(memory.locator(`button[data-category="car"]`)).toHaveAttribute(
+    'aria-pressed',
+    'false'
+  );
+  await expect(search).toHaveValue('הדברה');
+  await expect(cards.filter({ hasText: 'הדברה בבית' })).toHaveCount(1);
 });
