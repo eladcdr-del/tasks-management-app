@@ -23,14 +23,18 @@
   onMount(() => button?.focus());
 
   const MARBLES = 18;
+  // Up and sideways the marbles fly far; downward they fly half as far, so they land inside the
+  // stage (110px below its centre) and never on the headline under it. The still layout (reduced
+  // motion) is the same end state.
   const burst = $derived(
     Array.from({ length: MARBLES }, (_, i) => {
       const angle = (i / MARBLES) * Math.PI * 2 + (i % 2 ? 0.17 : -0.05);
       const dist = 110 + ((i * 53) % 5) * 22;
       const c = colors.length > 0 ? colors[i % colors.length] : null;
+      const sin = Math.sin(angle);
       return {
         dx: Math.cos(angle) * dist,
-        dy: Math.sin(angle) * dist * 0.9,
+        dy: sin * dist * (sin > 0 ? 0.45 : 0.9),
         size: 10 + ((i * 31) % 4) * 4,
         color: c ? `var(--member-${c}-base)` : i % 3 === 0 ? 'var(--sage)' : 'var(--accent)',
         delay: (i % 6) * 40
