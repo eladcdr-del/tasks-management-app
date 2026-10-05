@@ -54,7 +54,7 @@ const FIRST_RUN = [
   {
     tokens: [tok.daniPhone.token],
     title: 'הצנצנת התמלאה!',
-    body: 'הגיע הזמן ל: ארוחה במסעדה',
+    body: 'הגיע הזמן לצ׳ופר: ארוחה במסעדה',
     url: 'https://eladcdr-del.github.io/tasks-management-app/#/jar'
   },
   {
@@ -167,6 +167,48 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     );
     expect(await push('ev-req')).toBe('sent');
     expect(await sentKeys()).toEqual(FIRST_RUN_KEYS);
+  });
+
+  it('a sparse schedule still delivers: a 14:25 first run catches up, later runs add only news', async () => {
+    await seedDemo(db, NOW);
+    const sender = new FakeSender();
+    const sunday = (hhmm: string) => new Date(`2026-10-04T${hhmm}:00+03:00`);
+
+    // no run all morning: the due-day summaries (and the weekly nudge, open since 10:00) still go
+    const r1 = await run({ db, sender, now: sunday('14:25') });
+    expect(r1.errors).toEqual([]);
+    expect(sender.calls.map((c) => c.msg.title)).toEqual([
+      ...FIRST_RUN.slice(0, 3).map((c) => c.title),
+      'יש משימה אחת שמחכה כבר זמן מה',
+      ...FIRST_RUN.slice(3).map((c) => c.title)
+    ]);
+    expect(await push('ev-done-stale')).toBe('skipped');
+
+    // 18:13: only the day-before reminder is new; everything else is a duplicate
+    const r2 = await run({ db, sender, now: sunday('18:13') });
+    expect(r2.households[0]?.outcomes.filter((o) => o.status === 'delivered')).toHaveLength(1);
+    expect(sender.calls.slice(6).map((c) => [c.tokens, c.msg.title])).toEqual([
+      [[tok.daniPhone.token], 'מחר המועד האחרון: להחזיר את החולצה לקניון']
+    ]);
+
+    // 21:24: nothing new
+    await run({ db, sender, now: sunday('21:24') });
+    expect(sender.calls).toHaveLength(7);
+  });
+
+  it.each([
+    ['the filling completion was undone', { 'jar.count': 9 }],
+    [
+      'the treat was redeemed already',
+      { 'jar.count': 0, 'jar.round': 2, 'jar.startedAt': Timestamp.fromMillis(NOW.getTime() - MIN) }
+    ]
+  ])('does not announce a full jar when %s', async (_label, jar) => {
+    await seedDemo(db, NOW);
+    await db.doc(`households/${HID}`).update(jar);
+    const sender = new FakeSender();
+    await run({ db, sender, now: NOW });
+    expect(sender.calls.map((c) => c.msg.title)).not.toContain('הצנצנת התמלאה!');
+    expect(await push('ev-jar')).toBe('skipped');
   });
 
   it('retries a transient failure on the next run, then goes quiet', async () => {

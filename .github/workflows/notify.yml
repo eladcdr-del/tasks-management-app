@@ -1,13 +1,21 @@
 # HomeCare notifier: every 5 minutes, read Firestore and send due web-push notifications via FCM.
 # This cron job IS the backend (Firebase Spark plan, no Cloud Functions). See scripts/notify/README.md.
 # Without the FIREBASE_SERVICE_ACCOUNT secret every run exits green after a notice: nothing to do.
+#
+# Timing: GitHub's own schedule fires only every 2.5-6 hours, so an external scheduler (cron-job.org,
+# SETUP.md section 6) starts this workflow every 5 minutes through the workflow_dispatch REST API.
+# The schedule stays as a fallback. Extra or late runs are harmless: runs never overlap
+# (concurrency) and every push is deduplicated.
 name: notify
 
 on:
   schedule:
-    - cron: '*/5 * * * *'
+    - cron: '*/5 * * * *' # fallback only: GitHub actually runs it every few hours
+  # POST /repos/eladcdr-del/tasks-management-app/actions/workflows/notify.yml/dispatches
+  # with {"ref":"ccr-4db4aa05-kbrwag"}, every 5 minutes from cron-job.org
   workflow_dispatch:
 
+# One run at a time: a run queued meanwhile waits, and a newer queued one replaces it.
 concurrency:
   group: notify
   cancel-in-progress: false
@@ -57,19 +65,18 @@ jobs:
         run: npx --prefix scripts/notify tsx scripts/notify/index.ts
 
       # Scheduled workflows in a repo with no commits for 60 days get disabled. Re-enabling through the
-      # API (the keepalive-workflow "API" method, no commits) on Sundays in the first run after
-      # 06:00 UTC, and on every manual run, resets that timer. Runs even without the secret and even
-      # if the notifier failed, so the schedule survives until the secret is added.
-      - name: Keepalive (Sundays, first run after 06:00 UTC)
+      # API (the keepalive-workflow "API" method, no commits) resets that timer. The call is idempotent
+      # and costs one API request, so it runs on EVERY run, scheduled or dispatched: with runs hours
+      # apart at random minutes, a narrower time slot was practically never hit. Runs even without the
+      # secret and even if the notifier failed, so the schedule survives until the secret is added. A
+      # failed call only warns (the next run tries again) instead of turning the run red.
+      - name: Keepalive (re-enable this workflow on every run)
         if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || {
-            [ "$(date -u +%u)" = "7" ] && [ "$(date -u +%H)" = "06" ] && [ "$(date -u +%-M)" -lt 5 ]
-          }; then
-            gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/notify.yml/enable"
+          if gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/notify.yml/enable"; then
             echo "keepalive: workflow enable call sent"
           else
-            echo "keepalive: not due"
+            echo "::warning::keepalive: the enable call failed; the next run tries again"
           fi

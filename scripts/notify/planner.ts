@@ -24,6 +24,7 @@ import {
   addDaysISO,
   diffDays,
   inWindow,
+  isBeforeLocal,
   isQuietHours,
   isValidISO,
   isoDateOf,
@@ -71,16 +72,27 @@ export interface Plan {
   eventMarks: EventMark[];
 }
 
-/** Local windows, [from, to): the start minute is in, the end minute is out. */
+/**
+ * Local reminder windows, [from, to): the start minute is in, the end minute is out. Every run
+ * inside a window plans its reminders again and the sent/{key} dedupe lets each one out once, so a
+ * reminder goes out on the FIRST run at or after `from`, however late that run comes (GitHub's
+ * schedule can leave hours between runs). Each window closes at 22:00, when quiet hours begin.
+ */
 export const WINDOWS = {
-  due: ['08:00', '12:00'],
-  eve: ['18:00', '21:30'],
+  due: ['08:00', '22:00'],
+  eve: ['18:00', '22:00'],
   /** Sundays only. */
-  weekly: ['10:00', '13:00']
+  weekly: ['10:00', '22:00']
 } as const;
 
+/**
+ * Tasks join the due-day summary until 12:00. Later runs only catch up on what a morning run would
+ * have sent, so a task added in the afternoon (often by the person it is for) sets off no push.
+ */
+export const DUE_JOIN_UNTIL = '12:00';
+
 /** A completion (or jar fill) older than this is old news and is skipped. */
-export const COMPLETED_STALE_MS = 12 * 3_600_000;
+export const COMPLETED_STALE_MS = 24 * 3_600_000;
 /** A request older than this is skipped (e.g. events that piled up before the secret existed). */
 export const REQUEST_STALE_MS = 7 * 86_400_000;
 export const STUCK_AGE_DAYS = 21;
@@ -179,6 +191,10 @@ export function plan(input: PlanInput): Plan {
 
   const openTasks = input.tasks.filter((t) => t.status === 'open').sort(byId);
   const openById = new Map(openTasks.map((t) => [t.id, t]));
+  const jar = input.household.jar;
+  /** The jar a fill event filled is still full now: no undo took a marble out, no redeem since. */
+  const jarStillFull = (e: ActivityEvent): boolean =>
+    jar !== null && jar.count >= jar.target && jar.startedAt <= e.createdAt;
 
   const sends: Send[] = [];
   const eventMarks: EventMark[] = [];
@@ -221,8 +237,11 @@ export function plan(input: PlanInput): Plan {
       if (e.type === 'completed' || e.type === 'jar_filled') {
         const stale = nowMs - e.createdAt > COMPLETED_STALE_MS;
         // A completion whose task is open again was undone (reopenTask) before we got to it; so was
-        // a jar fill whose completing task (its taskId, when set) is open again.
-        const undone = e.taskId !== null && openById.has(e.taskId);
+        // a jar fill whose completing task (its taskId, when set) is open again. The app writes a
+        // jar fill without a taskId, so a fill also needs the jar to be full still, in its round.
+        const undone =
+          (e.taskId !== null && openById.has(e.taskId)) ||
+          (e.type === 'jar_filled' && !jarStillFull(e));
         const recipients =
           stale || undone
             ? []
@@ -237,7 +256,7 @@ export function plan(input: PlanInput): Plan {
               keys: [`ev:${e.id}:${m.uid}`],
               uid: m.uid,
               type: 'jar_filled',
-              ...copy.jarFilled(input.household.jar?.treat),
+              ...copy.jarFilled(jar?.treat),
               url: copy.jarUrl(),
               tag: `jar:${e.id}`,
               eventIds: [e.id]
@@ -335,8 +354,14 @@ export function plan(input: PlanInput): Plan {
 
   if (windows.due) {
     // A due date today (a deadline: reminded even on a week-planned task), or a timed plan for today.
+    // After 12:00 only tasks that existed by then: a catch-up for a morning with no run.
+    const joining = inWindow(parts, WINDOWS.due[0], DUE_JOIN_UNTIL);
     reminderSummaries(
-      openTasks.filter((t) => t.dueDate === parts.iso || isTimedPlanToday(t)),
+      openTasks.filter(
+        (t) =>
+          (t.dueDate === parts.iso || isTimedPlanToday(t)) &&
+          (joining || isBeforeLocal(t.createdAt, parts.iso, DUE_JOIN_UNTIL))
+      ),
       'due',
       parts.iso
     );

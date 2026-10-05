@@ -1,6 +1,7 @@
 # HomeCare notifier
 
-A small Node script that GitHub Actions runs every 5 minutes (`.github/workflows/notify.yml`).
+A small Node script that GitHub Actions runs every 5 minutes (`.github/workflows/notify.yml`),
+started by an external scheduler (see [Scheduling](#scheduling)).
 It reads Firestore with `firebase-admin`, decides which web-push notifications are due, sends them
 through Firebase Cloud Messaging (FCM), and never sends the same one twice. The Firebase project is
 on the free Spark plan, which has no Cloud Functions, so this cron job is the app's whole backend.
@@ -16,7 +17,8 @@ For each household (all of them, listed with admin rights):
 1. **Load** the pending events (`events` where `push == 'pending'`). Members, their devices
    (`users/{uid}/devices`) and open tasks (`tasks` where `status == 'open'`) are read only when
    something can actually go out now. That means pending events outside quiet hours, or an open
-   reminder window. Outside those times a run costs about 2 reads per household.
+   reminder window (08:00–22:00). Outside those times a run costs about 2 reads per household; in
+   them about (open tasks + 6), so 288 runs a day stay well inside Spark's 50k reads a day.
 2. **Plan** with `planner.ts`, a pure function of `(now, household data)`:
    `plan(...) → { sends, eventMarks }`. It does no I/O and never reads the clock, so it is fully
    tested with a fake clock.
@@ -48,14 +50,21 @@ keeps the same `tag`, so the phone replaces the earlier notification instead of 
 The run sends nothing during quiet hours (22:00–07:30). Events stay pending, unmarked, and go out
 at 07:30.
 
-| Type         | When                                 | To                                                                                                                                                           | Copy                                                                    | Key                                          |
-| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------- |
-| `requested`  | any time outside quiet hours         | `targetId`, if not the actor and `notify.requests` is on. Skipped if the task is no longer open and assigned to them, or the request is more than 7 days old | "דני ביקש ממך משימה" / "מיכל ביקשה…" / "…ביקש/ה…", body: the task title | `ev:{eventId}:{uid}`                         |
-| `completed`  | outside quiet hours, event ≤ 12h old | every **other** member with `partnerDone` on. The same actor's completions in one run are combined. Skipped if the task is open again (undone)               | "מיכל סיימה: {title}" · "דני סיים 3 משימות" (body lists up to 3 titles) | `ev:{eventId}:{uid}` for each event          |
-| `jar_filled` | like `completed`                     | like `completed`                                                                                                                                             | "הצנצנת התמלאה!" + "הגיע הזמן ל: {treat}" (from `household.jar.treat`)  | `ev:{eventId}:{uid}`                         |
-| `due`        | 08:00–12:00                          | the owner, or every member if unassigned, with `reminders` on. One summary per recipient                                                                     | "להיום: {title}" · "3 משימות להיום"                                     | `due:{taskId}:{dueDate}:{uid}` for each task |
-| `eve`        | 18:00–21:30                          | `hardDeadline` tasks due tomorrow. Recipients and summaries as for `due`                                                                                     | "מחר אחרון: {title}" · "מחר אחרון: 2 משימות"                            | `eve:{taskId}:{dueDate}:{uid}` for each task |
-| `weekly`     | Sunday 10:00–13:00                   | each member with `weekly` on who has ≥ 1 stuck task they own, or that nobody owns                                                                            | "יש 2 משימות שמחכות כבר זמן מה" (body: up to 3 titles)                  | `wk:{YYYY-Www}:{uid}`                        |
+The reminder windows run until 22:00 so a reminder goes out on the **first run at or after its
+window opens**, however late that run is: every run in the window plans it again, and its keys let
+it out only once. GitHub's schedule can leave hours between runs (see [Scheduling](#scheduling)),
+so a narrow window could be missed for the whole day. A due-day summary takes in new tasks only
+until 12:00. After that it only catches up on tasks that existed by noon, so a task added in the
+afternoon (often by the person it is for) does not set off a push.
+
+| Type         | When                                 | To                                                                                                                                                           | Copy                                                                        | Key                                          |
+| ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- | -------------------------------------------- |
+| `requested`  | any time outside quiet hours         | `targetId`, if not the actor and `notify.requests` is on. Skipped if the task is no longer open and assigned to them, or the request is more than 7 days old | "דני ביקש ממך משימה" / "מיכל ביקשה…" / "…ביקש/ה…", body: the task title     | `ev:{eventId}:{uid}`                         |
+| `completed`  | outside quiet hours, event ≤ 24h old | every **other** member with `partnerDone` on. The same actor's completions in one run are combined. Skipped if the task is open again (undone)               | "מיכל סיימה: {title}" · "דני סיים 3 משימות" (body lists up to 3 titles)     | `ev:{eventId}:{uid}` for each event          |
+| `jar_filled` | like `completed`                     | like `completed`, while the jar is still full in the same round (not undone, not redeemed)                                                                   | "הצנצנת התמלאה!" + "הגיע הזמן לצ׳ופר: {treat}" (from `household.jar.treat`) | `ev:{eventId}:{uid}`                         |
+| `due`        | 08:00–22:00 (tasks join until 12:00) | the owner, or every member if unassigned, with `reminders` on. One summary per recipient                                                                     | "להיום: {title}" · "3 משימות להיום"                                         | `due:{taskId}:{dueDate}:{uid}` for each task |
+| `eve`        | 18:00–22:00                          | `hardDeadline` tasks due tomorrow. Recipients and summaries as for `due`                                                                                     | "מחר המועד האחרון: {title}" · "מחר המועד האחרון ל-2 משימות"                 | `eve:{taskId}:{dueDate}:{uid}` for each task |
+| `weekly`     | Sunday 10:00–22:00                   | each member with `weekly` on who has ≥ 1 stuck task they own, or that nobody owns                                                                            | "יש 2 משימות שמחכות כבר זמן מה" (body: up to 3 titles)                      | `wk:{YYYY-Www}:{uid}`                        |
 
 - **Stuck** means open AND actionable (`min(dueDate, scheduledFor)` is empty or ≤ today) AND
   (≥ 21 calendar days since `ageStart`, OR `snoozeCount` ≥ 3). `ageStart` is the creation day for
@@ -102,17 +111,41 @@ private key. The run reads the project id from it.
 The repo is public, so **Actions logs are public**. A real run logs counts only: no names, task
 titles, tokens or household ids.
 
+## Scheduling
+
+GitHub's `schedule` trigger is best effort. On this repo the `*/5` cron actually fires every
+2.5–6 hours, so it cannot time notifications. Instead a free external scheduler (cron-job.org; the
+click-by-click setup is in [SETUP.md](../../SETUP.md), section 6) starts the workflow every 5
+minutes through the `workflow_dispatch` REST API. Dispatched runs start within seconds. The
+schedule stays as a fallback.
+
+```http
+POST https://api.github.com/repos/eladcdr-del/tasks-management-app/actions/workflows/notify.yml/dispatches
+Authorization: Bearer <fine-grained PAT: this repository only, Actions: Read and write>
+Accept: application/vnd.github+json
+X-GitHub-Api-Version: 2022-11-28
+
+{"ref":"ccr-4db4aa05-kbrwag"}
+```
+
+A good call answers `204 No Content` and a new run appears under Actions → notify. Extra, late or
+overlapping triggers are harmless: `concurrency` runs one at a time and the dedupe keys stop
+repeats. Runs are free because the repo is public.
+
+**Without the external trigger** (not set up yet, or its token expired and calls get `401`), only
+the sparse schedule runs. Event pushes then arrive hours late. Reminders still go out the same day,
+because their windows catch up until 22:00, and completions survive a gap of up to 24h. To recover
+from an expired token, create a new one and paste it into the `Authorization` header on
+cron-job.org.
+
 ## Caveats
 
-- **Cron delay.** GitHub starts scheduled runs late, often 5–15 minutes late, and under heavy load
-  it skips some. A reminder can therefore arrive a little after its window opens. The windows are
-  hours long, so a skipped run is caught by the next one.
 - **The 60-day auto-disable.** GitHub disables scheduled workflows in a repo with no activity for
-  60 days. The last step, _Keepalive_, runs on Sundays in the first run after 06:00 UTC and on
-  every manual run. It calls
+  60 days. The last step, _Keepalive_, runs on every run, scheduled or dispatched. It calls
   `gh api -X PUT repos/$GITHUB_REPOSITORY/actions/workflows/notify.yml/enable` with the job's own
   token (`permissions: actions: write`). This is the keepalive-workflow "API" method and makes no
-  commits. It runs even without the secret. If the workflow does get disabled, GitHub emails a
-  warning first: open Actions → notify → **Enable workflow**.
+  commits. The call is idempotent; if it fails, the step only warns and the next run tries again.
+  It runs even without the secret. If the workflow does get disabled, GitHub emails a warning
+  first: open Actions → notify → **Enable workflow**.
 - Optional: to delete expired keys even without the daily prune, add a Firestore TTL policy on the
   `sent` collection group, field `expireAt`.

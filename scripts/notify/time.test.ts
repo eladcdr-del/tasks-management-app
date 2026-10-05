@@ -3,6 +3,7 @@ import {
   addDaysISO,
   diffDays,
   inWindow,
+  isBeforeLocal,
   isoDateOf,
   isoWeekOf,
   isQuietHours,
@@ -104,6 +105,22 @@ describe('inWindow', () => {
 
   it('rejects malformed times', () => {
     expect(() => inWindow({ hour: 1, minute: 0 }, '8am', '12:00')).toThrow(RangeError);
+  });
+});
+
+describe('isBeforeLocal', () => {
+  it('compares the Jerusalem wall clock on that day; any earlier day counts', () => {
+    expect(isBeforeLocal(Date.parse('2026-10-05T08:59:00Z'), '2026-10-05', '12:00')).toBe(true); // 11:59
+    expect(isBeforeLocal(Date.parse('2026-10-05T09:00:00Z'), '2026-10-05', '12:00')).toBe(false); // 12:00
+    expect(isBeforeLocal(Date.parse('2026-10-04T20:00:00Z'), '2026-10-05', '00:00')).toBe(true); // 23:00 the day before
+    expect(isBeforeLocal(Date.parse('2026-10-05T21:00:00Z'), '2026-10-05', '23:59')).toBe(false); // the next day
+  });
+
+  it('is DST-proof: noon is 10:00Z on the fall-back day, 09:00Z the day before', () => {
+    expect(isBeforeLocal(Date.parse('2026-10-24T08:59:00Z'), '2026-10-24', '12:00')).toBe(true);
+    expect(isBeforeLocal(Date.parse('2026-10-24T09:00:00Z'), '2026-10-24', '12:00')).toBe(false);
+    expect(isBeforeLocal(Date.parse('2026-10-25T09:59:00Z'), '2026-10-25', '12:00')).toBe(true);
+    expect(isBeforeLocal(Date.parse('2026-10-25T10:00:00Z'), '2026-10-25', '12:00')).toBe(false);
   });
 });
 

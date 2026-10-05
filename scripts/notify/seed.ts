@@ -179,8 +179,8 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
     taskId: 't-milk',
     taskTitle: 'לקנות חלב'
   });
-  event('ev-jar', 'jar_filled', michal, 20 * 60_000, { taskId: 't-milk', taskTitle: 'לקנות חלב' });
-  event('ev-done-stale', 'completed', dani, 13 * HOUR, {
+  event('ev-jar', 'jar_filled', michal, 20 * 60_000); // the app writes fills with no task
+  event('ev-done-stale', 'completed', dani, 25 * HOUR, {
     taskId: 't-old',
     taskTitle: 'לשטוף את הרכב'
   });

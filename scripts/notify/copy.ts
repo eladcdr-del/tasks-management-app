@@ -81,12 +81,12 @@ export function completedMany(actor: Actor, taskTitles: (string | null)[]): Copy
   };
 }
 
-/** "הצנצנת התמלאה!" + "הגיע הזמן ל: {treat}". */
+/** "הצנצנת התמלאה!" + "הגיע הזמן לצ׳ופר: {treat}" (the app's own words on the jar screen). */
 export function jarFilled(treat: string | null | undefined): Copy {
   const t = (treat ?? '').trim();
   return {
     title: 'הצנצנת התמלאה!',
-    body: t ? `הגיע הזמן ל: ${t}` : 'הגיע הזמן לפינוק שקבעתם'
+    body: t ? `הגיע הזמן לצ׳ופר: ${t}` : 'הגיע הזמן לצ׳ופר שקבעתם'
   };
 }
 
@@ -125,17 +125,20 @@ export function dueMany(taskTitles: string[]): Copy {
   return { title: `${taskTitles.length} משימות להיום`, body: titleList(taskTitles) };
 }
 
-/** Evening before a hard deadline, one task: "מחר אחרון: {title}". */
+/** Evening before a hard deadline, one task: "מחר המועד האחרון: {title}". */
 export function eveOne(task: ReminderTask): Copy {
   return {
-    title: `מחר אחרון: ${cleanTitle(task.title)}`,
-    body: task.dueTime ? `נשאר עוד יום · מחר עד השעה ${task.dueTime}` : 'נשאר עוד יום'
+    title: `מחר המועד האחרון: ${cleanTitle(task.title)}`,
+    body: task.dueTime ? `עד השעה ${task.dueTime}` : 'נשאר עוד יום'
   };
 }
 
-/** Evening before hard deadlines, coalesced: "מחר אחרון: 2 משימות". */
+/** Evening before hard deadlines, coalesced: "מחר המועד האחרון ל-2 משימות". */
 export function eveMany(taskTitles: string[]): Copy {
-  return { title: `מחר אחרון: ${taskTitles.length} משימות`, body: titleList(taskTitles) };
+  return {
+    title: `מחר המועד האחרון ל-${taskTitles.length} משימות`,
+    body: titleList(taskTitles)
+  };
 }
 
 /** Sunday nudge: "יש 2 משימות שמחכות כבר זמן מה", up to 3 titles in the body. */
