@@ -290,31 +290,48 @@ describe('M3: never consume text a chip does not carry', () => {
 
 // ───────────────────────────── 5. M4: a lone time next to a day word ─────────────────────────────
 
+// A time with no day was once saved on its own, where no screen shows it (launch audit CON-1): now
+// it is not read at all and stays in the title, next to the day word that blocked the date.
 describe('M4: a lone time next to an unconsumed day word implies no date', () => {
   it.each([
     'ארוחת שישי אצל סבתא 19:30',
     'ארוחת חג אצל סבתא 19:30',
     'הצגה באוקטובר בשעה 20:00',
-    'מוצאי חג בשעה 20:00'
-  ])('%s', (input) => {
-    const r = parse(input);
-    expect(r.dueTime).toBeDefined();
-    expect(r.scheduledFor).toBeUndefined();
-    expect(chip(r, 'time')?.alsoSets).toBeUndefined();
-    expect(chip(r, 'time')?.label).toMatch(/^\d\d:\d\d$/);
+    'מוצאי חג בשעה 20:00',
+    // CON-1: the name שני, Friday dinner and the kindergarten's Kabbalat Shabbat
+    'לאסוף את שני מהגן ב-16:30',
+    'להתקשר לשני ב-4',
+    'ארוחת שישי אצל סבתא ב-19:30',
+    'קבלת שבת בגן ב-12',
+    'קבלת שבת בגן ב-12:00',
+    'לקנות שני כרטיסים להצגה ב-20:00',
+    'לשבת עם הילדים על שיעורי בית ב-17:00',
+    'תור ראשון לפיזיותרפיה ב-10:00',
+    'אסיפת הורים של שני בשעה 19:00'
+  ])('%s: no date, so the time stays in the title', (input) => {
+    expectUntouched(input);
+    expect(chip(parse(input), 'time')).toBeUndefined();
   });
 
-  it('the title keeps the day word', () => {
-    expect(fields('ארוחת שישי אצל סבתא 19:30')).toEqual({
-      title: 'ארוחת שישי אצל סבתא',
-      dueTime: '19:30'
-    });
+  it('the title keeps the day word and the time', () => {
+    expect(fields('ארוחת שישי אצל סבתא 19:30')).toEqual({ title: 'ארוחת שישי אצל סבתא 19:30' });
   });
 
-  it('a dismissed date leaves the time without an invented date', () => {
+  it('a dismissed date leaves the time in the title too, without an invented date', () => {
     const r = parse('מחר 19:30 להתקשר לסבתא', NOW, ['date:מחר']);
-    expect(r.dueTime).toBe('19:30');
+    expect(r.dueTime).toBeUndefined();
     expect(r.scheduledFor).toBeUndefined();
+    expect(r.title).toBe('מחר 19:30 להתקשר לסבתא');
+  });
+
+  it.each([
+    ['השבוע ב-17:00 להתקשר', 'ב-17:00 להתקשר'],
+    ['כל שבוע ב-17:00 חוג', 'ב-17:00 חוג']
+  ])('a week plan has no time of day: %s keeps the time in the title', (input, title) => {
+    const r = parse(input);
+    expect(r.weekPlan).toBe(true);
+    expect(r.dueTime).toBeUndefined();
+    expect(r.title).toBe(title);
   });
 
   it('with no day word in the line a lone time still implies today or tomorrow', () => {
@@ -613,4 +630,44 @@ describe('fail-safe additions', () => {
       expect(parse(input).scheduledFor).toBeUndefined();
     }
   );
+});
+
+// ───────────────────────────── 12. launch audit ─────────────────────────────
+
+describe('launch audit CON-8: a plan, a deadline and one time', () => {
+  it('a time next to the plan stays in the title: as dueTime it would read as the deadline', () => {
+    expect(fields('תור לרופא מחר ב-10 עד יום חמישי')).toEqual({
+      title: 'תור לרופא ב-10',
+      scheduledFor: '2026-10-05',
+      dueDate: '2026-10-08',
+      categoryId: 'health'
+    });
+    const r = parse('להזמין אינסטלטור דחוף מחר בבוקר ב-8:30 עד יום חמישי מועד אחרון');
+    expect(r).toMatchObject({
+      title: 'להזמין אינסטלטור ב-8:30',
+      scheduledFor: '2026-10-05',
+      dueDate: '2026-10-08',
+      hardDeadline: true
+    });
+    expect(r.dueTime).toBeUndefined();
+    expect(chip(r, 'time')).toBeUndefined();
+  });
+
+  it('a time right after the deadline is the deadline time, steered by its own part of day', () => {
+    expect(fields('מחר בבוקר להתחיל, עד יום חמישי בשעה 5 להגיש')).toEqual({
+      title: 'להתחיל, להגיש',
+      scheduledFor: '2026-10-05',
+      dueDate: '2026-10-08',
+      dueTime: '17:00'
+    });
+    expect(fields('מחר להתחיל, עד יום חמישי בערב בשעה 8').dueTime).toBe('20:00');
+  });
+
+  it('with a deadline and no plan the time is the deadline time, as before', () => {
+    expect(fields('להחזיר חולצה עד יום חמישי בשעה 17:30')).toMatchObject({
+      title: 'להחזיר חולצה',
+      dueDate: '2026-10-08',
+      dueTime: '17:30'
+    });
+  });
 });

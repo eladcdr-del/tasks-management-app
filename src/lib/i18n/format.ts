@@ -333,7 +333,8 @@ export type WhenFields = Pick<Task, 'dueDate' | 'scheduledFor' | 'dueTime'> & {
  *                           "תוכננה לאתמול · עד מחר" (today: it is in Today because of the plan)
  *   week plan, no due date  "השבוע" / "סוף השבוע" / "בשבוע הבא" / "שבוע של 24/10" /
  *                           "תוכננה לשבוע שעבר" (see weekPlanChip; a week has no time of day)
- * null when the task has no date (or the date is malformed).
+ *   a time and no date      "17:30" (normal: quick add no longer saves one, older tasks may)
+ * null when the task has no date and no time (or the date is malformed).
  * Only the tone and text are time-aware: BUCKETING STAYS DATE-ONLY (a task due today at 09:00 is in
  * "today" all day, and becomes overdue at midnight, not at 09:01).
  */
@@ -344,6 +345,10 @@ export function whenChip(
 ): WhenChip | null {
   const isDue = task.dueDate !== null;
   const date = task.dueDate ?? task.scheduledFor;
+  // a time with no date (quick add once saved one) still shows rather than vanishing
+  if (date === null && timeMinutes(task.dueTime) !== null) {
+    return { text: formatTime(task.dueTime as string), tone: 'normal' };
+  }
   if (date === null || !isValidISO(date) || !isValidISO(today)) return null;
   if (!isDue && task.weekPlan === true) return weekPlanChip(date, today);
 
