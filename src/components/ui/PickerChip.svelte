@@ -45,7 +45,9 @@
   <button type="button" class="main" aria-haspopup="dialog" {...rest}>
     {#if Icon}<Icon class="pc-icon" strokeWidth={ICON_STROKE} aria-hidden="true" />{/if}
     <span class="text">
-      <span class="label">{label}</span><span class="sep" aria-hidden="true"> · </span><span
+      <!-- the spaces are expressions: Svelte trims whitespace at the edges of a tag ("מי·בחירה"),
+           and they sit outside the hidden dot so the button's name is "מי בחירה" -->
+      <span class="label">{label}</span>{' '}<span class="sep" aria-hidden="true">·</span>{' '}<span
         class="value"
         dir={filled && userText ? textDir(value) : undefined}>{filled ? value : he.ui.choose}</span
       >
