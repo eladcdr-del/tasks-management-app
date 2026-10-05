@@ -68,7 +68,14 @@ const snackNow = (page: Page) =>
 
 async function longPress(page: Page, target: Locator) {
   await target.evaluate((el) => el.scrollIntoView({ block: 'center' }));
-  const box = (await target.boundingBox())!;
+  // A smooth scroll (a pulse tap) may still be moving the list: press only once it rests.
+  let box = (await target.boundingBox())!;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(50);
+    const next = (await target.boundingBox())!;
+    if (Math.abs(next.y - box.y) < 0.5) break;
+    box = next;
+  }
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.waitForTimeout(650);
@@ -122,6 +129,8 @@ test('delete several at once (one undo window), and take several at once, live o
 
   // ── מיכל: a long press on one, a tap on another, "מחיקה (2)" ──
   await longPress(mom.page, row(mom.page, shed).locator('a.title'));
+  await expect(mom.page.locator('[data-select-count]')).toHaveText('נבחרה משימה אחת');
+  await expect(row(mom.page, shed).locator('[data-pick]')).toHaveAttribute('aria-checked', 'true');
   await row(mom.page, tap).locator('article').click();
   await expect(mom.page.locator('[data-select-count]')).toHaveText('נבחרו 2');
   await mom.page.getByRole('button', { name: 'מחיקה (2)' }).click();
@@ -131,11 +140,11 @@ test('delete several at once (one undo window), and take several at once, live o
   expect(await openIds(dad.page)).toEqual(expect.arrayContaining([shed, tap]));
   // …then both leave his list too; the others stay.
   await expect
-    .poll(() => openIds(dad.page), { timeout: 12_000 })
-    .not.toEqual(expect.arrayContaining([shed]));
-  const left = await openIds(dad.page);
-  expect(left).not.toContain(tap);
-  expect(left).toEqual(expect.arrayContaining([batteries, bill, ac]));
+    .poll(async () => (await openIds(dad.page)).filter((id) => id === shed || id === tap), {
+      timeout: 12_000
+    })
+    .toEqual([]);
+  expect(await openIds(dad.page)).toEqual(expect.arrayContaining([batteries, bill, ac]));
 
   // ── דני: "בחירה", two of the free ones, "אני לוקח (2)" ──
   await dad.page.getByRole('button', { name: 'בחירה', exact: true }).click();

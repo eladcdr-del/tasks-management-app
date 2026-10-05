@@ -46,7 +46,14 @@ const snackNow = (page: Page) =>
 /** Holds a press on `target` for `ms` (a long press with the primary button). */
 async function longPress(page: Page, target: Locator, ms = 650) {
   await target.evaluate((el) => el.scrollIntoView({ block: 'center' }));
-  const box = (await target.boundingBox())!;
+  // A smooth scroll (a pulse tap) may still be moving the list: press only once it rests.
+  let box = (await target.boundingBox())!;
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(50);
+    const next = (await target.boundingBox())!;
+    if (Math.abs(next.y - box.y) < 0.5) break;
+    box = next;
+  }
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.waitForTimeout(ms);
