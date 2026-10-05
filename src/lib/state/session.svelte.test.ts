@@ -13,6 +13,7 @@ import { ClockStore } from './clock.svelte';
 import {
   gateTarget,
   peekPendingInvite,
+  PROFILE_DRAFT_KEY,
   rememberPendingInvite,
   routeAllowed,
   SessionStore,
@@ -298,6 +299,47 @@ describe('phases and subscriptions', () => {
     expect(session.user?.uid).toBe(MICHAL);
     expect(tasks.pulse).toEqual({ attention: 3, today: 4, waiting: 3 });
     expect(c.active()).toEqual(ALL_ONE);
+  });
+});
+
+describe('profile draft', () => {
+  it('survives a reload for the same account, is hidden from another, and goes on sign-out', async () => {
+    const c = await demoRepo('empty');
+    const before = makeStores();
+    await before.session.boot({ resolution: DEMO, createRepo: async () => c.repo });
+    await before.session.signIn();
+    const uid = before.session.user!.uid;
+    expect(before.session.profileDraft).toBeNull();
+    before.session.profileDraft = PROFILE;
+    expect(JSON.parse(sessionStorage.getItem(PROFILE_DRAFT_KEY)!)).toEqual({
+      uid,
+      profile: PROFILE
+    });
+
+    // The tab reloads (or Android brings a discarded tab back): a fresh store, same storage.
+    const after = makeStores();
+    expect(after.session.profileDraft).toBeNull(); // nobody is signed in yet
+    await after.session.boot({ resolution: DEMO, createRepo: async () => c.repo });
+    expect(after.session.user?.uid).toBe(uid);
+    expect(after.session.profileDraft).toEqual(PROFILE);
+
+    // Another account in the same tab never sees it.
+    c.repo.actAs('someone-else');
+    await after.session.settled();
+    expect(after.session.profileDraft).toBeNull();
+    c.repo.actAs(uid);
+    await after.session.settled();
+    expect(after.session.profileDraft).toEqual(PROFILE);
+
+    await after.session.signOut();
+    expect(sessionStorage.getItem(PROFILE_DRAFT_KEY)).toBeNull();
+  });
+
+  it('ignores a malformed stored draft', () => {
+    sessionStorage.setItem(PROFILE_DRAFT_KEY, '{"uid":"x","profile":{"displayName":"א"}}');
+    expect(makeStores().session.profileDraft).toBeNull();
+    sessionStorage.setItem(PROFILE_DRAFT_KEY, 'not json');
+    expect(makeStores().session.profileDraft).toBeNull();
   });
 });
 

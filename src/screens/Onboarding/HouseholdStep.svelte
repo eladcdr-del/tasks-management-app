@@ -1,11 +1,12 @@
 <script lang="ts">
   // owner: step 3.1. #/onboarding/household: create a household ("איך נקרא לבית?", default
   // "הבית שלנו") → session.createHousehold, or "יש לי קישור הזמנה" (paste a link or code) →
-  // #/join/<code>. Uses session.profileDraft; without one (a reload, an older session) it falls
-  // back to the Google name, with a row to fill in the details first.
+  // #/join/<code>. Uses session.profileDraft (kept in sessionStorage across reloads); without one
+  // (the boot gate lands a fresh sign-in here) it sends the user to the profile step first, so a
+  // house is never created with a silent neutral "את/ה" founder.
+  import { untrack } from 'svelte';
   import Pencil from '@lucide/svelte/icons/pencil';
   import Link from '@lucide/svelte/icons/link';
-  import type { NewMemberProfile } from '$lib/data/repository';
   import { RepoError } from '$lib/data/repository';
   import { repoErrorMessage } from '$lib/data/firebase/errors';
   import { Avatar, Banner, Button, TextField } from '$components/ui';
@@ -23,20 +24,21 @@
   let link = $state('');
   let linkError = $state<string | undefined>();
 
-  const profile: NewMemberProfile = $derived(
-    session.profileDraft ?? {
-      displayName: session.user?.displayName?.split(' ')[0] || session.user?.email || '',
-      photoURL: session.user?.photoURL ?? null,
-      color: 'terracotta',
-      addressAs: 'n'
-    }
-  );
+  const profile = $derived(session.profileDraft);
+  const toProfile = () => router.navigate('#/onboarding/profile', { replace: true });
+
+  // On arrival only (creating the house later must not bounce anywhere).
+  $effect(() => {
+    untrack(() => {
+      if (!session.profileDraft) toProfile();
+    });
+  });
 
   async function create(e: SubmitEvent) {
     e.preventDefault();
     if (busy) return;
-    if (!session.profileDraft && !profile.displayName) {
-      router.navigate('#/onboarding/profile');
+    if (!profile) {
+      toProfile();
       return;
     }
     busy = true;
@@ -63,17 +65,19 @@
 </script>
 
 <OnboardingFrame screen="onboarding-household" title={t.title} lead={t.subtitle}>
-  <a class="me" href="#/onboarding/profile" data-edit-profile>
-    <Avatar
-      name={profile.displayName}
-      photoURL={profile.photoURL}
-      color={profile.color}
-      size="md"
-      decorative
-    />
-    <span class="me-name" dir="auto">{profile.displayName}</span>
-    <span class="me-edit"><Pencil size={16} aria-hidden="true" />{t.editMe}</span>
-  </a>
+  {#if profile}
+    <a class="me" href="#/onboarding/profile" data-edit-profile>
+      <Avatar
+        name={profile.displayName}
+        photoURL={profile.photoURL}
+        color={profile.color}
+        size="md"
+        decorative
+      />
+      <span class="me-name" dir="auto">{profile.displayName}</span>
+      <span class="me-edit"><Pencil size={16} aria-hidden="true" />{t.editMe}</span>
+    </a>
+  {/if}
 
   <form class="create" onsubmit={create} novalidate>
     <TextField

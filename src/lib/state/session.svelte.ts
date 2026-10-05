@@ -82,8 +82,7 @@ export class SessionStore {
   booting = $state(true);
   /** A boot failure (the splash then offers a retry). */
   error = $state.raw<unknown>(null);
-  /** Profile collected by the onboarding profile step for createHousehold / joinHousehold (3.1). */
-  profileDraft = $state.raw<NewMemberProfile | null>(null);
+  #draft = $state.raw<StoredDraft | null>(loadProfileDraft());
 
   readonly phase: Phase = $derived(
     this.booting
@@ -114,6 +113,21 @@ export class SessionStore {
     this.#scoped = opts.scoped ?? [defaultHousehold, defaultTasks];
     this.#repoStores = opts.repoStores ?? [defaultSync, defaultUi];
     this.#onError = opts.onError ?? ((e) => defaultUi.pushError(e));
+  }
+
+  /**
+   * Profile collected by the onboarding profile step for createHousehold / joinHousehold (3.1).
+   * Kept in sessionStorage (for the signed-in account only, cleared on sign-out), so a reload or a
+   * tab Android discarded between the steps does not lose the את / אתה choice.
+   */
+  get profileDraft(): NewMemberProfile | null {
+    const d = this.#draft;
+    return d && d.uid === (this.user?.uid ?? null) ? d.profile : null;
+  }
+
+  set profileDraft(profile: NewMemberProfile | null) {
+    this.#draft = profile ? { uid: this.user?.uid ?? null, profile } : null;
+    saveProfileDraft(this.#draft);
   }
 
   /** Starts the boot once (later calls return the same promise). Never rejects: see `error`. */
@@ -155,6 +169,7 @@ export class SessionStore {
     const repo = this.#requireRepo();
     // Tear down first: listeners must not outlive the credentials they were opened with.
     this.#detach();
+    this.profileDraft = null;
     this.user = null;
     this.householdId = null;
     try {
@@ -321,6 +336,39 @@ export class SessionStore {
   #requireRepo(): Repository {
     if (!this.repo) throw new RepoError('unknown', 'no repository (setup mode or still booting)');
     return this.repo;
+  }
+}
+
+// ── Profile draft (onboarding profile step → create / join) ──────────────────────────────────────
+
+export const PROFILE_DRAFT_KEY = 'homecare.profileDraft';
+
+interface StoredDraft {
+  /** The account it was filled in for (null: before sign-in, not used in practice). */
+  uid: string | null;
+  profile: NewMemberProfile;
+}
+
+function loadProfileDraft(): StoredDraft | null {
+  try {
+    const raw = sessionStore()?.getItem(PROFILE_DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Partial<StoredDraft> | null;
+    const p = d?.profile;
+    if (!p || typeof p.displayName !== 'string' || typeof p.color !== 'string') return null;
+    if (p.addressAs !== 'f' && p.addressAs !== 'm' && p.addressAs !== 'n') return null;
+    return { uid: typeof d.uid === 'string' ? d.uid : null, profile: p };
+  } catch {
+    return null;
+  }
+}
+
+function saveProfileDraft(d: StoredDraft | null): void {
+  try {
+    if (d) sessionStore()?.setItem(PROFILE_DRAFT_KEY, JSON.stringify(d));
+    else sessionStore()?.removeItem(PROFILE_DRAFT_KEY);
+  } catch {
+    // Storage blocked: the draft lasts for this page load only.
   }
 }
 

@@ -175,9 +175,9 @@ test('gating: signed out → welcome; an invite opened signed out comes back aft
   await openApp(page);
   await hooksReady(page);
 
-  // A user with no household lands on onboarding.
+  // A user with no household lands on onboarding, profile first (no silent neutral profile).
   await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('newcomer'));
-  await expect(page).toHaveURL(/#\/onboarding\/household$/);
+  await expect(page).toHaveURL(/#\/onboarding\/profile$/);
   expect(await phase(page)).toBe('no-household');
 
   // Signed out: everything leads to #/welcome; a join link is kept for after sign-in.
