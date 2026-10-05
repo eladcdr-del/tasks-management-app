@@ -1,15 +1,19 @@
 // owner: step 5.1. Regenerates every app icon from the AppMark geometry
-// (src/components/illustrations/AppMark.svelte: keep HOUSE / CHECK / colours in sync with it).
+// (src/components/illustrations/AppMark.svelte: keep HOUSE / RIGHT / colours in sync with it).
 //
 //   node scripts/generate-icons.mjs
 //
+// The mark: a folded-paper house in two tones (cream and sand) on a warm terracotta field. The two
+// halves are the two people who share the home.
+//
 // Writes (all committed, served from public/):
-//   icons/source.svg            AppMark `tile`: terracotta house on a cream rounded tile (r = 116)
-//   icons/source-maskable.svg   AppMark `fullBleed`: edge-to-edge cream, house ×1.2 (safe zone kept)
+//   icons/source.svg            AppMark `tile`: the house on a terracotta rounded tile (r = 116)
+//   icons/source-maskable.svg   AppMark `fullBleed`: edge-to-edge terracotta (the OS applies its
+//                               own mask); the house stays inside the maskable safe circle (r = 40%)
 //   icons/badge.svg             monochrome white house, tight crop (Android status-bar badge)
 //   icons/icon-192.png, icon-512.png           manifest "any"       (source.svg)
 //   icons/maskable-192.png, maskable-512.png   manifest "maskable"  (source-maskable.svg)
-//   icons/apple-touch-180.png                  iOS home screen (opaque cream corners)
+//   icons/apple-touch-180.png                  iOS home screen (full bleed; iOS rounds the corners)
 //   icons/badge-96.png                         notification badge (sw.ts)
 //   favicon.svg, favicon.ico (16/32/48)
 //
@@ -25,32 +29,37 @@ import { sharpsToIco } from 'sharp-ico';
 const publicDir = fileURLToPath(new URL('../public/', import.meta.url));
 mkdirSync(`${publicDir}icons`, { recursive: true });
 
-const CREAM = '#FBF6EF';
+// The house (softened ridge, gently rounded base corners) and its right half, split down the
+// ridge. The whole house is filled cream and the right half laid over it in sand, so no seam can
+// show between the halves at any size.
 const HOUSE =
-  'M221.7 155.6Q256 128 290.3 155.6L368.2 218.4Q390 236 390 264V350Q390 394 346 394H166' +
-  'Q122 394 122 350V264Q122 236 143.8 218.4Z';
-const CHECK = 'M206 304L242 339L308 271';
+  'M256 140Q260 140 264 143.5L375 240Q380 244 380 250V370Q380 384 366 384H146' +
+  'Q132 384 132 370V250Q132 244 137 240L248 143.5Q252 140 256 140Z';
+const RIGHT = 'M256 140Q260 140 264 143.5L375 240Q380 244 380 250V370Q380 384 366 384H256Z';
+// The house is drawn ×1.14 around its centre on the 512 canvas (corners stay inside r = 40%).
+const HOUSE_TRANSFORM = 'translate(256 262) scale(1.14) translate(-256 -262)';
+const CREAM = '#FBF6EF';
+const SAND = '#E9CDB2';
+const FIELD_TOP = '#E3885D';
+const FIELD_BOTTOM = '#CF6A3D';
 const GRADIENT =
   '<linearGradient id="g" x1="0" y1="0" x2="0" y2="1">' +
-  '<stop offset="0" stop-color="#E2875C"/><stop offset="1" stop-color="#D2703F"/></linearGradient>';
+  `<stop offset="0" stop-color="${FIELD_TOP}"/><stop offset="1" stop-color="${FIELD_BOTTOM}"/></linearGradient>`;
 
 /** @param {{ fullBleed?: boolean, mono?: boolean }} [opts] */
 function markSvg({ fullBleed = false, mono = false } = {}) {
-  const transform = fullBleed
-    ? ' transform="translate(256 261) scale(1.2) translate(-256 -261)"'
-    : '';
-  const viewBox = mono ? '104 116 304 304' : '0 0 512 512';
-  const tile = mono
-    ? ''
-    : `<rect width="512" height="512" rx="${fullBleed ? 0 : 116}" fill="${CREAM}"/>`;
-  const fill = mono ? '#FFFFFF' : 'url(#g)';
+  if (mono) {
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="120 128 272 272">\n` +
+      `<path d="${HOUSE}" fill="#FFFFFF"/>\n` +
+      `</svg>\n`
+    );
+  }
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="${viewBox}">\n` +
-    `<defs><mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">` +
-    `<g${transform}><path d="${HOUSE}" fill="#fff"/>` +
-    `<path d="${CHECK}" fill="none" stroke="#000" stroke-width="36" stroke-linecap="round" stroke-linejoin="round"/>` +
-    `</g></mask>${mono ? '' : GRADIENT}</defs>\n` +
-    `${tile}<rect width="512" height="512" fill="${fill}" mask="url(#m)"/>\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">\n` +
+    `<defs>${GRADIENT}</defs>\n` +
+    `<rect width="512" height="512" rx="${fullBleed ? 0 : 116}" fill="url(#g)"/>\n` +
+    `<g transform="${HOUSE_TRANSFORM}"><path d="${HOUSE}" fill="${CREAM}"/><path d="${RIGHT}" fill="${SAND}"/></g>\n` +
     `</svg>\n`
   );
 }
@@ -61,7 +70,7 @@ const write = (path, content) => writeFileSync(publicDir + path, content);
 /**
  * @param {string} svg
  * @param {number} size
- * @param {boolean} [opaque] flatten onto cream (iOS draws transparency black)
+ * @param {boolean} [opaque] flatten (iOS draws transparency black)
  */
 function render(svg, size, opaque = false) {
   // Rasterise at ≥ 2× the target size, then downscale: crisp edges at every size.
@@ -69,7 +78,7 @@ function render(svg, size, opaque = false) {
     size,
     size
   );
-  if (opaque) img = img.flatten({ background: CREAM });
+  if (opaque) img = img.flatten({ background: FIELD_BOTTOM });
   return img.png({ compressionLevel: 9 });
 }
 
@@ -87,7 +96,7 @@ await Promise.all([
   render(tile, 512).toFile(`${publicDir}icons/icon-512.png`),
   render(maskable, 192).toFile(`${publicDir}icons/maskable-192.png`),
   render(maskable, 512).toFile(`${publicDir}icons/maskable-512.png`),
-  render(tile, 180, true).toFile(`${publicDir}icons/apple-touch-180.png`),
+  render(maskable, 180, true).toFile(`${publicDir}icons/apple-touch-180.png`),
   render(badge, 96).toFile(`${publicDir}icons/badge-96.png`)
 ]);
 

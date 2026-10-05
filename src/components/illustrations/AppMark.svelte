@@ -1,23 +1,23 @@
 <script lang="ts">
   /*
-   * AppMark: the HomeCare brand mark. A soft, round-cornered house with a check knocked out of
-   * it (the check is real transparency, so it shows whatever is behind: cream, a card, dark mode).
+   * AppMark: the HomeCare brand mark. A folded-paper house in two tones, split down the ridge:
+   * the two halves are the two people who share the home.
    *
-   *   <AppMark size={48} />            inline mark in var(--accent) (adapts to dark mode)
-   *   <AppMark size={512} tile />      app icon: terracotta house on a cream rounded tile, kept
-   *                                    inside the maskable safe zone (r = 40% of the canvas)
-   *   <AppMark size={512} fullBleed /> maskable icon: cream fills the whole square (the OS applies
-   *                                    its own mask) and the house is enlarged ×1.2, still inside
-   *                                    the maskable safe circle (r = 40%)
-   *   <AppMark mono />                 currentColor, for one-colour contexts
+   *   <AppMark size={48} />            inline mark in var(--accent), right half a shade deeper
+   *                                    (adapts to dark mode)
+   *   <AppMark size={512} tile />      app icon: cream/sand house on a terracotta rounded tile,
+   *                                    kept inside the maskable safe zone (r = 40% of the canvas)
+   *   <AppMark size={512} fullBleed /> maskable icon: terracotta fills the whole square (the OS
+   *                                    applies its own mask); same house, same safe zone
+   *   <AppMark mono />                 the whole house in currentColor, for one-colour contexts
    *
-   * Step 5.1 exports `tile` at 512 as public/icons/source.svg.
+   * scripts/generate-icons.mjs draws the same geometry (HOUSE / RIGHT / colours): keep in sync.
    */
   interface Props {
     size?: number;
-    /** Cream rounded-square tile behind the mark (the home-screen icon). */
+    /** Terracotta rounded-square tile behind the mark (the home-screen icon). */
     tile?: boolean;
-    /** Maskable icon: square, edge-to-edge cream, larger house (implies the tile colours). */
+    /** Maskable icon: square, edge-to-edge terracotta (implies the tile colours). */
     fullBleed?: boolean;
     /** Single colour (currentColor). */
     mono?: boolean;
@@ -36,22 +36,20 @@
   }: Props = $props();
 
   const boxed = $derived(tile || fullBleed);
-  // Centre of the house's bounding box; the full-bleed mark scales around it.
-  const houseTransform = $derived(
-    fullBleed ? 'translate(256 261) scale(1.2) translate(-256 -261)' : undefined
-  );
 
   const uid = $props.id();
-  const maskId = `${uid}-mask`;
   const gradId = `${uid}-grad`;
 
-  // A soft house: a broad, rounded roof peak, gentle eaves, generous base corners.
+  // The house (softened ridge, gently rounded base corners) and its right half. The whole house is
+  // filled and the right half laid over it, so no seam can show between the halves.
   const HOUSE =
-    'M221.7 155.6Q256 128 290.3 155.6L368.2 218.4Q390 236 390 264V350Q390 394 346 394H166' +
-    'Q122 394 122 350V264Q122 236 143.8 218.4Z';
-  const CHECK = 'M206 304L242 339L308 271';
+    'M256 140Q260 140 264 143.5L375 240Q380 244 380 250V370Q380 384 366 384H146' +
+    'Q132 384 132 370V250Q132 244 137 240L248 143.5Q252 140 256 140Z';
+  const RIGHT = 'M256 140Q260 140 264 143.5L375 240Q380 244 380 250V370Q380 384 366 384H256Z';
+  // On the tile the house is drawn ×1.14 around its centre (its corners stay inside r = 40%).
+  const HOUSE_TRANSFORM = 'translate(256 262) scale(1.14) translate(-256 -262)';
   // Tight square crop around the house for inline use; the full 512 canvas for the tile.
-  const viewBox = $derived(boxed ? '0 0 512 512' : '116 128 280 280');
+  const viewBox = $derived(boxed ? '0 0 512 512' : '120 128 272 272');
 </script>
 
 <svg
@@ -64,39 +62,21 @@
   aria-hidden={title ? undefined : 'true'}
   focusable="false"
 >
-  <defs>
-    <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
-      <g transform={houseTransform}>
-        <path d={HOUSE} fill="#fff" />
-        <path
-          d={CHECK}
-          fill="none"
-          stroke="#000"
-          stroke-width="36"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </g>
-    </mask>
-    {#if boxed}
-      <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#E2875C" />
-        <stop offset="1" stop-color="#D2703F" />
-      </linearGradient>
-    {/if}
-  </defs>
   {#if boxed}
-    <rect class="tile-bg" width="512" height="512" rx={fullBleed ? 0 : 116} />
+    <defs>
+      <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#E3885D" />
+        <stop offset="1" stop-color="#CF6A3D" />
+      </linearGradient>
+    </defs>
+    <rect width="512" height="512" rx={fullBleed ? 0 : 116} fill="url(#{gradId})" />
   {/if}
-  <rect
-    class="house"
-    x="0"
-    y="0"
-    width="512"
-    height="512"
-    mask="url(#{maskId})"
-    style:fill={boxed ? `url(#${gradId})` : undefined}
-  />
+  <g transform={boxed ? HOUSE_TRANSFORM : undefined}>
+    <path class="house" d={HOUSE} />
+    {#if !mono}
+      <path class="right" d={RIGHT} />
+    {/if}
+  </g>
 </svg>
 
 <style>
@@ -110,12 +90,20 @@
     fill: var(--accent);
   }
 
+  .right {
+    fill: color-mix(in oklab, var(--accent) 78%, #000);
+  }
+
   .mono .house {
     fill: currentColor;
   }
 
-  /* The icon is brand-fixed: terracotta on cream in every theme. */
-  .tile-bg {
+  /* The icon is brand-fixed: cream and sand on terracotta in every theme. */
+  .tile .house {
     fill: #fbf6ef;
+  }
+
+  .tile .right {
+    fill: #e9cdb2;
   }
 </style>

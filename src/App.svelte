@@ -76,7 +76,7 @@
 
 {#if phase === 'booting' || !allowed}
   <div class="splash" data-phase={phase}>
-    <AppMark size={88} />
+    <AppMark size={88} tile />
     {#if session.error}
       <div class="boot-error" role="alert">
         <p>{he.errors.generic}</p>

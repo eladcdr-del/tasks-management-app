@@ -41,7 +41,7 @@
 <OnboardingFrame screen="welcome" title={t.title} lead={t.valueProp} centered>
   {#snippet hero()}
     <div class="mark">
-      <AppMark size={96} />
+      <AppMark size={96} tile />
       <span class="brand" dir="ltr">{he.common.appName}</span>
     </div>
   {/snippet}
@@ -82,6 +82,11 @@
     justify-items: center;
     gap: var(--s3);
     padding-block-start: var(--s6);
+  }
+
+  /* The app icon, lifted slightly off the page like on a home screen. */
+  .mark :global(.appmark) {
+    filter: drop-shadow(0 10px 18px rgb(160 72 34 / 0.22));
   }
 
   .brand {
