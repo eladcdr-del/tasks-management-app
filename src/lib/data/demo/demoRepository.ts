@@ -11,7 +11,7 @@
 //    rejected write. Promise-returning methods reject instead.
 //  - Every task mutation writes its ActivityEvent; push is 'pending' for requested, accepted,
 //    declined, completed and jar_filled, 'none' otherwise. Mutations with no matching event type (household, member,
-//    invite, jar settings, devices, leaving) write none.
+//    invite, jar settings, deleting the jar or an earned treat, devices, leaving) write none.
 //  - Reads are scoped like the security rules: a watcher of a household I am not a member of emits
 //    nothing, and a write to it fails with RepoError('permission').
 //  - No network: tasks never carry `pending`, and watchSync always reports synced.
@@ -33,7 +33,9 @@ import {
   applyReopen,
   backfillAllowed,
   cleanJarSettings,
+  freshJarRound,
   isFull,
+  jarDeletion,
   modeOf,
   type JarSettings
 } from '../../domain/jar';
@@ -999,7 +1001,22 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         }
         rec.household.jar = jar
           ? { ...jar, ...settings, ...(backfill ? { counts: { ...backfill } } : {}) }
-          : { ...settings, count: 0, counts: {}, round: 1, startedAt: now() };
+          : {
+              ...settings,
+              count: 0,
+              counts: {},
+              round: freshJarRound(rec.household),
+              startedAt: now()
+            };
+      });
+    },
+
+    deleteJar(hid: string): void {
+      queued((st, uid) => {
+        const rec = memberHousehold(st, hid, uid);
+        const jar = rec.household.jar;
+        if (!jar) return; // nothing to delete
+        Object.assign(rec.household, jarDeletion(jar));
       });
     },
 
@@ -1043,6 +1060,13 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const rec = visible(hid);
         return rec && Object.values(rec.treats).sort((a, b) => Number(b.id) - Number(a.id));
       }, cb);
+    },
+
+    deleteTreat(hid: string, id: string): void {
+      queued((st, uid) => {
+        const rec = memberHousehold(st, hid, uid);
+        delete rec.treats[id];
+      });
     },
 
     watchRecentEvents(hid: string, limit: number, cb: (e: ActivityEvent[]) => void): Unsubscribe {

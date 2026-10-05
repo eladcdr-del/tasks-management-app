@@ -79,7 +79,9 @@ import {
   applyCompletion,
   backfillAllowed,
   completionStep,
+  freshJarRound,
   isFull,
+  jarDeletion,
   modeOf,
   reopenStep,
   type JarSettings
@@ -1835,12 +1837,22 @@ export async function createFirebaseRepositoryImpl(
               ...(share !== undefined ? { share } : {}),
               count: 0,
               counts: {},
-              round: 1,
+              // 1, or the round of a jar deleted earlier (the rules require exactly this).
+              round: freshJarRound(household),
               startedAt: serverTimestamp()
             }
           });
         }
         return b;
+      });
+    },
+
+    deleteJar(hid: string): void {
+      queued(async () => {
+        const household = await mustReadHousehold(hid);
+        if (!household.jar) return null; // nothing to delete
+        // {jar: null, nextJarRound: <its round>}: exactly the rules' delete transition.
+        return newBatch().update(hhRef(hid), { ...jarDeletion(household.jar) });
       });
     },
 
@@ -1886,6 +1898,13 @@ export async function createFirebaseRepositoryImpl(
             .sort((a, b) => Number(b.id) - Number(a.id))
         )
       );
+    },
+
+    deleteTreat(hid: string, id: string): void {
+      queued(async () => {
+        if (typeof id !== 'string' || !/^[1-9][0-9]{0,5}$/.test(id)) return null; // no such treat
+        return newBatch().delete(doc(treatsCol(hid), id));
+      });
     },
 
     watchRecentEvents(hid: string, limit: number, cb: (e: ActivityEvent[]) => void): Unsubscribe {

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DocumentData, DocumentSnapshot } from 'firebase/firestore';
 import type { Task } from '../../domain/types';
-import { recurrenceDoc, taskFromSnap } from './converters';
+import { householdFromSnap, recurrenceDoc, taskFromSnap } from './converters';
 
 /** A minimal synced snapshot of a task document holding `recurrence`. */
 function snapWith(recurrence: unknown): DocumentSnapshot<DocumentData> {
@@ -76,5 +76,55 @@ describe('taskFromSnap recurrence (reads)', () => {
     expect(read({ freq: 'weekly', weekdays: 'mon' })).toEqual({ freq: 'weekly' });
     expect(read({ freq: 'monthly', weekdays: [1] })).toEqual({ freq: 'monthly' });
     expect(read({ interval: 2 })).toBeNull();
+  });
+});
+
+/** A minimal synced snapshot of a household document. */
+function householdSnap(fields: Record<string, unknown>): DocumentSnapshot<DocumentData> {
+  const doc = {
+    name: 'הבית שלנו',
+    memberIds: ['a', 'b'],
+    memberCount: 2,
+    maxMembers: 6,
+    createdBy: 'a',
+    createdAt: null,
+    jar: null,
+    invite: null,
+    ...fields
+  };
+  return {
+    id: 'h1',
+    metadata: { hasPendingWrites: false },
+    data: () => doc,
+    get: (k: string) => (doc as Record<string, unknown>)[k]
+  } as unknown as DocumentSnapshot<DocumentData>;
+}
+
+describe('householdFromSnap: a deleted jar', () => {
+  const jar = { treat: 'גלידה', target: 10, count: 2, round: 3, startedAt: 5 };
+
+  it('reads nextJarRound only when a jar was deleted (missing on every other household)', () => {
+    expect(householdFromSnap(householdSnap({ nextJarRound: 3 }))).toMatchObject({
+      jar: null,
+      nextJarRound: 3
+    });
+    expect('nextJarRound' in householdFromSnap(householdSnap({ jar }))).toBe(false);
+  });
+
+  it('a malformed nextJarRound is dropped (a new jar then starts at 1)', () => {
+    for (const v of [0, -1, 2.5, '3', null]) {
+      expect('nextJarRound' in householdFromSnap(householdSnap({ nextJarRound: v }))).toBe(false);
+    }
+  });
+
+  it('a map without a treat is no jar (a queued completion landing on a deleted jar)', () => {
+    expect(householdFromSnap(householdSnap({ jar: { count: 1, counts: { a: 1 } } })).jar).toBe(
+      null
+    );
+    expect(householdFromSnap(householdSnap({ jar: [1, 2] })).jar).toBeNull();
+    expect(householdFromSnap(householdSnap({ jar })).jar).toMatchObject({
+      treat: 'גלידה',
+      round: 3
+    });
   });
 });

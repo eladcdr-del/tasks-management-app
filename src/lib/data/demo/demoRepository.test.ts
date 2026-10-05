@@ -165,6 +165,29 @@ describe('demo repository: the seeded household', () => {
     });
   });
 
+  it('deleting the seeded jar keeps both earned treats; a new jar starts at round 3, and survives a reload', async () => {
+    const storageKey = uniqueKey();
+    const repo = await make({ storageKey });
+    repo.deleteJar(HID);
+    expect(await household(repo)).toMatchObject({ jar: null, nextJarRound: 3 });
+    const treats = await current<EarnedTreat[]>((cb) => repo.watchTreats(HID, cb));
+    expect(treats.map((t) => t.id)).toEqual(['2', '1']);
+    repo.setJar(HID, { treat: 'ערב סרט', mode: 'each', share: 2 });
+    expect((await household(repo)).jar).toMatchObject({
+      treat: 'ערב סרט',
+      round: 3,
+      count: 0,
+      counts: {},
+      startedAt: NOW
+    });
+    repo.deleteTreat(HID, '1');
+    await repo.flush();
+    const again = await make({ storageKey });
+    expect((await household(again)).jar).toMatchObject({ treat: 'ערב סרט', round: 3 });
+    const kept = await current<EarnedTreat[]>((cb) => again.watchTreats(HID, cb));
+    expect(kept.map((t) => t.id)).toEqual(['2']);
+  });
+
   it('completing the seeded ארנונה creates next month’s instance in the same series', async () => {
     const repo = await make();
     const arnona = (await openTasks(repo)).find((t) => t.seriesId === 'seed-arnona')!;

@@ -129,9 +129,14 @@ function goalFrom(j: Record<string, unknown>): Pick<TreatJar, 'mode' | 'share' |
   };
 }
 
+/**
+ * The stored jar, or null. A map without a treat is no jar: it can only be the local echo of a
+ * completion's increments queued while the jar still existed, landing on a jar deleted meanwhile
+ * (the rules reject that write, and the cache then drops it).
+ */
 function jarFrom(v: unknown): TreatJar | null {
-  if (!v || typeof v !== 'object') return null;
-  const j = v as Record<string, unknown>;
+  if (!isMap(v) || typeof v.treat !== 'string') return null;
+  const j = v;
   return {
     treat: str(j.treat),
     target: num(j.target),
@@ -148,6 +153,9 @@ export function householdFromSnap(snap: Snap, writeTime?: number): Household {
     ? d.memberIds.filter((x): x is string => typeof x === 'string')
     : [];
   const inv = d.invite as Record<string, unknown> | null | undefined;
+  // Written by deleteJar only (missing on every other household).
+  const next =
+    Number.isInteger(d.nextJarRound) && Number(d.nextJarRound) >= 1 ? Number(d.nextJarRound) : null;
   return {
     id: snap.id,
     name: str(d.name),
@@ -160,7 +168,8 @@ export function householdFromSnap(snap: Snap, writeTime?: number): Household {
     invite:
       inv && typeof inv === 'object' && typeof inv.code === 'string'
         ? { code: inv.code, expiresAt: millisOr0(inv.expiresAt) }
-        : null
+        : null,
+    ...(next !== null ? { nextJarRound: next } : {})
   };
 }
 

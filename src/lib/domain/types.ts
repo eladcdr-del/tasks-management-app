@@ -20,6 +20,7 @@ export interface Household {
   id: string; name: string; memberIds: string[]; memberCount: number; maxMembers: number; // 6
   createdBy: string; createdAt: Millis; jar: TreatJar | null;
   invite: { code: string; expiresAt: Millis } | null;   // current active invite (members only see it)
+  nextJarRound?: number;                  // written by deleteJar (the deleted jar's round, which earned no treat): a new jar starts at it, so treats/{round} never collide. Missing = 1 (domain/jar.ts freshJarRound)
 }
 export interface Member {
   uid: string; displayName: string; photoURL: string | null; color: MemberColor; addressAs: AddressAs;
