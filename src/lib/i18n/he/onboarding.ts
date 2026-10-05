@@ -14,7 +14,10 @@ export const onboarding = {
     valueProp: 'רשימה אחת משותפת לכל מה שצריך לעשות בבית: רואים מה פתוח, מי לוקח, ומה כבר נעשה.',
     signIn: 'כניסה עם Google',
     privacy: 'הרשימה פרטית: רק בני הבית שלכם רואים אותה.',
-    errorTitle: 'ההתחברות לא הצליחה'
+    errorTitle: 'ההתחברות לא הצליחה',
+    /** Opened from an invite link while signed out. */
+    invitedTitle: 'הוזמנת להצטרף לבית',
+    invitedBody: 'נכנסים עם Google, ומיד אחר כך מצטרפים.'
   },
   profile: {
     title: 'נעים להכיר',

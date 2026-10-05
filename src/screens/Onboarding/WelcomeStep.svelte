@@ -1,10 +1,13 @@
 <script lang="ts">
-  // owner: step 3.1. #/welcome: brand hero, one-line value prop, "כניסה עם Google".
+  // owner: step 3.1. #/welcome: brand hero, one-line value prop, "כניסה עם Google". Opened from an
+  // invite link (App.svelte keeps the code while signed out), it first says that they were
+  // invited, so the generic sign-in page does not look like the wrong link.
   // After a successful sign-in the boot gate takes over (no household → onboarding, member → Home,
   // a pending invite → #/join/:code); a first-timer without a pending invite goes to the profile
   // step first. Errors show inline (Banner); a closed popup stays quiet.
   // Auth starts without Google's sign-in script (init.ts), so the first tap loads it: in Firebase
   // mode the page preconnects to Google and the auth domain to make that tap quicker.
+  import MailOpen from '@lucide/svelte/icons/mail-open';
   import { AppMark } from '$components/illustrations';
   import { Banner, Button } from '$components/ui';
   import { he } from '$lib/i18n/he';
@@ -16,6 +19,8 @@
   import OnboardingFrame from './OnboardingFrame.svelte';
 
   const t = he.onboarding.welcome;
+  /** Kept by App.svelte before it sent the visitor here (sessionStorage, read once). */
+  const invited = peekPendingInvite() !== null;
   const preconnect =
     session.mode === 'firebase'
       ? ['https://apis.google.com', `https://${firebaseConfig.authDomain}`]
@@ -60,6 +65,9 @@
   {/snippet}
 
   {#snippet actions()}
+    {#if invited}
+      <Banner tone="info" icon={MailOpen} title={t.invitedTitle} body={t.invitedBody} />
+    {/if}
     {#if error}
       <Banner tone="danger" title={t.errorTitle} body={error} />
     {/if}

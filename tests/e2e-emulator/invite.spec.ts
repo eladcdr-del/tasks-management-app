@@ -87,6 +87,7 @@ test('an invite link brings a second member in; a revoked link explains itself',
   const dad = await newPage(browser);
   await dad.goto(`./?emulator=1#/join/${code}`);
   await expect(dad).toHaveURL(/#\/welcome$/);
+  await expect(dad.getByText('הוזמנת להצטרף לבית')).toBeVisible(); // not a generic sign-in page
   await signIn(dad, `u-dad-${run}`, 'דני לוי');
   await expect(dad).toHaveURL(new RegExp(`#/join/${code}$`));
   await expect(

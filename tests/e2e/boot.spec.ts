@@ -190,6 +190,7 @@ test('gating: signed out → welcome; an invite opened signed out comes back aft
   expect(await page.evaluate(() => sessionStorage.getItem('homecare.pendingInvite'))).toBe(
     'HomeCareTestInvite0000001'
   );
+  await expect(page.getByText('הוזמנת להצטרף לבית')).toBeVisible();
 
   await page.evaluate(() =>
     (window as unknown as HookWindow).__homecareTest.state.session.signIn()
