@@ -5,6 +5,8 @@
   // (in RTL, ArrowLeft moves to the next option), Home/End jump; selection follows focus.
   // The thumb slides towards inline-end; :dir() picks the sign, so it follows the control's own
   // resolved direction. Labels wrap with large text and the track grows with them.
+  // `fit`: options take their content's width (the spare room shared equally), so a long label
+  // ("השבוע הקרוב 4") stays on one line next to short ones; the thumb follows the measured option.
   import { haptic } from '$lib/platform/haptics';
 
   interface Option {
@@ -22,6 +24,8 @@
     onchange?: (value: T) => void;
     /** Play the light "select" haptic when the choice changes (opt-in). */
     haptics?: boolean;
+    /** Content-sized options instead of equal ones. */
+    fit?: boolean;
     class?: string;
   }
 
@@ -31,6 +35,7 @@
     label,
     onchange,
     haptics = false,
+    fit = false,
     class: className
   }: Props = $props();
 
@@ -41,6 +46,24 @@
       options.findIndex((o) => o.value === value)
     )
   );
+
+  // fit: the thumb sits on the measured option (physical px from the track's left edge).
+  let box: { x: number; w: number } | null = $state(null);
+  $effect(() => {
+    if (!fit || !root) return;
+    const track = root;
+    void index;
+    void options;
+    const measure = () => {
+      const opt = track.querySelectorAll<HTMLElement>('[role="radio"]')[index];
+      if (opt) box = { x: opt.offsetLeft, w: opt.offsetWidth };
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(track);
+    return () => ro.disconnect();
+  });
 
   function select(i: number, focus = false) {
     const opt = options[i];
@@ -73,11 +96,13 @@
 
 <div
   bind:this={root}
-  class={['segmented', className]}
+  class={['segmented', { fit, measured: fit && box !== null }, className]}
   role="radiogroup"
   aria-label={label}
   style:--n={options.length}
   style:--i={index}
+  style:--x={box ? `${box.x}px` : undefined}
+  style:--w={box ? `${box.w}px` : undefined}
 >
   <span class="thumb" aria-hidden="true"></span>
   {#each options as opt, i (opt.value)}
@@ -126,6 +151,30 @@
     translate: calc(var(--i) * 100% * var(--dir)) 0;
     transition: translate var(--d-slow) var(--ease-out);
     z-index: -1;
+  }
+
+  /* fit: auto columns share the spare room equally; the thumb is placed by measurement. */
+  .fit {
+    grid-template-columns: repeat(var(--n), auto);
+  }
+
+  .fit .thumb {
+    inset-inline: auto;
+    left: var(--x, 0);
+    inline-size: var(--w, 0);
+    translate: none;
+    opacity: 0;
+    transition:
+      left var(--d-slow) var(--ease-out),
+      inline-size var(--d-slow) var(--ease-out);
+  }
+
+  .fit.measured .thumb {
+    opacity: 1;
+  }
+
+  .fit .seg {
+    padding-inline: var(--s2);
   }
 
   .seg {
