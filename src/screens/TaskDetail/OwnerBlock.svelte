@@ -1,6 +1,8 @@
 <script lang="ts">
   // owner: step 3.3. Who holds the task: the owner (or the dashed "?" while nobody took it), the
-  // request line ("מיכל ביקשה מדני"), and one-tap actions: take / ask someone / back to the list.
+  // request line, and one-tap actions: take / ask someone / back to the list. The request line
+  // speaks to the viewer like the card does ("מיכל ביקשה ממך", "ביקשת מדני"); only between two
+  // other members is it in the third person ("מיכל ביקשה מדני").
   // No suggestion of who should do it, ever.
   import HandHelping from '@lucide/svelte/icons/hand-helping';
   import Send from '@lucide/svelte/icons/send';
@@ -30,6 +32,12 @@
     task.ownerId === null ? t.waiting : mine ? t.ownedByMe : t.ownedBy(owner?.displayName ?? t.someone)
   );
   const multi = $derived(household.members.length > 1);
+  const requestLine = $derived.by(() => {
+    if (!requester || !owner || task.requestedBy === task.ownerId) return '';
+    if (mine) return he.taskCard.requestedOfMe(requester);
+    if (task.requestedBy === household.uid) return he.taskCard.iRequested(owner.displayName);
+    return t.ev.requested(requester, owner.displayName);
+  });
 
   let taking = $state(false);
   async function take() {
@@ -54,8 +62,8 @@
     {/if}
     <div class="lines">
       <p class="owner-line" dir={textDir(ownerLine)}>{ownerLine}</p>
-      {#if requester && owner && task.requestedBy !== task.ownerId}
-        <p class="request-line">{t.ev.requested(requester, owner.displayName)}</p>
+      {#if requestLine}
+        <p class="request-line" data-request-line>{requestLine}</p>
       {/if}
     </div>
   </div>
