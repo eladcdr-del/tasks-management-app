@@ -9,8 +9,14 @@ export const homeView = $state<{
   filter: HomeFilter;
   /** The task quick add created last; Home brings it into sight once the sheet closes. */
   lastAdded: string | null;
+  /**
+   * The tasks quick add's list mode just created, in order. Once the sheet closes and they are in
+   * the lists, Home scrolls the first one into sight.
+   */
+  addedBatch: string[];
 }>({
   bucket: 'today',
   filter: 'all',
-  lastAdded: null
+  lastAdded: null,
+  addedBatch: []
 });

@@ -41,6 +41,7 @@
   import { reducedMotion } from '$lib/platform/motion';
   import PulseCard from './PulseCard.svelte';
   import { homeView, type HomeBucket } from './homeView.svelte';
+  import { revealAdded } from './revealAdded';
 
   const t = he.home;
 
@@ -91,6 +92,18 @@
     homeView.lastAdded = null;
     if (!has(filtered[bucket])) homeView.filter = 'all';
     homeView.bucket = bucket;
+  });
+
+  // Many tasks added at once (quick add's list mode): once the sheet has closed and they are
+  // listed, scroll to them and ring them for a moment (revealAdded.ts).
+  let homeEl: HTMLElement | undefined = $state();
+  $effect(() => {
+    const ids = homeView.addedBatch;
+    if (ids.length === 0 || router.sheet !== null || !homeEl) return;
+    const added = new Set(ids);
+    if (!tasks.open.some((task) => added.has(task.id))) return;
+    homeView.addedBatch = [];
+    void revealAdded(homeEl, added, { reducedMotion: reducedMotion.current });
   });
 
   const weekend = $derived(clock.wall.weekday >= 5);
@@ -155,7 +168,7 @@
   {/if}
 {/snippet}
 
-<section class="home" aria-labelledby="home-title">
+<section class="home" aria-labelledby="home-title" bind:this={homeEl}>
   <Header>
     <h1 id="home-title" class="greeting">
       {t.hello(greeting(clock.wall.hour))}<bdi data-me dir={textDir(me?.displayName)}
