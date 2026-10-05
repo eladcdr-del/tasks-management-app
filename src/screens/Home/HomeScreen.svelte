@@ -7,20 +7,25 @@
    *               balance. Tap: attention / requests scroll to their block; today shows tab "היום"
    *               (chip "הכל"); waiting shows tab "הכל" with chip "פנויות"
    *   jar strip   JarMini
-   *   attention   "דורש תשומת לב" (only when non-empty): at most three, then "עוד N"; free ones
-   *               carry the small take action, an urgent request to me its two answers
+   *   attention   "דורש תשומת לב" (only when non-empty): at most three, then "עוד N"; every row
+   *               ends with its seat, an urgent request to me carries its two answers instead
    *   requested   "ביקשו ממך": requests waiting for my answer, whatever the tab (only when
    *               non-empty), each with "אני לוקח/ת" / "לא מתאים לי". Not mine until I accept
    *   bar         sticky: time tabs "היום · השבוע · בהמשך · הכל" with counts, and the chips
    *               "הכל · שלי · פנויות · <member>"; they combine (homeView, kept for the session)
    *   list        the open tasks of that view, minus what the blocks above already show
-   *               (domain/homeList). Free tasks sit in it with a small "אני לוקח/ת" and a hand icon
-   *               to ask someone; owned ones show the owner's avatar. Past six tasks it folds into
-   *               category groups of three with "עוד N" (HomeList)
+   *               (domain/homeList). Every row ends with its seat (components/task/Seat): the
+   *               owner's avatar, or the empty seat ("לקחת": me, or ask anyone at once), or a
+   *               request that waits ("מחכה לדני"). Past six tasks it folds into category groups of
+   *               three with "עוד N" (HomeList)
+   *   choosing    "בחירה" in the bar, or a long press on any row: rows show checkboxes, the bar
+   *               reads "ביטול · נבחרו 3 · בחירת הכל" (the visible list), and a bar at the bottom
+   *               offers "מחיקה (3)" (one snackbar, one undo) and "אני לוקח/ת (2)" (the free ones).
+   *               "ביטול", Escape, Back, or an action ends it (selection.svelte.ts)
    * Adding: quick add's last task (homeView.lastAdded) and a list's tasks (homeView.addedBatch)
    * switch the bar to a view that lists them, stay in sight even inside a folded group
    * (homeView.fresh), and are scrolled to and washed for a moment (revealAdded.ts). Alone in the
-   * household, nothing changes but the missing "ask" icon: a new undated task is found the same way.
+   * household the seat takes a task at once (nobody to ask): a new undated task is found the same way.
    */
   import { tick, untrack } from 'svelte';
   import Plus from '@lucide/svelte/icons/plus';
@@ -36,15 +41,18 @@
   import { EmptyHome } from '$components/illustrations';
   import JarMini from '$components/jar/JarMini.svelte';
   import TaskList from '$components/task/TaskList.svelte';
-  import QuickTake from '$components/task/QuickTake.svelte';
+  import Seat from '$components/task/Seat.svelte';
   import { acceptRequest, declineRequest } from '$components/task/actions';
+  import { watchClose } from '$components/task/closeWatch';
   import { isRequestFor } from '$lib/domain/buckets';
   import {
+    groupByCategory,
     homeList,
     isFree,
     matchesWho,
     nextTabWithTasks,
     preview,
+    shouldGroup,
     tabCounts,
     type HomeTab,
     type HomeView
@@ -59,7 +67,11 @@
   import { clock } from '$lib/state/clock.svelte';
   import { sync } from '$lib/state/sync.svelte';
   import { reducedMotion } from '$lib/platform/motion';
+  import { haptic } from '$lib/platform/haptics';
+  import { ui } from '$lib/state/ui.svelte';
   import PulseCard from './PulseCard.svelte';
+  import SelectionBar from './SelectionBar.svelte';
+  import { homeSelection } from './selection.svelte';
   import HomeControls from './HomeControls.svelte';
   import HomeList from './HomeList.svelte';
   import MoreToggle from './MoreToggle.svelte';
@@ -77,7 +89,6 @@
   const isUnowned = (task: Task): boolean => isFree(task, household.memberIds);
   /** A request waiting for my answer (it may sit in attention, with accept / decline). */
   const askedMe = (task: Task): boolean => isRequestFor(task, household.uid, household.memberIds);
-  const takeable = (task: Task): boolean => isUnowned(task) && !askedMe(task);
 
   // A chip on a member who left falls back to everyone.
   $effect(() => {
@@ -241,6 +252,90 @@
       : [...homeView.expanded, 'attention'];
   }
 
+  // ── Choosing several ────────────────────────────────────────────────────────────
+  const selecting = $derived(homeSelection.active);
+  /** Everything Home lists: only these can stay chosen. */
+  const listed = $derived(
+    new Set([...groups.attention, ...groups.requested, ...list].map((task) => task.id))
+  );
+  const chosen = $derived(tasks.open.filter((task) => homeSelection.has(task.id)));
+  const chosenFree = $derived(chosen.filter(isUnowned));
+  const allChosen = $derived(list.length > 0 && list.every((task) => homeSelection.has(task.id)));
+
+  // A tab or chip that hides a chosen task, or a task that left (done, deleted), lets it go.
+  $effect(() => {
+    if (!homeSelection.active) return;
+    const ids = listed;
+    untrack(() => {
+      if (ids.size === 0) homeSelection.exit();
+      else homeSelection.keepOnly(ids);
+    });
+  });
+
+  // Android's Back (and Escape) leaves the mode instead of the screen; leaving Home ends it too.
+  $effect(() => {
+    if (!homeSelection.active) return;
+    return watchClose(() => homeSelection.exit());
+  });
+  $effect(() => () => homeSelection.exit());
+
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || e.defaultPrevented || !homeSelection.active) return;
+    if (router.sheet !== null) return;
+    e.preventDefault();
+    homeSelection.exit();
+  }
+
+  /** "בחירת הכל": the whole visible list, its folded groups opened so every chosen row shows. */
+  function chooseAll() {
+    const ids = list.map((task) => task.id);
+    if (allChosen) {
+      homeSelection.release(ids);
+      return;
+    }
+    haptic('select');
+    homeSelection.choose(ids);
+    if (shouldGroup(list.length)) {
+      const keys = groupByCategory(list).map((g) => g.key);
+      homeView.expanded = [...new Set([...homeView.expanded, ...keys])];
+    }
+  }
+
+  function deleteChosen() {
+    const ids = chosen.map((task) => task.id);
+    if (ids.length === 0) return;
+    haptic('select');
+    tasks.removeMany(ids, t.select.deleted);
+    homeSelection.exit();
+  }
+
+  async function takeChosen() {
+    const ids = chosenFree.map((task) => task.id);
+    if (ids.length === 0) return;
+    haptic('take');
+    homeSelection.exit();
+    const { taken, lost } = await tasks.takeMany(ids);
+    if (lost.length > 0) {
+      haptic('warn');
+      ui.show(t.select.takenSome(taken.length, lost.length));
+    } else if (taken.length > 0) {
+      ui.show(t.select.taken(taken.length));
+    }
+  }
+
+  const selectControls = $derived(
+    listed.size > 0
+      ? {
+          active: selecting,
+          count: homeSelection.count,
+          all: allChosen,
+          onstart: () => homeSelection.start(),
+          onall: chooseAll,
+          oncancel: () => homeSelection.exit()
+        }
+      : undefined
+  );
+
   // ── Pulse ──────────────────────────────────────────────────────────────────────
   let attentionEl: HTMLElement | undefined = $state();
   let requestedEl: HTMLElement | undefined = $state();
@@ -259,12 +354,10 @@
   }
 </script>
 
-<!-- A free task's row: take it, or ask someone. A request to me answers below the meta line instead,
-     with nothing at the end (no dashed "?": the line already says who asked). -->
-{#snippet quickTake(task: Task)}
-  {#if !askedMe(task)}
-    <QuickTake taskId={task.id} me={me ?? 'n'} canRequest={others.length > 0} />
-  {/if}
+<!-- Every row ends with its seat: who does it, or take it / ask someone. A request to me answers
+     below the meta line instead, with nothing at the end (the line already says who asked). -->
+{#snippet seat(task: Task)}
+  <Seat {task} interactive={!selecting} />
 {/snippet}
 
 <!-- A request waiting for my answer: yes, or a gentle no. -->
@@ -280,7 +373,14 @@
   >
 {/snippet}
 
-<section class="home" aria-labelledby="home-title" bind:this={homeEl}>
+<svelte:window {onkeydown} />
+
+<section
+  class={['home', { selecting }]}
+  aria-labelledby="home-title"
+  data-selecting={selecting ? '' : undefined}
+  bind:this={homeEl}
+>
   <Header>
     <h1 id="home-title" class="greeting">
       {t.hello(greeting(clock.wall.hour))}<bdi data-me dir={textDir(me?.displayName)}
@@ -344,10 +444,10 @@
             tasks={attention.shown}
             labelledby="home-attention"
             variant="row"
-            trailing={quickTake}
-            withTrailing={isUnowned}
+            trailing={seat}
             actions={requestActions}
             withActions={askedMe}
+            selection={homeSelection}
           >
             {#snippet footer()}
               {#if attention.hidden > 0 || attentionFoldable}
@@ -380,8 +480,9 @@
             tasks={groups.requested}
             labelledby="home-requested"
             variant="row"
-            trailing={quickTake}
+            trailing={seat}
             actions={requestActions}
+            selection={homeSelection}
           />
         </section>
       {/if}
@@ -400,6 +501,7 @@
           who={homeView.filter}
           {others}
           onpick={pickView}
+          select={selectControls}
           bind:stuck
           bind:height={barHeight}
         />
@@ -409,8 +511,8 @@
               <HomeList
                 tasks={list}
                 label={tabLabel(view.tab)}
-                trailing={quickTake}
-                withTrailing={takeable}
+                trailing={seat}
+                selection={homeSelection}
               />
             {:else}
               <div class="bucket-empty" data-empty={view.tab}>
@@ -427,6 +529,16 @@
     {/if}
   </div>
 </section>
+
+{#if selecting}
+  <SelectionBar
+    count={chosen.length}
+    free={chosenFree.length}
+    me={me ?? 'n'}
+    ondelete={deleteChosen}
+    ontake={takeChosen}
+  />
+{/if}
 
 <style>
   .home {

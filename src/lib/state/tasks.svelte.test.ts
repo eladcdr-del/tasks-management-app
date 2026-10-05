@@ -230,6 +230,61 @@ describe('TasksStore writes', () => {
     expect(store.undoRemove(b!.id)).toBe(false);
   });
 
+  it('removeMany hides several at once with ONE snackbar; its undo brings them all back', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const ids = (store.groups.today as Task[]).slice(0, 3).map((t) => t.id);
+    const removed = store.removeMany([...ids, ids[0]!, 'not-a-task'], (n) => `נמחקו ${n} משימות`);
+    expect(removed).toEqual(ids);
+    for (const id of ids) expect(store.byId(id)).toBeNull();
+    expect(store.pulse.today).toBe(1);
+    expect(ui.queue).toHaveLength(1);
+    expect(ui.current).toMatchObject({
+      message: 'נמחקו 3 משימות',
+      action: he.common.undo,
+      duration: DELETE_DELAY_MS
+    });
+    ui.current!.onAction!();
+    for (const id of ids) expect(store.byId(id)?.id).toBe(id);
+    expect(store.undoRemoveMany(ids)).toBe(0); // already undone
+
+    // Without undo, every one of them is deleted after the delay.
+    const del = vi.spyOn(repo, 'deleteTask');
+    expect(store.removeMany(ids)).toEqual(ids);
+    expect(store.removeMany(ids)).toEqual([]); // already going
+    vi.advanceTimersByTime(DELETE_DELAY_MS - 1);
+    expect(del).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(del.mock.calls.map((c) => c[1]).sort()).toEqual([...ids].sort());
+  });
+
+  it('undoRemoveMany restores what is still pending, even one of a batch alone', () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const [a, b] = (store.groups.today as Task[]).map((t) => t.id);
+    store.removeMany([a!, b!]);
+    expect(store.undoRemove(a!)).toBe(true);
+    const del = vi.spyOn(repo, 'deleteTask');
+    vi.advanceTimersByTime(DELETE_DELAY_MS);
+    // The other one of the batch still goes.
+    expect(del.mock.calls.map((c) => c[1])).toEqual([b]);
+    expect(store.byId(a!)?.id).toBe(a);
+    expect(store.undoRemoveMany([a!, b!])).toBe(0);
+  });
+
+  it('takeMany takes each free task, and tells who was faster', async () => {
+    const free = store.groups.waiting.map((t) => t.id);
+    expect(free.length).toBeGreaterThanOrEqual(2);
+    const [first, second] = free as [string, string];
+    // דני is faster on the second one.
+    repo.actAs(DANI);
+    await store.take(second);
+    repo.actAs(MICHAL);
+    const result = await store.takeMany([first, second, first]);
+    expect(result).toEqual({ taken: [first], lost: [second] });
+    await flush();
+    expect(store.byId(first)?.ownerId).toBe(MICHAL);
+    expect(store.byId(second)?.ownerId).toBe(DANI);
+  });
+
   it('pending deletes commit when the page is hidden and on detach', () => {
     const del = vi.spyOn(repo, 'deleteTask');
     const [a, b] = store.open;

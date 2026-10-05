@@ -150,7 +150,7 @@ test('the bar sticks under the top; a new tab or chip starts the list from its t
   await expect(rows(plan)).toHaveCount(1);
 });
 
-test('"פנויות" lists what waits for someone, each with a take action', async ({ page }) => {
+test('"פנויות" lists what waits for someone, each with its empty seat', async ({ page }) => {
   await openApp(page);
   await addChores(page);
   await page.getByRole('button', { name: /^24 מחכות שמישהו ייקח/ }).click();
@@ -160,14 +160,15 @@ test('"פנויות" lists what waits for someone, each with a take action', asy
   );
   await expect(tab(page, /הכל/)).toContainText('24');
   const plan = section(page, 'plan');
-  // Every row shown has its own small take action, and no owner.
+  // Every row shown ends with its empty seat, and no owner.
   const shown = await rows(plan).count();
-  await expect(plan.getByRole('button', { name: 'אני לוקחת' })).toHaveCount(shown);
+  await expect(plan.getByRole('button', { name: /^לקחת:/ })).toHaveCount(shown);
   await expect(plan.locator('[data-task-id]:not([data-owner=""])')).toHaveCount(0);
 
   const first = rows(group(page, 'car')).first();
   const id = await first.getAttribute('data-task-id');
-  await first.getByRole('button', { name: 'אני לוקחת' }).click();
+  await first.getByRole('button', { name: /^לקחת:/ }).click();
+  await page.getByRole('menuitem', { name: 'אני', exact: true }).click();
   await expect(plan.locator(`[data-task-id="${id}"]`)).toHaveCount(0);
   await expect(tab(page, /הכל/)).toContainText('23');
   await expect(page.locator('[data-pulse="waiting"]')).toHaveText('23');
@@ -239,8 +240,8 @@ test('"דורש תשומת לב" shows three, then "עוד N"; a new urgent task
   await expect(added).toBeInViewport();
   await expect(rows(attention)).toHaveCount(4);
   await expect(more).toHaveText('עוד 2');
-  // Free: its small take action is right there.
-  await expect(added.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
+  // Free: its empty seat is right there.
+  await expect(added.getByRole('button', { name: /^לקחת:/ })).toBeVisible();
 });
 
 test('reduced motion: the same list, without the movement', async ({ page }) => {

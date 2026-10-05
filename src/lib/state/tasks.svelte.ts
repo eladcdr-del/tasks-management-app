@@ -22,7 +22,10 @@
 //   accept(id) → TakeResult | null decline(id)            cancelRequest(id)    (requests)
 //   complete(id, completion, photos?) → CompleteResult | null           reopen(id)
 //   remove(id, message?)           hidden at once, deleted after 5 s unless undoRemove(id)
+//   removeMany(ids, message?)      the same for several at once (Home's selection), ONE snackbar
+//                                  whose "ביטול" brings them all back (undoRemoveMany)
 //   createMany(drafts) → ids       quick add's list mode: one create per draft, in order
+//   takeMany(ids) → { taken, lost } "אני לוקח/ת" on several free tasks (Home's selection)
 //
 // Actions never reject: failures are shown as a snackbar (ui.pushError) and resolve to null.
 
@@ -232,6 +235,24 @@ export class TasksStore implements ScopedStore {
     return this.#runAsync((repo, hid) => repo.takeTask(hid, id));
   }
 
+  /**
+   * Takes several tasks at once (Home's selection), each exactly like `take`. Resolves to the ids
+   * that became mine, and the ones someone else was faster to (`lost`); a failure shows its error
+   * once and counts as neither.
+   */
+  async takeMany(ids: readonly string[]): Promise<{ taken: string[]; lost: string[] }> {
+    const unique = [...new Set(ids)];
+    const results = await Promise.all(unique.map((id) => this.take(id)));
+    const taken: string[] = [];
+    const lost: string[] = [];
+    results.forEach((r, i) => {
+      const id = unique[i] as string;
+      if (r?.ok) taken.push(id);
+      else if (r) lost.push(id);
+    });
+    return { taken, lost };
+  }
+
   /** Asks `toUid` to do it: a proposal, nobody's until they accept (domain/requests.ts). */
   request(id: string, toUid: string): void {
     this.#run((repo, hid) => repo.requestTask(hid, id, toUid), undefined);
@@ -293,6 +314,40 @@ export class TasksStore implements ScopedStore {
         duration: DELETE_DELAY_MS
       });
     }
+  }
+
+  /**
+   * `remove` for several tasks at once (Home's selection): they all leave every list in one go and
+   * are deleted after DELETE_DELAY_MS. With `message` (given how many went), ONE snackbar whose
+   * "ביטול" brings them all back. Returns the ids it removed (open ones not already going).
+   */
+  removeMany(ids: readonly string[], message?: (count: number) => string): string[] {
+    if (!this.#scope) return [];
+    const open = new Set(this.open.map((t) => t.id));
+    const fresh = [...new Set(ids)].filter((id) => open.has(id) && !this.#deleteTimers.has(id));
+    if (fresh.length === 0) return [];
+    this.#deleting = new Set([...this.#deleting, ...fresh]);
+    for (const id of fresh) {
+      this.#deleteTimers.set(
+        id,
+        setTimeout(() => this.#commitDelete(id), DELETE_DELAY_MS)
+      );
+    }
+    if (message !== undefined) {
+      this.#ui.show(message(fresh.length), {
+        action: he.common.undo,
+        onAction: () => this.undoRemoveMany(fresh),
+        duration: DELETE_DELAY_MS
+      });
+    }
+    return fresh;
+  }
+
+  /** Cancels the pending deletes of `ids`; returns how many came back. */
+  undoRemoveMany(ids: readonly string[]): number {
+    let restored = 0;
+    for (const id of ids) if (this.undoRemove(id)) restored++;
+    return restored;
   }
 
   /** Cancels a pending `remove`. False when there is none (already deleted, or never removed). */

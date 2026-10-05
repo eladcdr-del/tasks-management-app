@@ -2,6 +2,8 @@
   // owner: step 3.3. Task detail (#/task/:id), live via tasks.watchTask(id).
   // Open task: inline title edit, owner block, the editable fields (plan, due, priority, category,
   // recurrence), notes, history, and the actions בוצע / דחייה / שיתוף בוואטסאפ / מחיקה.
+  // Delete is at the top (a trash icon beside share) and at the bottom; it leaves at once with an
+  // undo, except an open task that repeats: a short question first says the repeats stop too.
   // Done task: its documentation block, notes, history and "פתיחה מחדש".
   // Writes go through the tasks store; each field commits on its own (no save button).
   import { untrack } from 'svelte';
@@ -33,6 +35,7 @@
     Badge,
     Button,
     CategoryIcon,
+    Dialog,
     EmptyState,
     IconButton,
     LockClock,
@@ -165,6 +168,14 @@
     void router.back('/');
   }
 
+  /** Deleting an open task that repeats stops the repeats: say so before it goes. */
+  let askingDelete = $state(false);
+  function askRemove() {
+    if (!task) return;
+    if (task.recurrence && !isDone) askingDelete = true;
+    else remove();
+  }
+
   function reopen() {
     if (!task) return;
     tasks.reopen(task.id);
@@ -182,6 +193,7 @@
     {#if task}
       <div class="bar-actions">
         <IconButton label={t.share} icon={Share2} onclick={share} />
+        <IconButton label={t.deleteTask} icon={Trash2} onclick={askRemove} data-delete-top />
       </div>
     {/if}
   </header>
@@ -347,11 +359,24 @@
 
       <div class="quiet-actions">
         <Button variant="ghost" icon={Share2} onclick={share}>{t.share}</Button>
-        <Button variant="ghost" icon={Trash2} class="danger-ghost" onclick={remove}
+        <Button variant="ghost" icon={Trash2} class="danger-ghost" onclick={askRemove}
           >{t.delete}</Button
         >
       </div>
     </div>
+
+    <Dialog
+      open={askingDelete}
+      title={t.deleteRecurring.title}
+      message={t.deleteRecurring.note}
+      tone="danger"
+      confirmLabel={t.delete}
+      onConfirm={() => {
+        askingDelete = false;
+        remove();
+      }}
+      onCancel={() => (askingDelete = false)}
+    />
 
     <!-- data-action-bar: SnackbarHost lifts messages above this bar. -->
     <footer class="action-bar" data-action-bar>

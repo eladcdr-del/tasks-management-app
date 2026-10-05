@@ -52,7 +52,14 @@ export const taskDetail = {
   snooze: 'דחייה',
   share: 'שיתוף בוואטסאפ',
   delete: 'מחיקה',
+  /** The trash icon at the top of the screen. */
+  deleteTask: 'מחיקת המשימה',
   deleted: 'המשימה נמחקה',
+  /** Deleting an open task that repeats: a short question first, since the repeats stop too. */
+  deleteRecurring: {
+    title: 'למחוק את המשימה?',
+    note: 'המשימה חוזרת. מחיקה תעצור את החזרה.'
+  },
   reopen: 'פתיחה מחדש',
   reopened: 'המשימה נפתחה מחדש',
   copied: 'הקישור הועתק',

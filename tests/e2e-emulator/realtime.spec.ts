@@ -109,8 +109,9 @@ test('one takes a waiting task, the other sees it within 2 s; a late take names 
   const dadWaiting = dad.page.locator(`[data-section="plan"] [data-task-id="${id}"]`);
   await expect(dadWaiting).toBeVisible();
 
-  // Mom takes it with one tap; dad sees it leave "פנויות" and land with mom as owner within 2 s.
-  await momCard.getByRole('button', { name: 'אני לוקחת' }).click();
+  // Mom takes it from its seat; dad sees it leave "פנויות" and land with mom as owner within 2 s.
+  await momCard.getByRole('button', { name: /^לקחת:/ }).click();
+  await mom.page.getByRole('menuitem', { name: 'אני', exact: true }).click();
   await expect(dadWaiting).toHaveCount(0, { timeout: 2_000 });
   // Undated, so on dad's Home it now sits in "בהמשך", owned by mom.
   await dad.page.getByRole('group', { name: 'של מי' }).getByRole('button', { name: 'הכל' }).click();

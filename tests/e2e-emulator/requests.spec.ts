@@ -62,12 +62,13 @@ async function member(browser: Browser, who: { uid: string; name: string }) {
 const inSection = (page: Page, section: string, id: string) =>
   page.locator(`[data-section="${section}"] [data-task-id="${id}"]`);
 
+/** Asks דני from the row's seat: the request goes out from its menu at once. */
 async function ask(page: Page, id: string) {
-  await inSection(page, 'plan', id).getByRole('button', { name: 'לבקש מ…' }).click();
-  const sheet = page.locator('[data-sheet-content="request"]');
-  await expect(sheet.getByRole('radio', { name: 'דני' })).toBeChecked();
-  await sheet.getByRole('button', { name: 'שליחת הבקשה' }).click();
-  await expect(sheet).toHaveCount(0);
+  await inSection(page, 'plan', id)
+    .getByRole('button', { name: /^לקחת:/ })
+    .click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'לבקש מדני' }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
 }
 
 const answerEvents = (page: Page) =>
@@ -127,7 +128,8 @@ test('a request waits for the answer; accept and decline reach the other member 
   // On her side they still wait for someone to take them, with her quiet line.
   for (const id of [parcel, gift]) {
     const card = inSection(mom.page, 'plan', id);
-    await expect(card.locator('[data-request]')).toHaveText('ביקשת מדני · מחכה לתשובה');
+    await expect(card.locator('[data-request]')).toHaveText('ביקשת מדני');
+    await expect(card.getByRole('button', { name: /^מחכה לדני:/ })).toBeVisible();
     await expect(card).toHaveAttribute('data-owner', '');
   }
   // On his: "ביקשו ממך", with his answers.
@@ -155,7 +157,7 @@ test('a request waits for the answer; accept and decline reach the other member 
     .click();
   const back = inSection(mom.page, 'plan', gift);
   await expect(back.locator('[data-request]')).toHaveCount(0, { timeout: 2_000 });
-  await expect(back.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
+  await expect(back.getByRole('button', { name: /^לקחת:/ })).toBeVisible();
 
   // Both answers are stored for the notifier (a push to her, the asker).
   await expect
