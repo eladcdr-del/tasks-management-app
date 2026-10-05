@@ -466,7 +466,13 @@ const PHASE_ROUTES: Readonly<Record<Exclude<Phase, 'booting' | 'ready'>, readonl
 };
 
 /** Routes that make no sense once the user has a household. */
-const NOT_WHEN_READY: readonly RouteName[] = ['setup', 'welcome', 'onboardingHousehold', 'join'];
+const NOT_WHEN_READY: readonly RouteName[] = [
+  'setup',
+  'welcome',
+  'onboardingProfile',
+  'onboardingHousehold',
+  'join'
+];
 
 /** Whether `route` may render in `phase`. Nothing renders while booting; the dev gallery always may. */
 export function routeAllowed(phase: Phase, route: RouteName): boolean {

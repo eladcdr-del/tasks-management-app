@@ -7,7 +7,8 @@
   //   setup         → #/setup                       signed-out → #/welcome
   //   no-household  → onboarding ('auth' routes) and #/join; else #/onboarding/household, or
   //                   #/join/:code for an invite opened while signed out
-  //   ready         → 'auth' + 'household' routes; public routes and onboarding/household → #/
+  //   ready         → 'auth' + 'household' routes; public routes and onboarding/profile and
+  //                   onboarding/household → #/
   // A disallowed route never renders (the splash stands in for the frame before the redirect).
   // The bottom nav and the FAB step aside while a sheet or the on-screen keyboard is open.
   import { untrack } from 'svelte';

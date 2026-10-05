@@ -410,7 +410,6 @@ describe('route gating', () => {
       'household',
       'settings',
       'task',
-      'onboardingProfile',
       'onboardingInstall',
       'onboardingNotifications',
       'devGallery'

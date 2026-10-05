@@ -6,7 +6,8 @@
 //   setup          #/setup only
 //   signed-out     #/welcome only (a #/join link is kept for after sign-in by App.svelte)
 //   no-household   'auth' routes (onboarding) and #/join
-//   ready          'auth' and 'household' routes, except the household-creating step
+//   ready          'auth' and 'household' routes, except the profile and household-creating
+//                  steps (my details are edited on #/household from then on)
 //   any phase      dev-only routes (the gallery)
 //
 // A disallowed route goes to the phase's home: setup → #/setup, signed-out → #/welcome,
@@ -27,7 +28,9 @@ export function routeAllowed(phase: Phase, route: RouteName): boolean {
     case 'no-household':
       return meta.access === 'auth' || route === 'join';
     case 'ready':
-      return meta.access !== 'public' && route !== 'onboardingHousehold';
+      return (
+        meta.access !== 'public' && route !== 'onboardingHousehold' && route !== 'onboardingProfile'
+      );
   }
 }
 

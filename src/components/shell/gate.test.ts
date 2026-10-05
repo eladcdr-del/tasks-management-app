@@ -26,6 +26,7 @@ describe('access-based gating', () => {
     expect(gateTarget('no-household', 'home', 'Abc 1')).toBe('#/join/Abc%201');
     expect(gateTarget('ready', 'welcome')).toBe('#/');
     expect(gateTarget('ready', 'onboardingHousehold')).toBe('#/');
+    expect(gateTarget('ready', 'onboardingProfile')).toBe('#/');
     expect(gateTarget('ready', 'onboardingInstall')).toBeNull();
     expect(gateTarget('booting', 'home')).toBeNull();
   });
