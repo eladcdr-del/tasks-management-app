@@ -8,7 +8,8 @@
   //      half-written task is never lost to a reload.
   //   3. Push: when the household is ready and permission is already granted, refreshes the FCM
   //      token silently (platform/push.ts); leaving the household forgets the registration. A
-  //      permission re-allowed while the app is open registers on the spot (watchPushPermission).
+  //      permission re-allowed while the app is open registers on the spot (watchPushPermission),
+  //      and the page answers the SW's push hand-off pings (listenForSwMessages).
   import { onMount } from 'svelte';
   import { registerSW } from 'virtual:pwa-register';
   import { he } from '$lib/i18n/he';
@@ -17,7 +18,7 @@
   import { ui } from '$lib/state/ui.svelte';
   import {
     forgetPushRegistration,
-    listenForSwNavigation,
+    listenForSwMessages,
     refreshPush,
     watchPushPermission
   } from '$lib/platform/push';
@@ -71,12 +72,12 @@
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
-    const stopNav = listenForSwNavigation();
+    const stopSw = listenForSwMessages();
     const stopPermission = watchPushPermission();
     return () => {
       clearInterval(timer);
       document.removeEventListener('visibilitychange', onVisibility);
-      stopNav();
+      stopSw();
       stopPermission();
     };
   });

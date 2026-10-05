@@ -376,6 +376,40 @@ describe('watchPushPermission', () => {
   });
 });
 
+describe('listenForSwMessages', () => {
+  function fakeSw() {
+    let handler: ((e: MessageEvent) => void) | null = null;
+    const serviceWorker = {
+      addEventListener: (_: string, cb: (e: MessageEvent) => void) => (handler = cb),
+      removeEventListener: () => (handler = null)
+    };
+    const win = {
+      navigator: { serviceWorker },
+      document: { baseURI: 'https://eladcdr-del.github.io/tasks-management-app/' }
+    } as unknown as Window;
+    const ping = () => {
+      const port = { postMessage: vi.fn() };
+      handler?.({ data: { type: 'PUSH_PING' }, ports: [port] } as unknown as MessageEvent);
+      return port.postMessage;
+    };
+    return { win, ping };
+  }
+
+  it('tells the SW whether a foreground push can be shown here (PUSH_PING)', async () => {
+    vi.resetModules(); // a page session where onMessage has not been wired yet
+    const push = await import('./push');
+    const { win, ping } = fakeSw();
+    const stop = push.listenForSwMessages(win);
+    expect(ping()).toHaveBeenCalledWith(false);
+
+    const { d } = deps();
+    await push.enablePush(d);
+    await vi.waitFor(() => expect(ping()).toHaveBeenCalledWith(true));
+    stop();
+    expect(ping()).not.toHaveBeenCalled();
+  });
+});
+
 describe('disablePush', () => {
   it('unregisters this device and deletes the FCM token', async () => {
     const { d, repo, messaging, storage } = deps();

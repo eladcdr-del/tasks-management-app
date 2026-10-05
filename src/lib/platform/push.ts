@@ -14,8 +14,10 @@
 //   watchPushPermission()     permission re-allowed while the app is open: register right away
 //
 // Foreground messages (the app is visible) arrive through Firebase's onMessage and are shown as a
-// snackbar with an "open" action. The Firebase messaging SDK is only ever loaded by the dynamic
-// import below, so demo / setup users and the entry chunk never carry it.
+// snackbar with an "open" action. The SW hands a push to a visible window only when this page
+// answers its PUSH_PING with "listening" (listenForSwMessages), so nothing is swallowed before
+// onMessage is wired. The Firebase messaging SDK is only ever loaded by the dynamic import below,
+// so demo / setup users and the entry chunk never carry it.
 
 import type { FirebaseApp } from 'firebase/app';
 import type { Repository } from '$lib/data/repository';
@@ -185,6 +187,8 @@ export function pushStatus(deps: Partial<PushDeps> = {}): PushStatus {
 }
 
 let foregroundFor: FirebaseApp | null = null;
+/** Firebase's onMessage is wired in this page: the SW may hand us pushes (see PUSH_PING). */
+let foregroundReady = false;
 
 /** Gets the token and writes the device doc (when needed). Throws on failure. */
 async function register(d: PushDeps, force: boolean): Promise<boolean> {
@@ -197,7 +201,15 @@ async function register(d: PushDeps, force: boolean): Promise<boolean> {
   if (!token) return false;
   if (foregroundFor !== app) {
     foregroundFor = app;
-    void messaging.onForegroundMessage(app, d.onForeground);
+    foregroundReady = false;
+    messaging.onForegroundMessage(app, d.onForeground).then(
+      () => {
+        foregroundReady = foregroundFor === app;
+      },
+      () => {
+        foregroundFor = null;
+      }
+    );
   }
   const prev = readReg(d.storage);
   const fresh =
@@ -336,14 +348,21 @@ function showForeground(msg: ForegroundMessage): void {
 }
 
 /**
- * Page side of the SW's notificationclick fallback: an uncontrolled window cannot be navigated by
- * the SW, so it posts { type: 'NAVIGATE', url }. Returns an unsubscribe.
+ * Page side of the SW's messages. Returns an unsubscribe.
+ *   PUSH_PING   before handing a push to a visible window, the SW asks through a MessagePort
+ *               whether our foreground handler is wired here; it shows the notification otherwise
+ *   NAVIGATE    the notificationclick fallback: an uncontrolled window cannot be navigated by the
+ *               SW, so it posts { type: 'NAVIGATE', url }
  */
-export function listenForSwNavigation(win: Window = window): () => void {
+export function listenForSwMessages(win: Window = window): () => void {
   const sw = win.navigator.serviceWorker as ServiceWorkerContainer | undefined;
   if (!sw) return () => {};
   const onMessage = (e: MessageEvent) => {
     const data = e.data as { type?: unknown; url?: unknown } | null;
+    if (data?.type === 'PUSH_PING') {
+      e.ports[0]?.postMessage(foregroundReady);
+      return;
+    }
     if (data?.type !== 'NAVIGATE' || typeof data.url !== 'string') return;
     const hash = appHash(data.url, new URL('./', win.document.baseURI).href);
     if (hash) router.navigate(hash);

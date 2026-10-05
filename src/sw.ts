@@ -11,9 +11,11 @@
 //   update        registerType 'prompt': UpdatePrompt posts SKIP_WAITING to the waiting worker.
 //   push          FCM data-only messages {type,title,body,url,tag} (scripts/notify/sender.ts). The
 //                 Firebase messaging SW SDK is NOT bundled: its two jobs are reproduced here —
-//                 a visible app window receives the payload in Firebase's own envelope (so
-//                 `onMessage` in the page fires and shows a snackbar), otherwise we show the
-//                 notification ourselves (RTL, Hebrew, icon, badge, tag, deep link).
+//                 a visible app window whose `onMessage` is wired (it answers our PUSH_PING, see
+//                 platform/push.ts) receives the payload in Firebase's own envelope and shows a
+//                 snackbar; otherwise (no such window: closed, hidden, a screen before sign-in,
+//                 another site on this origin) we show the notification ourselves (RTL, Hebrew,
+//                 icon, badge, tag, deep link), so a push is never swallowed.
 import {
   cleanupOutdatedCaches,
   createHandlerBoundToURL,
@@ -116,15 +118,36 @@ async function windowClients(): Promise<readonly WindowClient[]> {
   return self.clients.matchAll({ type: 'window', includeUncontrolled: true });
 }
 
+/** A window of this app (matchAll also returns other pages on the same origin). */
+const inScope = (c: Client) => new URL(c.url).pathname.startsWith(basePath);
+
+const PING_TIMEOUT_MS = 1000;
+
+/** Asks a window whether the app's foreground handler is wired there (it answers on the port). */
+function isListening(client: WindowClient): Promise<boolean> {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve(false), PING_TIMEOUT_MS);
+    channel.port1.onmessage = (e: MessageEvent) => {
+      clearTimeout(timer);
+      resolve(e.data === true);
+    };
+    client.postMessage({ type: 'PUSH_PING' }, [channel.port2]);
+  });
+}
+
 async function handlePush(event: PushEvent): Promise<void> {
   const msg = readPush(event);
   if (!msg) return;
-  const clients = await windowClients();
-  const visible = clients.filter((c) => c.visibilityState === 'visible');
-  if (visible.length > 0) {
+  const visible = (await windowClients()).filter(
+    (c) => c.visibilityState === 'visible' && inScope(c)
+  );
+  const answers = await Promise.all(visible.map(isListening));
+  const listening = visible.filter((_, i) => answers[i]);
+  if (listening.length > 0) {
     // Foreground: hand it to the page's Firebase SDK (`onMessage`), in the SDK's own envelope.
     const payload = { ...msg.envelope, isFirebaseMessaging: true, messageType: 'push-received' };
-    for (const client of visible) client.postMessage(payload);
+    for (const client of listening) client.postMessage(payload);
     return;
   }
   const { title, body, url, tag, type } = msg.data;
@@ -145,9 +168,9 @@ self.addEventListener('push', (event: PushEvent) => {
 
 async function openFromNotification(url: string): Promise<void> {
   const clients = await windowClients();
-  const inScope = clients.find((c) => new URL(c.url).pathname.startsWith(basePath));
-  if (inScope) {
-    const focused = await inScope.focus();
+  const appWindow = clients.find(inScope);
+  if (appWindow) {
+    const focused = await appWindow.focus();
     try {
       await focused.navigate(url);
     } catch {
