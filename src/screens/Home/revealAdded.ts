@@ -1,6 +1,8 @@
-// Many tasks added at once (quick add's list mode, homeView.addedBatch): once the sheet has closed,
-// Home brings them into sight. It scrolls to where most of them landed (usually "waiting": they have
-// no owner) and gives every new card a short ring, so they stand out from the tasks already there.
+// Tasks just added (quick add, and its list mode: homeView.lastAdded / addedBatch): once the sheet
+// has closed and Home has switched to a view that lists them, Home brings them into sight. It
+// scrolls to where most of them landed (usually the list under the bar) and gives every new row a
+// short accent wash, so they stand out from the tasks already there. `topInset` is the sticky bar
+// that covers the top of the screen once the list scrolls under it.
 
 /** Space kept above the target: a section's own top, or a peek of the card before a card. */
 const SECTION_MARGIN = 16;
@@ -12,6 +14,8 @@ const MAX_WAIT_FRAMES = 60;
 
 export interface RevealOptions {
   reducedMotion: boolean;
+  /** Height covered at the top of the screen (Home's sticky control bar). */
+  topInset?: number;
 }
 
 const nextFrame = () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
@@ -44,7 +48,7 @@ export function revealTarget(cards: readonly HTMLElement[]): { el: HTMLElement; 
   return { el: first, margin: CARD_MARGIN };
 }
 
-/** Scrolls the new cards into sight and rings them. Waits for an open sheet to finish closing. */
+/** Scrolls the new cards into sight and marks them. Waits for an open sheet to finish closing. */
 export async function revealAdded(
   root: HTMLElement,
   ids: ReadonlySet<string>,
@@ -60,30 +64,36 @@ export async function revealAdded(
   if (cards.length === 0) return;
 
   const { el, margin } = revealTarget(cards);
+  // A section's own top holds the bar; a card further down must clear it.
+  const inset = el.dataset.section === undefined ? (opts.topInset ?? 0) : 0;
   const top = el.getBoundingClientRect().top;
-  if (top < 0 || top > window.innerHeight * IN_SIGHT) {
+  if (top < inset || top > window.innerHeight * IN_SIGHT) {
     window.scrollTo({
-      top: Math.max(0, window.scrollY + top - margin),
+      top: Math.max(0, window.scrollY + top - margin - inset),
       behavior: opts.reducedMotion ? 'auto' : 'smooth'
     });
   }
-  ring(cards);
+  wash(cards);
 }
 
-/** A soft accent ring that holds, then fades (no movement, so it also suits reduced motion). */
-function ring(cards: readonly HTMLElement[]): void {
+/**
+ * A soft accent wash over each new card's surface that holds, then fades back (no movement, so it
+ * also suits reduced motion).
+ */
+function wash(cards: readonly HTMLElement[]): void {
   const accent =
-    getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#d9774b';
-  const on = `0 0 0 2px ${accent}`;
-  const off = '0 0 0 2px transparent';
+    getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || 'peru';
   for (const card of cards) {
-    card.animate?.(
+    const surface = card.querySelector<HTMLElement>('article') ?? card;
+    const base = getComputedStyle(surface).backgroundColor || 'transparent';
+    const on = `color-mix(in srgb, ${accent} 20%, ${base})`;
+    surface.animate?.(
       [
-        { boxShadow: on, offset: 0 },
-        { boxShadow: on, offset: 0.6 },
-        { boxShadow: off, offset: 1 }
+        { backgroundColor: on, offset: 0 },
+        { backgroundColor: on, offset: 0.55 },
+        { backgroundColor: base, offset: 1 }
       ],
-      { duration: 2600, easing: 'ease-out' }
+      { duration: 2800, easing: 'ease-out' }
     );
   }
 }

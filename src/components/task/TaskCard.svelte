@@ -5,9 +5,15 @@
    *   leading   CompletionCircle: the check animates, then (~300ms) the complete sheet opens
    *   body      request line ("דני ביקש ממך" calls; "ביקשת מדני · מחכה לתשובה", "מיכל ביקשה מדני",
    *             "לבקשת מיכל" / "לבקשתך" are quiet) · title (2 lines, textDir) · meta row (status
-   *             first, then the quiet context: age, snoozes, plan hint, category)
-   *   trailing  the owner's Avatar, or the dashed "?" when nobody took it yet
+   *             first, then the quiet context: plan hint, snoozes, age, category)
+   *   trailing  `trailing` (e.g. Home's small "take" action), else the owner's Avatar, or the dashed
+   *             "?" when nobody took it yet
    *   pending   a micro-dot while the task has unsynced local writes
+   *
+   * Two variants. `card` (default) is a raised card of its own. `row` is the compact line used in
+   * Home's lists (TaskList variant="row" draws the surface and the hairlines between rows): the
+   * meta row keeps to ONE line (badges that do not fit drop out, status badges come first) and the
+   * trailing slot is centred.
    *
    * The whole card opens #/task/:id (a stretched link on the title); the circle and `actions` sit
    * above that layer. Swipe toward inline-end = "בוצע" (complete sheet), toward inline-start =
@@ -40,15 +46,28 @@
 
   interface Props {
     task: Task;
-    /** De-emphasised (an unowned task inside a time list; it is highlighted in "waiting"). */
+    variant?: 'card' | 'row';
+    /** De-emphasised card (variant card only). */
     muted?: boolean;
-    /** Buttons under the meta row (take / request on unowned cards). */
-    actions?: Snippet;
+    /** Buttons under the meta row (answers to a request), given the task. */
+    actions?: Snippet<[Task]>;
+    /** Replaces the avatar at the inline end (a compact "take" action), given the task. */
+    trailing?: Snippet<[Task]>;
+    /** The category badge (off inside a group that already names the category). */
+    showCategory?: boolean;
     /** Swipe gestures (default on). */
     swipe?: boolean;
   }
 
-  let { task, muted = false, actions, swipe = true }: Props = $props();
+  let {
+    task,
+    variant = 'card',
+    muted = false,
+    actions,
+    trailing,
+    showCategory = true,
+    swipe = true
+  }: Props = $props();
 
   const t = he.taskCard;
   const today = $derived(clock.today);
@@ -90,6 +109,9 @@
     }
   });
 
+  /** A row keeps the request on its meta line (who asked first when it waits for my answer). */
+  const inlineRequest = $derived(variant === 'row' && request.text !== '');
+
   // ── Completion: let the check be seen, then open the sheet; uncheck if it closes unfinished ──
   let checked = $state(false);
   let sheetSeen = false;
@@ -127,7 +149,7 @@
   function onpointerdown(e: PointerEvent) {
     if (!swipe || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const target = e.target as HTMLElement;
-    if (target.closest('[data-no-swipe], .cc, .actions')) return;
+    if (target.closest('[data-no-swipe], .cc, .actions, .trail-actions')) return;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, claimed: false };
   }
 
@@ -189,11 +211,21 @@
   }
 </script>
 
+{#snippet requestMeta()}
+  <span
+    class={['requested', 'in-meta', { quiet: request.kind !== 'askedMe' }]}
+    data-request={request.kind}
+  >
+    <HandHelping class="req-icon" strokeWidth={1.75} aria-hidden="true" />{request.text}
+  </span>
+{/snippet}
+
 <div
-  class={['swipe', { muted, swiping }]}
+  class={['swipe', { row: variant === 'row', muted: muted && variant === 'card', swiping }]}
   data-task-id={task.id}
   data-owner={task.ownerId ?? ''}
-  data-muted={muted ? '' : undefined}
+  data-variant={variant}
+  data-muted={muted && variant === 'card' ? '' : undefined}
 >
   {#if swipe && side}
     <div class={['under', side, { armed: armed === side }]} aria-hidden="true">
@@ -218,7 +250,7 @@
   >
     <CompletionCircle label={task.title} bind:checked onchange={onCheck} />
     <div class="body">
-      {#if request.text}
+      {#if request.text && variant === 'card'}
         <p class={['requested', { quiet: request.kind !== 'askedMe' }]} data-request={request.kind}>
           <HandHelping class="req-icon" strokeWidth={1.75} aria-hidden="true" />{request.text}
         </p>
@@ -230,6 +262,7 @@
         draggable="false">{task.title}</a
       >
       <div class="meta">
+        {#if inlineRequest && request.kind === 'askedMe'}{@render requestMeta()}{/if}
         {#if task.priority === 'urgent'}
           <Badge kind="urgent" label={t.urgent} />
         {/if}
@@ -239,16 +272,17 @@
         {#if task.priority === 'high'}
           <Badge kind="neutral" tone="warn" label={t.high} />
         {/if}
+        {#if inlineRequest && request.kind !== 'askedMe'}{@render requestMeta()}{/if}
         {#if hint}
           <Badge variant="plain" icon={null} label={hint} class="hint" />
-        {/if}
-        {#if age}
-          <Badge kind="age" label={age} />
         {/if}
         {#if snoozed}
           <Badge kind="snooze" label={snoozed} data-snoozed />
         {/if}
-        {#if task.categoryId}
+        {#if age}
+          <Badge kind="age" label={age} />
+        {/if}
+        {#if task.categoryId && showCategory}
           <Badge
             variant="plain"
             icon={categoryIcon(task.categoryId)}
@@ -259,21 +293,25 @@
           <Badge variant="plain" icon={Repeat} label={recurrenceText(task.recurrence)} />
         {/if}
       </div>
-      {#if actions}<div class="actions">{@render actions()}</div>{/if}
+      {#if actions}<div class="actions">{@render actions(task)}</div>{/if}
     </div>
-    <div class="trail">
-      {#if owner}
-        <Avatar
-          name={owner.displayName}
-          photoURL={owner.photoURL}
-          color={owner.color}
-          size="sm"
-          label={t.owner(owner.displayName)}
-        />
-      {:else}
-        <Avatar unassigned size="sm" />
-      {/if}
-    </div>
+    {#if trailing}
+      <div class="trail trail-actions">{@render trailing(task)}</div>
+    {:else}
+      <div class="trail">
+        {#if owner}
+          <Avatar
+            name={owner.displayName}
+            photoURL={owner.photoURL}
+            color={owner.color}
+            size={variant === 'row' ? 'xs' : 'sm'}
+            label={t.owner(owner.displayName)}
+          />
+        {:else}
+          <Avatar unassigned size={variant === 'row' ? 'xs' : 'sm'} />
+        {/if}
+      </div>
+    {/if}
     {#if task.pending}
       <span class="pending" title={t.pending}><span class="visually-hidden">{t.pending}</span></span
       >
@@ -414,6 +452,13 @@
     padding-block-start: 8px;
   }
 
+  .trail-actions {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+  }
+
   .pending {
     position: absolute;
     inset-block-start: 10px;
@@ -423,6 +468,85 @@
     border-radius: var(--r-pill);
     background: var(--accent);
     box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  /* ── Row: a compact line inside a list surface (TaskList variant="row") ── */
+  .row,
+  .row .card {
+    border-radius: 0;
+  }
+
+  .row .card {
+    align-items: center;
+    gap: 0;
+    min-block-size: 50px;
+    padding-block: 0;
+    padding-inline: var(--s1) var(--s3);
+    background: var(--surface);
+    border: 0;
+    box-shadow: none;
+  }
+
+  .row .body {
+    gap: 3px;
+    padding-block: var(--s2);
+    padding-inline: var(--s0-5) var(--s2);
+  }
+
+  .row .requested.in-meta {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  .row .title {
+    font-size: var(--fs-body);
+    line-height: 1.375;
+  }
+
+  .row .title:focus-visible::after {
+    outline-offset: -2px;
+  }
+
+  /* One line of meta: what does not fit wraps onto a second line that is clipped away whole. */
+  .row .meta {
+    gap: 14px var(--s2-5);
+    max-block-size: 1.85em;
+    overflow: hidden;
+    font-size: var(--fs-caption);
+  }
+
+  .row .meta:empty {
+    display: none;
+  }
+
+  .row .meta :global(.badge) {
+    flex: none;
+    white-space: nowrap;
+  }
+
+  /* Pills a little slimmer than on a card, so a dated row stays compact. */
+  .row .meta :global(.badge:not(.plain)) {
+    min-block-size: 1.62em;
+    padding-block: 0;
+  }
+
+  .row .actions {
+    margin-block-start: var(--s1-5);
+  }
+
+  .row .trail {
+    align-self: center;
+    padding-block: 0;
+  }
+
+  .row .pending {
+    inset-block-start: var(--s2);
+    inset-inline-end: var(--s2);
+  }
+
+  .row .under {
+    inset: 0;
+    border-radius: 0;
   }
 
   /* ── What the swipe reveals ── */

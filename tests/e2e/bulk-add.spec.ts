@@ -131,14 +131,20 @@ test('paste a WhatsApp list: it becomes a list, drop one, add 11, and Home shows
   expect(added.find((t) => t.title === 'לשלם ארנונה')).toMatchObject({ dueDate: '2026-10-08' });
   await expect(page.locator('[data-pulse="waiting"]')).toHaveText('13');
   await expect(page.locator('[data-pulse="attention"]')).toHaveText('4');
-  const waiting = page.locator('[data-section="waiting"]');
+  // Home shows what nobody has taken yet ("הכל" + "פנויות"): every new one is listed, even inside a
+  // folded category group (the urgent one sits in "דורש תשומת לב").
+  await expect(page.getByRole('radio', { name: /הכל/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(
+    page.getByRole('group', { name: 'של מי' }).getByRole('button', { name: 'פנויות' })
+  ).toHaveAttribute('aria-pressed', 'true');
+  const plan = page.locator('[data-section="plan"]');
   for (const t of added.filter((x) => x.priority !== 'urgent')) {
-    await expect(waiting.locator(`[data-task-id="${t.id}"]`)).toHaveCount(1);
+    await expect(plan.locator(`[data-task-id="${t.id}"]`)).toHaveCount(1);
   }
   // Home scrolled down to them.
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(300);
   const first = added.find((t) => t.title === 'לשלם ארנונה')!;
-  await expect(waiting.locator(`[data-task-id="${first.id}"]`)).toBeInViewport();
+  await expect(plan.locator(`[data-task-id="${first.id}"]`)).toBeInViewport();
   await page.waitForTimeout(400);
   await shot(page, 'bulk-add-home');
 });

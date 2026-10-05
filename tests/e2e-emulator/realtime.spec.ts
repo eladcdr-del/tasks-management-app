@@ -95,21 +95,25 @@ test('one takes a waiting task, the other sees it within 2 s; a late take names 
   );
   await phaseIs(dad.page, 'ready');
 
-  // Dad adds an unowned task; it reaches mom's Home as "waiting".
+  // Dad adds an unowned task; it reaches mom's Home as free ("מחכות שמישהו ייקח" → "פנויות").
   const id = await dad.page.evaluate(
     (title) => (window as unknown as HookWindow).__homecareTest.state.tasks.create({ title }),
     TITLE
   );
   expect(id).toBeTruthy();
-  const momCard = mom.page.locator(`[data-section="waiting"] [data-task-id="${id}"]`);
+  await expect(mom.page.locator('[data-pulse="waiting"]')).toHaveText('1', { timeout: 10_000 });
+  await mom.page.locator('[data-pulse="waiting"]').click();
+  const momCard = mom.page.locator(`[data-section="plan"] [data-task-id="${id}"]`);
   await expect(momCard).toBeVisible({ timeout: 10_000 });
-  const dadWaiting = dad.page.locator(`[data-section="waiting"] [data-task-id="${id}"]`);
+  await dad.page.locator('[data-pulse="waiting"]').click();
+  const dadWaiting = dad.page.locator(`[data-section="plan"] [data-task-id="${id}"]`);
   await expect(dadWaiting).toBeVisible();
 
-  // Mom takes it with one tap; dad sees it leave "waiting" and land with mom as owner within 2 s.
+  // Mom takes it with one tap; dad sees it leave "פנויות" and land with mom as owner within 2 s.
   await momCard.getByRole('button', { name: 'אני לוקחת' }).click();
   await expect(dadWaiting).toHaveCount(0, { timeout: 2_000 });
   // Undated, so on dad's Home it now sits in "בהמשך", owned by mom.
+  await dad.page.getByRole('group', { name: 'של מי' }).getByRole('button', { name: 'הכל' }).click();
   await dad.page.getByRole('radio', { name: /בהמשך/ }).click();
   await expect(dad.page.locator(`[data-section="plan"] [data-task-id="${id}"]`)).toHaveAttribute(
     'data-owner',

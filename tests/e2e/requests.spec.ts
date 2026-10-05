@@ -3,8 +3,9 @@ import { expect, openApp, shot, test } from './fixtures';
 
 // Requests are proposals (demo seed, Sunday 2026-10-04 09:00): דני asked מיכל to pick up the parcel
 // (seed-post) and she has not answered. Until she does, nobody holds it: for her it is "ביקשו
-// ממך" with "אני לוקחת" / "לא מתאים לי"; for דני it waits for someone to take it, with a quiet
-// "ביקשת ממיכל · מחכה לתשובה". The flows: accept, decline, withdraw, and asking from the sheet.
+// ממך" with "אני לוקחת" / "לא מתאים לי"; for דני it is free (it waits for someone to take it), with
+// a quiet "ביקשת ממיכל · מחכה לתשובה" in his list. The flows: accept, decline, withdraw, and asking
+// from the sheet.
 
 interface TaskLite {
   id: string;
@@ -53,14 +54,16 @@ test('a request is not theirs yet: the asked member sees it to answer, everyone 
   page
 }) => {
   await openApp(page);
-  // מיכל: asked, with her two answers; nobody holds it (dashed avatar, muted in the time list).
+  // מיכל: asked, with her two answers; nobody holds it (dashed avatar), and it is not repeated in
+  // the list under the bar.
   const asked = card(section(page, 'requested'), 'seed-post');
   await expect(asked.locator('[data-request]')).toHaveText('דני ביקש ממך');
   await expect(asked).toHaveAttribute('data-owner', '');
   await expect(asked.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
   await expect(asked.getByRole('button', { name: 'לא מתאים לי' })).toBeVisible();
   await expect(pulse(page, 'requested')).toHaveText('1');
-  await expect(section(page, 'waiting').locator('[data-task-id="seed-post"]')).toHaveCount(0);
+  await page.getByRole('radio', { name: /השבוע/ }).click();
+  await expect(section(page, 'plan').locator('[data-task-id="seed-post"]')).toHaveCount(0);
   await asked.scrollIntoViewIfNeeded();
   await shots(page, 'requests-home-asked');
 
@@ -68,7 +71,7 @@ test('a request is not theirs yet: the asked member sees it to answer, everyone 
   await actAs(page, 'dani');
   await expect(pulse(page, 'waiting')).toHaveText('4');
   await expect(section(page, 'requested')).toHaveCount(0);
-  const waiting = card(section(page, 'waiting'), 'seed-post');
+  const waiting = card(section(page, 'plan'), 'seed-post');
   await expect(waiting.locator('[data-request]')).toHaveText('ביקשת ממיכל · מחכה לתשובה');
   await expect(waiting.getByRole('button', { name: 'אני לוקח' })).toBeVisible();
   // The balance row counts it for nobody.
@@ -114,7 +117,9 @@ test('decline: "לא מתאים לי" leaves it waiting for anyone, gently', asy
   await snack(page).toBe('בסדר, המשימה תחכה שמישהו ייקח');
   await expect(section(page, 'requested')).toHaveCount(0);
   await expect(pulse(page, 'waiting')).toHaveText('4');
-  const waiting = card(section(page, 'waiting'), 'seed-post');
+  // Free again: in the list (it is planned for Tuesday), with the take action.
+  await page.locator('[data-pulse="waiting"]').click();
+  const waiting = card(section(page, 'plan'), 'seed-post');
   await expect(waiting.locator('[data-request]')).toHaveCount(0);
   await expect(waiting.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
   await shots(page, 'requests-home-declined');

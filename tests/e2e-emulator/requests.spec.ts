@@ -63,7 +63,7 @@ const inSection = (page: Page, section: string, id: string) =>
   page.locator(`[data-section="${section}"] [data-task-id="${id}"]`);
 
 async function ask(page: Page, id: string) {
-  await inSection(page, 'waiting', id).getByRole('button', { name: 'לבקש מ…' }).click();
+  await inSection(page, 'plan', id).getByRole('button', { name: 'לבקש מ…' }).click();
   const sheet = page.locator('[data-sheet-content="request"]');
   await expect(sheet.getByRole('radio', { name: 'דני' })).toBeChecked();
   await sheet.getByRole('button', { name: 'שליחת הבקשה' }).click();
@@ -116,14 +116,17 @@ test('a request waits for the answer; accept and decline reach the other member 
     );
   const parcel = (await create('לאסוף חבילה מהדואר'))!;
   const gift = (await create('לקנות מתנה לנועה'))!;
-  await expect(inSection(mom.page, 'waiting', gift)).toBeVisible({ timeout: 10_000 });
+  // Undated and free: "מחכות שמישהו ייקח" lists them ("הכל" + "פנויות").
+  await expect(mom.page.locator('[data-pulse="waiting"]')).toHaveText('2', { timeout: 10_000 });
+  await mom.page.locator('[data-pulse="waiting"]').click();
+  await expect(inSection(mom.page, 'plan', gift)).toBeVisible({ timeout: 10_000 });
 
   // ── מיכל asks דני twice ──
   await ask(mom.page, parcel);
   await ask(mom.page, gift);
   // On her side they still wait for someone to take them, with her quiet line.
   for (const id of [parcel, gift]) {
-    const card = inSection(mom.page, 'waiting', id);
+    const card = inSection(mom.page, 'plan', id);
     await expect(card.locator('[data-request]')).toHaveText('ביקשת מדני · מחכה לתשובה');
     await expect(card).toHaveAttribute('data-owner', '');
   }
@@ -136,7 +139,8 @@ test('a request waits for the answer; accept and decline reach the other member 
   // ── דני says yes to the parcel: it is his; she sees it live, "at her request" ──
   await asked(parcel).getByRole('button', { name: 'אני לוקח' }).click();
   await expect(asked(parcel)).toHaveCount(0);
-  await expect(inSection(mom.page, 'waiting', parcel)).toHaveCount(0, { timeout: 2_000 });
+  await expect(inSection(mom.page, 'plan', parcel)).toHaveCount(0, { timeout: 2_000 });
+  await mom.page.getByRole('group', { name: 'של מי' }).getByRole('button', { name: 'הכל' }).click();
   await mom.page.getByRole('radio', { name: /בהמשך/ }).click();
   const hers = inSection(mom.page, 'plan', parcel);
   await expect(hers).toHaveAttribute('data-owner', DAD.uid);
@@ -145,7 +149,11 @@ test('a request waits for the answer; accept and decline reach the other member 
   // ── …and a gentle no to the gift: it waits for anyone again ──
   await asked(gift).getByRole('button', { name: 'לא מתאים לי' }).click();
   await expect(dad.page.locator('[data-section="requested"]')).toHaveCount(0);
-  const back = inSection(mom.page, 'waiting', gift);
+  await mom.page
+    .getByRole('group', { name: 'של מי' })
+    .getByRole('button', { name: 'פנויות' })
+    .click();
+  const back = inSection(mom.page, 'plan', gift);
   await expect(back.locator('[data-request]')).toHaveCount(0, { timeout: 2_000 });
   await expect(back.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
 

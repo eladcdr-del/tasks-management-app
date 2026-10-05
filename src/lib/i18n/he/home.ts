@@ -1,5 +1,6 @@
 // owner: step 3.2 — only that step edits this file
-// Home screen: greeting, pulse card, sections, buckets, filters, empty states.
+// Home screen: greeting, pulse card, sections, the control bar (tabs + chips), the list and its
+// category groups, empty states.
 
 export const home = {
   title: 'בית',
@@ -23,7 +24,9 @@ export const home = {
   sections: {
     attention: 'דורש תשומת לב',
     requested: 'ביקשו ממך',
-    waiting: 'מחכות שמישהו ייקח'
+    waiting: 'מחכות שמישהו ייקח',
+    /** The list under the control bar (a heading for screen readers). */
+    list: 'כל המשימות'
   },
   buckets: {
     label: 'מתי',
@@ -31,14 +34,28 @@ export const home = {
     week: 'השבוע',
     /** On Friday and Saturday the week tab already covers the coming week. */
     weekAhead: 'השבוע הקרוב',
-    later: 'בהמשך'
+    later: 'בהמשך',
+    all: 'הכל'
   },
   filters: {
     label: 'של מי',
     all: 'הכל',
     mine: 'שלי',
+    /** Nobody took them yet (a request waiting for someone else's answer included). */
+    free: 'פנויות',
     of: (name: string) => `של ${name}`,
     ofPrefix: 'של'
+  },
+  groups: {
+    /** "אחר" and tasks without a category, together. */
+    misc: 'שונות',
+    /** The toggle under a collapsed group: "עוד 6". */
+    more: (n: number) => `עוד ${n}`,
+    less: 'פחות',
+    /** Screen-reader names of the toggle: "עוד 6 ב"בית ותיקונים"". */
+    moreLabel: (n: number, group: string) =>
+      n === 1 ? `עוד משימה אחת ב"${group}"` : `עוד ${n} משימות ב"${group}"`,
+    lessLabel: (group: string) => `פחות משימות ב"${group}"`
   },
   empty: {
     today: {
@@ -59,6 +76,16 @@ export const home = {
     filtered: {
       title: 'אין כאן משימות בסינון הזה',
       body: 'אפשר לבחור "הכל" כדי לראות את כל המשימות.'
+    },
+    /** Chip "פנויות" with nothing in it. */
+    free: {
+      title: 'אין כאן משימות פנויות',
+      /** Nothing waits on any tab. */
+      none: 'כל המשימות כבר אצל מישהו'
+    },
+    /** Tab "הכל" (chip "הכל") is empty: every open task is in the blocks above. */
+    allTab: {
+      title: 'כל המשימות הפתוחות מופיעות למעלה'
     },
     all: {
       title: 'הבית מסודר',
