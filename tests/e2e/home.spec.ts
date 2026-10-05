@@ -2,14 +2,19 @@ import type { Locator, Page } from '@playwright/test';
 import { expect, openApp, shot, test } from './fixtures';
 
 // Home (step 3.2) on the demo seed at the fixed clock (Sunday 2026-10-04 09:00, signed in as מיכל):
-// attention 3 (1 overdue + 2 urgent), today 4, waiting 3, week 5, later 4.
+// attention 3 (1 overdue + 2 urgent), today 4, waiting 3, week 5, later 4; one request to מיכל
+// (דני asked her to pick up the parcel, planned for Tuesday).
 
 interface Hooks {
+  actAs(uid: string): Promise<void>;
   state: {
     ui: { current: { message: string } | null };
     tasks: {
       open: { id: string; status: string }[];
-      groups: Record<'attention' | 'waiting' | 'today' | 'week' | 'later', { id: string }[]>;
+      groups: Record<
+        'attention' | 'requested' | 'waiting' | 'today' | 'week' | 'later',
+        { id: string }[]
+      >;
       snooze(id: string, until: string): void;
       remove(id: string): void;
       update(id: string, patch: Record<string, unknown>): void;
@@ -111,6 +116,43 @@ test('request a waiting task from the partner', async ({ page }) => {
   const requested = card(section(page, 'plan'), 'seed-washer');
   await expect(requested).toHaveAttribute('data-owner', 'dani');
   await expect(requested).toContainText('ביקשת מדני');
+
+  // On דני's side the undated request is right on Home, not buried under "בהמשך".
+  await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('dani'));
+  await page.getByRole('radio', { name: /היום/ }).click();
+  await expect(card(section(page, 'requested'), 'seed-washer')).toContainText('מיכל ביקשה ממך');
+  await expect(pulse(page, 'requested')).toHaveText('1');
+});
+
+test('a request to me stands out whatever the tab, and counts in the pulse', async ({ page }) => {
+  await openApp(page);
+  const requested = section(page, 'requested');
+  await expect(requested.locator('[data-task-id]')).toHaveCount(1);
+  await expect(card(requested, 'seed-post')).toContainText('דני ביקש ממך');
+  await expect(pulse(page, 'requested')).toHaveText('1');
+  await expect(page.locator('[data-section]')).toHaveCount(4);
+  expect(
+    await page
+      .locator('[data-section]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-section')))
+  ).toEqual(['attention', 'requested', 'waiting', 'plan']);
+  for (const tab of [/בהמשך/, /השבוע/, /היום/]) {
+    await page.getByRole('radio', { name: tab }).click();
+    await expect(card(requested, 'seed-post')).toBeVisible();
+  }
+  await page.getByRole('button', { name: /^1 ביקשו ממך/ }).click();
+  await expect(requested).toBeInViewport();
+
+  // Made urgent: it counts as urgent at once, though it is planned for Tuesday.
+  await page.evaluate(() =>
+    (window as unknown as HookWindow).__homecareTest.state.tasks.update('seed-post', {
+      priority: 'urgent'
+    })
+  );
+  await expect(pulse(page, 'attention')).toHaveText('4');
+  await expect(card(section(page, 'attention'), 'seed-post')).toBeVisible();
+  await expect(requested).toHaveCount(0);
+  await expect(pulse(page, 'requested')).toHaveCount(0);
 });
 
 test('swiping toward inline-start snoozes: the card moves and the counter bumps', async ({
@@ -191,8 +233,21 @@ test('empty states: a calm Today, and an all-clear home', async ({ page }) => {
     const s = (window as unknown as HookWindow).__homecareTest.state.tasks;
     for (const t of s.groups.today) s.snooze(t.id, '2026-10-20');
   });
-  await expect(page.getByText('הכל סגור להיום. אפשר לנשום.')).toBeVisible();
+  // Today is empty, but overdue / urgent work and a request wait above it: not "breathe" yet. The
+  // body points to the tab that has the next tasks.
+  const empty = page.locator('[data-empty="today"]');
+  await expect(empty).toContainText('אין עוד משהו מתוכנן להיום');
+  await expect(empty).toContainText('המשימות הבאות מחכות בלשונית "השבוע".');
   await expect(pulse(page, 'today')).toHaveText('0');
+
+  // Nothing above it and nothing this week: calm, and pointed at "בהמשך" (not an empty week tab).
+  await page.evaluate(() => {
+    const s = (window as unknown as HookWindow).__homecareTest.state.tasks;
+    for (const t of [...s.groups.attention, ...s.groups.requested, ...s.groups.week])
+      s.remove(t.id);
+  });
+  await expect(page.getByText('הכל סגור להיום. אפשר לנשום.')).toBeVisible();
+  await expect(empty).toContainText('המשימות הבאות מחכות בלשונית "בהמשך".');
 
   // Everything removed (hidden at once; the 5 s undo window outlasts the assertions).
   await page.evaluate(() => {

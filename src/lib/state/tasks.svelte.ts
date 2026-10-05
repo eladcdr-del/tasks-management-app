@@ -6,8 +6,9 @@
 //   tasks.open                     open tasks (repository order), minus the ones being deleted
 //   tasks.today                    clock.today (clock.svelte.ts): ISODate in Asia/Jerusalem, rolls over
 //                                  at local midnight and when the app becomes visible again
-//   tasks.groups                   groupTasks(open, today, memberIds): attention/waiting/today/week/later
-//   tasks.pulse                    pulseCounts(…): { attention, today, waiting }
+//   tasks.groups                   groupTasks(open, today, memberIds, uid): attention/requested/
+//                                  waiting/today/week/later ("requested" = asked of the signed-in user)
+//   tasks.pulse                    pulseCounts(…): { attention, today, waiting, requested }
 //   tasks.countsByMember           openCountsByMember(open, memberIds): { [uid]: n }
 //   tasks.byId(id)                 an open or loaded done task, or null
 //   tasks.done / hasMoreDone / loadMoreDone()      completed tasks, newest first, paged
@@ -98,8 +99,8 @@ export class TasksStore implements ScopedStore {
       ? this.#rawOpen
       : this.#rawOpen.filter((t) => !this.#deleting.has(t.id))
   );
-  readonly groups = $derived(groupTasks(this.open, this.today, this.#memberIds()));
-  readonly pulse = $derived(pulseCounts(this.open, this.today, this.#memberIds()));
+  readonly groups = $derived(groupTasks(this.open, this.today, this.#memberIds(), this.uid));
+  readonly pulse = $derived(pulseCounts(this.open, this.today, this.#memberIds(), this.uid));
   readonly countsByMember: Readonly<Record<string, number>> = $derived(
     openCountsByMember(this.open, this.#memberIds() ?? [])
   );

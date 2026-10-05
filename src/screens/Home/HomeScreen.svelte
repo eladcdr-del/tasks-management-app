@@ -5,6 +5,7 @@
    *   pulse       attention / today / waiting numerals (tap → that list) + balance row
    *   jar strip   JarMini
    *   attention   "דורש תשומת לב" (only when non-empty)
+   *   requested   "ביקשו ממך": what someone else asked me, whatever the date tab (only when non-empty)
    *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty)
    *   plan        היום | השבוע | בהמשך + member filter, then the TaskCards (unowned ones muted)
    * Every list comes from tasks.groups (domain groupTasks); nothing is bucketed here.
@@ -85,22 +86,35 @@
   ]);
 
   const nothingOpen = $derived(tasks.openLoaded && tasks.open.length === 0);
-  const emptyCopy = $derived(
-    homeView.filter !== 'all' ? t.empty.filtered : t.empty[homeView.bucket]
-  );
+  /**
+   * An empty Today is calm only when nothing waits above it, and it points to the first tab that
+   * actually has tasks (not always "השבוע").
+   */
+  const emptyCopy = $derived.by((): { title: string; body?: string; calm?: boolean } => {
+    if (homeView.filter !== 'all') return t.empty.filtered;
+    if (homeView.bucket !== 'today') return t.empty[homeView.bucket];
+    const next = bucketOptions.find((o) => o.value !== 'today' && o.count > 0);
+    const calm = groups.attention.length === 0 && groups.requested.length === 0;
+    return {
+      title: calm ? t.empty.today.title : t.empty.today.rest,
+      body: next ? t.empty.today.body(next.label) : undefined,
+      calm
+    };
+  });
 
   let attentionEl: HTMLElement | undefined = $state();
+  let requestedEl: HTMLElement | undefined = $state();
   let waitingEl: HTMLElement | undefined = $state();
   let planEl: HTMLElement | undefined = $state();
 
-  async function pick(key: 'attention' | 'today' | 'waiting') {
+  async function pick(key: 'attention' | 'today' | 'waiting' | 'requested') {
     let target: HTMLElement | undefined;
     if (key === 'today') {
       homeView.bucket = 'today';
       await tick();
       target = planEl;
     } else {
-      target = key === 'attention' ? attentionEl : waitingEl;
+      target = key === 'attention' ? attentionEl : key === 'requested' ? requestedEl : waitingEl;
       if (!target) {
         // Nothing to show there: the plan list is the closest useful place.
         target = planEl;
@@ -184,6 +198,17 @@
         </section>
       {/if}
 
+      {#if groups.requested.length > 0}
+        <section class="block" bind:this={requestedEl} data-section="requested">
+          <SectionHeader
+            id="home-requested"
+            title={t.sections.requested}
+            count={groups.requested.length}
+          />
+          <TaskList tasks={groups.requested} label={t.sections.requested} />
+        </section>
+      {/if}
+
       {#if groups.waiting.length > 0}
         <section class="block" bind:this={waitingEl} data-section="waiting">
           <SectionHeader
@@ -235,7 +260,7 @@
           <div class="bucket-empty" data-empty={homeView.bucket}>
             <EmptyState title={emptyCopy.title} body={emptyCopy.body} compact level={3}>
               {#snippet illustration()}
-                {#if homeView.bucket === 'today' && homeView.filter === 'all'}<EmptyHome />{/if}
+                {#if emptyCopy.calm}<EmptyHome />{/if}
               {/snippet}
             </EmptyState>
           </div>
