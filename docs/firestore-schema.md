@@ -143,8 +143,10 @@ Compatibility with a client still on the pre-feature version (until it updates):
 `freq` and `anchor`, so it shows no label for `daily` and treats `interval` / `weekdays` series as
 plain weekly/monthly/yearly; completing such a task there writes the next instance as
 `{freq, anchor}` (accepted by the rules) and the series continues without its interval/days.
-Completing a `daily` task on that version fails on the device (its code cannot compute a daily next
-date), with nothing written. Documents written before the feature need no migration.
+Editing or completing a `daily` task on that version fails on the device (its validation and its
+next-date code do not know `daily`), with nothing written; taking, requesting, snoozing and
+reading still work. That version applies the update itself the next time the app goes to the
+background, so the window is short. Documents written before the feature need no migration.
 
 ### `households/{hid}/events/{eventId}`: read M · create M · update/delete never
 
