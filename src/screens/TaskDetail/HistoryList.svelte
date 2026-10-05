@@ -19,7 +19,9 @@
     <li data-event={item.type}>
       <span class="dot" data-member-color={m?.color} aria-hidden="true"></span>
       <span class="text">{item.text}</span>
-      <time class="when" datetime={new Date(item.at).toISOString()}>{eventTime(item.at, today)}</time>
+      <time class="when" datetime={new Date(item.at).toISOString()}
+        >{eventTime(item.at, today)}</time
+      >
     </li>
   {/each}
 </ol>

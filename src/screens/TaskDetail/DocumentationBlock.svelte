@@ -36,9 +36,19 @@
       <p class="done-title">{t.doneTitle}</p>
       <p class="done-line">
         {#if by}
-          <Avatar name={by.displayName} color={by.color} photoURL={by.photoURL} size="xs" ring={false} decorative />
+          <Avatar
+            name={by.displayName}
+            color={by.color}
+            photoURL={by.photoURL}
+            size="xs"
+            ring={false}
+            decorative
+          />
         {/if}
-        {t.doneLine(by?.displayName ?? t.someone, task.completedAt ? formatDate(task.completedAt, { today }) : '')}
+        {t.doneLine(
+          by?.displayName ?? t.someone,
+          task.completedAt ? formatDate(task.completedAt, { today }) : ''
+        )}
       </p>
     </div>
   </div>

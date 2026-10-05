@@ -25,25 +25,47 @@
   const firstPhoto = $derived(c?.photoIds[0] ?? null);
 </script>
 
-<a class="card" href={href('task', { id: task.id })} data-testid="memory-card" data-task-id={task.id}>
+<a
+  class="card"
+  href={href('task', { id: task.id })}
+  data-testid="memory-card"
+  data-task-id={task.id}
+>
   <span class="cat" aria-hidden="true">
-    {#if task.categoryId}<CategoryIcon id={task.categoryId} />{:else}<CategoryIcon id="other" />{/if}
+    {#if task.categoryId}<CategoryIcon id={task.categoryId} />{:else}<CategoryIcon
+        id="other"
+      />{/if}
   </span>
   <span class="main">
     <span class="title" dir={textDir(task.title)}>{task.title}</span>
     <span class="who">
       {#if by}
-        <Avatar name={by.displayName} photoURL={by.photoURL} color={by.color} size="xs" ring={false} decorative />
+        <Avatar
+          name={by.displayName}
+          photoURL={by.photoURL}
+          color={by.color}
+          size="xs"
+          ring={false}
+          decorative
+        />
       {/if}
       <span>{he.memory.doneBy(by?.displayName ?? he.taskDetail.someone, date)}</span>
     </span>
     {#if c && (c.cost !== null || c.place)}
       <span class="facts">
         {#if c.cost !== null}
-          <span class="fact cost"><Wallet strokeWidth={ICON_STROKE} aria-hidden="true" /><span class="num">{formatCurrency(c.cost)}</span></span>
+          <span class="fact cost"
+            ><Wallet strokeWidth={ICON_STROKE} aria-hidden="true" /><span class="num"
+              >{formatCurrency(c.cost)}</span
+            ></span
+          >
         {/if}
         {#if c.place}
-          <span class="fact place"><MapPin strokeWidth={ICON_STROKE} aria-hidden="true" /><span dir={textDir(c.place)}>{c.place}</span></span>
+          <span class="fact place"
+            ><MapPin strokeWidth={ICON_STROKE} aria-hidden="true" /><span dir={textDir(c.place)}
+              >{c.place}</span
+            ></span
+          >
         {/if}
       </span>
     {/if}

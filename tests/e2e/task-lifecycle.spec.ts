@@ -32,13 +32,10 @@ const openTasks = (page: Page) =>
     (window as unknown as HookWindow).__homecareTest.state.tasks.open.map((t) => ({ ...t }))
   );
 const taskById = (page: Page, id: string) =>
-  page.evaluate(
-    (id) => {
-      const t = (window as unknown as HookWindow).__homecareTest.state.tasks.byId(id);
-      return t ? JSON.parse(JSON.stringify(t)) as TaskLite : null;
-    },
-    id
-  );
+  page.evaluate((id) => {
+    const t = (window as unknown as HookWindow).__homecareTest.state.tasks.byId(id);
+    return t ? (JSON.parse(JSON.stringify(t)) as TaskLite) : null;
+  }, id);
 async function findOpen(page: Page, title: string): Promise<TaskLite> {
   await expect.poll(async () => (await openTasks(page)).some((t) => t.title === title)).toBe(true);
   const t = (await openTasks(page)).find((x) => x.title === title);
@@ -53,7 +50,9 @@ async function findOpen(page: Page, title: string): Promise<TaskLite> {
 async function snackAction(page: Page, message: RegExp): Promise<void> {
   await expect
     .poll(() =>
-      page.evaluate(() => (window as unknown as HookWindow).__homecareTest.state.ui.current?.message ?? '')
+      page.evaluate(
+        () => (window as unknown as HookWindow).__homecareTest.state.ui.current?.message ?? ''
+      )
     )
     .toMatch(message);
   if ((await page.locator('[data-stub="SnackbarHost"]').count()) > 0) {
@@ -90,7 +89,10 @@ function makePng(width: number, height: number): Buffer {
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr.set([8, 2, 0, 0, 0], 8); // 8-bit RGB
-  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(width).fill([217, 119, 75]).flat())]);
+  const row = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from(Array(width).fill([217, 119, 75]).flat())
+  ]);
   const raw = Buffer.concat(Array.from({ length: height }, () => row));
   return Buffer.concat([
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -166,15 +168,17 @@ test('detail: edit the title, complete with documentation and a photo, then undo
 
   await title.fill('להזמין אינסטלטור לנזילה במטבח');
   await title.press('Enter');
-  await expect.poll(async () => (await taskById(page, 'seed-plumber'))?.title).toBe(
-    'להזמין אינסטלטור לנזילה במטבח'
-  );
+  await expect
+    .poll(async () => (await taskById(page, 'seed-plumber'))?.title)
+    .toBe('להזמין אינסטלטור לנזילה במטבח');
   await expect(detail.locator('[data-event="edited"]')).toContainText('מיכל עדכנה');
 
   // Complete with a note, a cost and a photo.
   await detail.getByRole('button', { name: 'בוצע', exact: true }).click();
   const sheet = page.getByTestId('complete-sheet');
-  await expect(sheet.getByRole('heading', { name: 'כל הכבוד, עוד משימה ירדה מהרשימה' })).toBeVisible();
+  await expect(
+    sheet.getByRole('heading', { name: 'כל הכבוד, עוד משימה ירדה מהרשימה' })
+  ).toBeVisible();
   await sheet.getByRole('button', { name: /להוסיף תיעוד/ }).click();
   await sheet.getByLabel('הערה').fill('הוחלף סיפון מתחת לכיור');
   await sheet.getByLabel('עלות').fill('350');
@@ -222,8 +226,10 @@ test('completing a recurring task creates the next instance', async ({ page }) =
   await page.getByTestId('complete-sheet').getByRole('button', { name: 'סיום' }).click();
 
   await expect
-    .poll(async () =>
-      (await openTasks(page)).filter((t) => t.title === 'לשלם ארנונה' && t.id !== arnona.id).length
+    .poll(
+      async () =>
+        (await openTasks(page)).filter((t) => t.title === 'לשלם ארנונה' && t.id !== arnona.id)
+          .length
     )
     .toBe(1);
   const next = (await openTasks(page)).find((t) => t.title === 'לשלם ארנונה' && t.id !== arnona.id);
@@ -231,7 +237,9 @@ test('completing a recurring task creates the next instance', async ({ page }) =
 
   await detail.getByTestId('next-instance').click();
   await expect(page).toHaveURL(new RegExp(`#/task/${next?.id}$`));
-  await expect(page.getByTestId('task-detail').getByLabel('כותרת המשימה')).toHaveValue('לשלם ארנונה');
+  await expect(page.getByTestId('task-detail').getByLabel('כותרת המשימה')).toHaveValue(
+    'לשלם ארנונה'
+  );
 });
 
 test('delete leaves at once and can be undone within 5 seconds', async ({ page }) => {
@@ -243,7 +251,9 @@ test('delete leaves at once and can be undone within 5 seconds', async ({ page }
   await expect.poll(() => taskById(page, 'seed-bulbs')).toBeNull();
 
   await snackAction(page, /המשימה נמחקה/);
-  await expect.poll(async () => (await taskById(page, 'seed-bulbs'))?.title).toBe('לקנות נורות לסלון');
+  await expect
+    .poll(async () => (await taskById(page, 'seed-bulbs'))?.title)
+    .toBe('לקנות נורות לסלון');
 });
 
 test('the owner block speaks to the viewer about a request', async ({ page }) => {

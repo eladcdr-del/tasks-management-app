@@ -14,12 +14,7 @@
   import Repeat from '@lucide/svelte/icons/repeat';
   import Users from '@lucide/svelte/icons/users';
   import Tag from '@lucide/svelte/icons/tag';
-  import type {
-    CategoryId,
-    Priority,
-    RecurrenceFreq,
-    TaskDraft
-  } from '$lib/domain/types';
+  import type { CategoryId, Priority, RecurrenceFreq, TaskDraft } from '$lib/domain/types';
   import { DEFAULT_TZ } from '$lib/domain/dates';
   import { categoryShort } from '$lib/domain/categories';
   import { parseQuickAdd, type MatchField, type ParseMatch } from '$lib/parser/quickAdd';
@@ -68,9 +63,7 @@
   let inputEl: HTMLInputElement | undefined = $state();
 
   const today = $derived(clock.today);
-  const parsed = $derived(
-    parseQuickAdd(text, new Date(clock.nowMs), DEFAULT_TZ, { dismissed })
-  );
+  const parsed = $derived(parseQuickAdd(text, new Date(clock.nowMs), DEFAULT_TZ, { dismissed }));
 
   // ── the effective draft: parsed values, overridden by explicit picks ──────────
   const plan = $derived<PlanValue>(
@@ -323,11 +316,7 @@
           onChange={(uid) => choose({ owner: uid })}
         />
       {:else if openPicker === 'when'}
-        <WhenPicker
-          value={plan}
-          {today}
-          onChange={(v) => choose({ plan: v })}
-        />
+        <WhenPicker value={plan} {today} onChange={(v) => choose({ plan: v })} />
       {:else if openPicker === 'priority'}
         <PriorityPicker value={priority} onChange={(p) => choose({ priority: p })} />
       {:else if openPicker === 'category'}

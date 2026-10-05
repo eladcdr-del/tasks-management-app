@@ -80,7 +80,12 @@
     >
       {#snippet trailing()}
         {#if query}
-          <button type="button" class="clear" aria-label={t.clearSearch} onclick={() => (query = '')}>
+          <button
+            type="button"
+            class="clear"
+            aria-label={t.clearSearch}
+            onclick={() => (query = '')}
+          >
             <X strokeWidth={ICON_STROKE} aria-hidden="true" />
           </button>
         {/if}

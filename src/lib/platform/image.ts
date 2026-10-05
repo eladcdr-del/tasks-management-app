@@ -151,7 +151,12 @@ async function decodeInBrowser(file: Blob): Promise<BrowserImage> {
 
 let canvas: HTMLCanvasElement | null = null;
 
-function renderInBrowser(img: DecodedImage, width: number, height: number, quality: number): string {
+function renderInBrowser(
+  img: DecodedImage,
+  width: number,
+  height: number,
+  quality: number
+): string {
   canvas ??= document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;

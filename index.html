@@ -20,17 +20,17 @@
       // Runtime changes go through src/lib/platform/theme.ts (applyTheme), which mirrors this logic:
       // a forced theme collapses the two media-scoped theme-color metas into one of its colour.
       (function () {
-      try {
-        var t = localStorage.getItem('homecare.theme');
-        if (t === 'light' || t === 'dark' || t === 'system')
-          document.documentElement.dataset.theme = t;
-        if (t === 'light' || t === 'dark') {
-          var metas = document.querySelectorAll('meta[name="theme-color"]');
-          for (var i = 1; i < metas.length; i++) metas[i].remove();
-          metas[0].removeAttribute('media');
-          metas[0].setAttribute('content', t === 'dark' ? '#1C1714' : '#FBF6EF');
-        }
-      } catch (e) {}
+        try {
+          var t = localStorage.getItem('homecare.theme');
+          if (t === 'light' || t === 'dark' || t === 'system')
+            document.documentElement.dataset.theme = t;
+          if (t === 'light' || t === 'dark') {
+            var metas = document.querySelectorAll('meta[name="theme-color"]');
+            for (var i = 1; i < metas.length; i++) metas[i].remove();
+            metas[0].removeAttribute('media');
+            metas[0].setAttribute('content', t === 'dark' ? '#1C1714' : '#FBF6EF');
+          }
+        } catch (e) {}
       })();
     </script>
   </head>

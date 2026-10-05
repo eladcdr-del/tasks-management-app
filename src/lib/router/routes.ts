@@ -108,7 +108,14 @@ export type SheetSpec =
 
 export type SheetName = SheetSpec['name'];
 
-const SHEET_NAMES: readonly SheetName[] = ['quickAdd', 'complete', 'request', 'snooze', 'jarSetup', 'photo'];
+const SHEET_NAMES: readonly SheetName[] = [
+  'quickAdd',
+  'complete',
+  'request',
+  'snooze',
+  'jarSetup',
+  'photo'
+];
 
 /** Validates an unknown value (e.g. from `history.state`) as a SheetSpec. */
 export function isSheetSpec(value: unknown): value is SheetSpec {

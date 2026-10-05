@@ -6,7 +6,14 @@
   import PartyPopper from '@lucide/svelte/icons/party-popper';
   import NotebookPen from '@lucide/svelte/icons/notebook-pen';
   import type { EncodedPhoto } from '$lib/domain/types';
-  import { Button, Disclosure, NumberField, TextArea, TextField, ICON_STROKE } from '$components/ui';
+  import {
+    Button,
+    Disclosure,
+    NumberField,
+    TextArea,
+    TextField,
+    ICON_STROKE
+  } from '$components/ui';
   import PhotoPicker from '$components/form/PhotoPicker.svelte';
   import { relativeDayLabel } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';

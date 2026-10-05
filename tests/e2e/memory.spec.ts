@@ -55,7 +55,10 @@ test('category and member filters narrow the memory', async ({ page }) => {
   const all = await cards.count();
 
   await memory.locator(`button[data-category="car"]`).click();
-  await expect(memory.locator(`button[data-category="car"]`)).toHaveAttribute('aria-pressed', 'true');
+  await expect(memory.locator(`button[data-category="car"]`)).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  );
   await expect(cards.filter({ hasText: 'החלפת מצבר' })).toHaveCount(1);
   await expect(cards.filter({ hasText: 'הדברה בבית' })).toHaveCount(0);
   const cars = await cards.count();

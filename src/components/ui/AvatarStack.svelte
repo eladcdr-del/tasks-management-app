@@ -29,9 +29,7 @@
   const extra = $derived(Math.max(0, people.length - max));
   const groupLabel = $derived(
     label ??
-      [...shown.map((p) => p.displayName), ...(extra > 0 ? [he.ui.andMore(extra)] : [])].join(
-        ', '
-      )
+      [...shown.map((p) => p.displayName), ...(extra > 0 ? [he.ui.andMore(extra)] : [])].join(', ')
   );
 </script>
 

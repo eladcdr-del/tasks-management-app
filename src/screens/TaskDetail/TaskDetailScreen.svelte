@@ -19,7 +19,14 @@
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import type { CategoryId, ISODate, Priority, RecurrenceFreq, TaskPatch } from '$lib/domain/types';
   import { getCategory } from '$lib/domain/categories';
-  import { ageLabelText, PRIORITY_LABELS, RECURRENCE_LABELS, formatDate, snoozedLabel, whenChip } from '$lib/i18n/format';
+  import {
+    ageLabelText,
+    PRIORITY_LABELS,
+    RECURRENCE_LABELS,
+    formatDate,
+    snoozedLabel,
+    whenChip
+  } from '$lib/i18n/format';
   import { ageStart } from '$lib/domain/age';
   import {
     Badge,
@@ -78,7 +85,7 @@
     titleFocused = false;
     if (!task) return;
     const next = titleDraft.replace(/\s+/g, ' ').trim();
-    if (next === '' ) {
+    if (next === '') {
       titleDraft = task.title;
       return;
     }
@@ -143,7 +150,11 @@
   async function share() {
     if (!task) return;
     const url = `${location.origin}${location.pathname}#/task/${encodeURIComponent(task.id)}`;
-    const r = await shareTask({ title: task.title, text: t.shareText(task.title, chip?.text ?? null), url });
+    const r = await shareTask({
+      title: task.title,
+      text: t.shareText(task.title, chip?.text ?? null),
+      url
+    });
     if (r === 'copied') ui.show(t.copied);
   }
 
@@ -213,8 +224,7 @@
               titleDraft = task?.title ?? '';
               e.currentTarget.blur();
             }
-          }}
-        ></textarea>
+          }}></textarea>
         <div class="meta">
           {#if chip}
             <Badge
@@ -245,7 +255,11 @@
       {#if isDone}
         <DocumentationBlock {task} {today} />
         {#if nextInstance}
-          <a class="next-link" href={href('task', { id: nextInstance.id })} data-testid="next-instance">
+          <a
+            class="next-link"
+            href={href('task', { id: nextInstance.id })}
+            data-testid="next-instance"
+          >
             <Repeat aria-hidden="true" />
             <span>{t.nextInstance}</span>
             <ChevronLeft aria-hidden="true" class="chev" />
@@ -264,7 +278,10 @@
           </FieldRow>
           <FieldRow label={t.due} value={dueText} icon={CalendarClock} name="due">
             {#snippet badge()}
-              {#if task.hardDeadline && task.dueDate}<LockClock size={16} aria-label={t.hardDeadline} />{/if}
+              {#if task.hardDeadline && task.dueDate}<LockClock
+                  size={16}
+                  aria-label={t.hardDeadline}
+                />{/if}
             {/snippet}
             <div class="due">
               <DateField value={task.dueDate} min={today} onChange={onDue} />
@@ -284,7 +301,10 @@
             icon={Flag}
             name="priority"
           >
-            <PriorityPicker value={task.priority} onChange={(p: Priority) => patch({ priority: p })} />
+            <PriorityPicker
+              value={task.priority}
+              onChange={(p: Priority) => patch({ priority: p })}
+            />
           </FieldRow>
           <FieldRow label={t.category} value={category?.label ?? null} icon={Tag} name="category">
             <CategoryPicker
@@ -325,14 +345,18 @@
 
       <div class="quiet-actions">
         <Button variant="ghost" icon={Share2} onclick={share}>{t.share}</Button>
-        <Button variant="ghost" icon={Trash2} class="danger-ghost" onclick={remove}>{t.delete}</Button>
+        <Button variant="ghost" icon={Trash2} class="danger-ghost" onclick={remove}
+          >{t.delete}</Button
+        >
       </div>
     </div>
 
     <!-- data-action-bar: SnackbarHost lifts messages above this bar. -->
     <footer class="action-bar" data-action-bar>
       {#if isDone}
-        <Button size="lg" block variant="secondary" icon={RotateCcw} onclick={reopen}>{t.reopen}</Button>
+        <Button size="lg" block variant="secondary" icon={RotateCcw} onclick={reopen}
+          >{t.reopen}</Button
+        >
       {:else}
         <Button
           size="lg"
@@ -345,7 +369,8 @@
           size="lg"
           block
           icon={Check}
-          onclick={() => router.openSheet({ name: 'complete', taskId: task.id })}>{t.complete}</Button
+          onclick={() => router.openSheet({ name: 'complete', taskId: task.id })}
+          >{t.complete}</Button
         >
       {/if}
     </footer>

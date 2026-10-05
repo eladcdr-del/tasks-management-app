@@ -23,18 +23,18 @@ An app for managing household tasks together, built for mom and dad (Hebrew, RTL
 
 ## Architecture
 
-| Layer | Location |
-|---|---|
-| Screens | `src/screens/*`, `src/sheets/*` |
-| Design system | `src/components/ui/*` (tokens in `src/styles/tokens.css`) |
-| State (Svelte 5 runes) | `src/lib/state/*.svelte.ts` |
-| Business logic (pure, tested) | `src/lib/domain/*`, Hebrew formatting in `src/lib/i18n/format.ts` |
-| Quick-add parser | `src/lib/parser/*` (change only with tests) |
-| Data | `src/lib/data/repository.ts` (contract), `demo/` (local), `firebase/` (Firestore + Auth) |
-| Security rules | `firestore.rules`, schema in `docs/firestore-schema.md` |
-| Router | `src/lib/router/*` (hash routing; Back closes sheets; change only with tests) |
-| Notifications (server) | `scripts/notify/*` + `.github/workflows/notify.yml` (cron every 5 minutes) |
-| Strings | `src/lib/i18n/he/*.ts` |
+| Layer                         | Location                                                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| Screens                       | `src/screens/*`, `src/sheets/*`                                                          |
+| Design system                 | `src/components/ui/*` (tokens in `src/styles/tokens.css`)                                |
+| State (Svelte 5 runes)        | `src/lib/state/*.svelte.ts`                                                              |
+| Business logic (pure, tested) | `src/lib/domain/*`, Hebrew formatting in `src/lib/i18n/format.ts`                        |
+| Quick-add parser              | `src/lib/parser/*` (change only with tests)                                              |
+| Data                          | `src/lib/data/repository.ts` (contract), `demo/` (local), `firebase/` (Firestore + Auth) |
+| Security rules                | `firestore.rules`, schema in `docs/firestore-schema.md`                                  |
+| Router                        | `src/lib/router/*` (hash routing; Back closes sheets; change only with tests)            |
+| Notifications (server)        | `scripts/notify/*` + `.github/workflows/notify.yml` (cron every 5 minutes)               |
+| Strings                       | `src/lib/i18n/he/*.ts`                                                                   |
 
 Stack: Svelte 5, Vite 8, TypeScript, vite-plugin-pwa (Workbox), Firebase 12 (Spark plan), GitHub Pages.
 

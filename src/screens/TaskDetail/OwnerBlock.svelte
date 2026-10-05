@@ -29,7 +29,11 @@
   const mine = $derived(task.ownerId !== null && task.ownerId === household.uid);
   const requester = $derived(household.memberById(task.requestedBy));
   const ownerLine = $derived(
-    task.ownerId === null ? t.waiting : mine ? t.ownedByMe : t.ownedBy(owner?.displayName ?? t.someone)
+    task.ownerId === null
+      ? t.waiting
+      : mine
+        ? t.ownedByMe
+        : t.ownedBy(owner?.displayName ?? t.someone)
   );
   const multi = $derived(household.members.length > 1);
   const requestLine = $derived.by(() => {
@@ -56,7 +60,13 @@
 <section class="owner" aria-label={t.owner} data-testid="owner-block">
   <div class="who">
     {#if owner}
-      <Avatar name={owner.displayName} photoURL={owner.photoURL} color={owner.color} size="md" decorative />
+      <Avatar
+        name={owner.displayName}
+        photoURL={owner.photoURL}
+        color={owner.color}
+        size="md"
+        decorative
+      />
     {:else}
       <Avatar unassigned size="md" decorative />
     {/if}

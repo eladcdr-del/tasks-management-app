@@ -54,9 +54,7 @@
         ? he.ui.sync.saving
         : he.ui.sync.offline
   );
-  const detail = $derived(
-    status === 'offline' && pending > 0 ? he.ui.sync.pending(pending) : ''
-  );
+  const detail = $derived(status === 'offline' && pending > 0 ? he.ui.sync.pending(pending) : '');
 </script>
 
 <span

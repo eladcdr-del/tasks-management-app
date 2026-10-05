@@ -51,8 +51,7 @@ export const taskDetail = {
   reopen: 'פתיחה מחדש',
   reopened: 'המשימה נפתחה מחדש',
   copied: 'הקישור הועתק',
-  shareText: (title: string, when: string | null) =>
-    when ? `${title} (${when})` : title,
+  shareText: (title: string, when: string | null) => (when ? `${title} (${when})` : title),
 
   // done
   doneTitle: 'בוצעה',
