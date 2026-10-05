@@ -346,7 +346,7 @@ describe('jar_filled', () => {
         uid: 'u-dani',
         type: 'jar_filled',
         title: 'הצנצנת התמלאה!',
-        body: 'הגיע הזמן ל: ארוחה במסעדה',
+        body: 'הגיע הזמן לצ׳ופר: ארוחה במסעדה',
         url: `${APP}#/jar`,
         tag: 'jar:j1',
         eventIds: ['j1']
@@ -370,7 +370,7 @@ describe('jar_filled', () => {
     });
     expect(out.sends.map((s) => [s.type, s.title, s.body])).toEqual([
       ['completed', 'מיכל סיימה: לקנות חלב', 'עוד משימה ירדה מהרשימה'],
-      ['jar_filled', 'הצנצנת התמלאה!', 'הגיע הזמן לפינוק שקבעתם']
+      ['jar_filled', 'הצנצנת התמלאה!', 'הגיע הזמן לצ׳ופר שקבעתם']
     ]);
   });
 
@@ -753,14 +753,14 @@ describe('day-before hard deadline (18:00–22:00)', () => {
     expect(plan(input({ now: SUN(hhmm), tasks: [shirt] })).sends.length > 0).toBe(expected);
   });
 
-  it('reminds the owner with "מחר אחרון"', () => {
+  it('reminds the owner with "מחר המועד האחרון"', () => {
     const out = plan(input({ now: SUN('18:30'), tasks: [shirt] }));
     expect(out.sends).toEqual([
       {
         keys: [`eve:t-shirt:${TOMORROW}:u-dani`],
         uid: 'u-dani',
         type: 'eve',
-        title: 'מחר אחרון: להחזיר את החולצה לקניון',
+        title: 'מחר המועד האחרון: להחזיר את החולצה לקניון',
         body: 'נשאר עוד יום',
         url: `${APP}#/task/t-shirt`,
         tag: `eve:${TOMORROW}`,
@@ -794,13 +794,13 @@ describe('day-before hard deadline (18:00–22:00)', () => {
     const out = plan(input({ now: SUN('20:00'), tasks: [shirt, gift] }));
     expect(forUid(out.sends, 'u-dani').map((s) => [s.title, s.body, s.keys])).toEqual([
       [
-        'מחר אחרון: 2 משימות',
+        'מחר המועד האחרון ל-2 משימות',
         'לקנות מתנה, להחזיר את החולצה לקניון',
         [`eve:t-gift:${TOMORROW}:u-dani`, `eve:t-shirt:${TOMORROW}:u-dani`]
       ]
     ]);
     expect(forUid(out.sends, 'u-michal').map((s) => [s.title, s.body])).toEqual([
-      ['מחר אחרון: לקנות מתנה', 'נשאר עוד יום · מחר עד השעה 12:00']
+      ['מחר המועד האחרון: לקנות מתנה', 'עד השעה 12:00']
     ]);
   });
 });

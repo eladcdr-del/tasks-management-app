@@ -54,7 +54,7 @@ const FIRST_RUN = [
   {
     tokens: [tok.daniPhone.token],
     title: 'הצנצנת התמלאה!',
-    body: 'הגיע הזמן ל: ארוחה במסעדה',
+    body: 'הגיע הזמן לצ׳ופר: ארוחה במסעדה',
     url: 'https://eladcdr-del.github.io/tasks-management-app/#/jar'
   },
   {
@@ -188,7 +188,7 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     const r2 = await run({ db, sender, now: sunday('18:13') });
     expect(r2.households[0]?.outcomes.filter((o) => o.status === 'delivered')).toHaveLength(1);
     expect(sender.calls.slice(6).map((c) => [c.tokens, c.msg.title])).toEqual([
-      [[tok.daniPhone.token], 'מחר אחרון: להחזיר את החולצה לקניון']
+      [[tok.daniPhone.token], 'מחר המועד האחרון: להחזיר את החולצה לקניון']
     ]);
 
     // 21:24: nothing new
