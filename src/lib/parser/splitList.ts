@@ -61,7 +61,10 @@ const WRAPPED_RE = /^([*_~])(?=\S)(.*\S)\1$/u;
 
 const EMOJI = '(?:\\p{Extended_Pictographic}|\\p{Regional_Indicator})';
 const EMOJI_TAIL = '(?:[\\u{FE0E}\\u{FE0F}\\u{20E3}\\u{1F3FB}-\\u{1F3FF}]|\\u{200D}' + EMOJI + ')*';
-const BULLETS = '[-*+>•‣⁃∙·‧◦○●■□▪▫◆◇►▸▹▶➢➣➤➔→⇒✓✗✘–—\\u2190-\\u21FF\\u25A0-\\u25FF\\u2794-\\u27BF]';
+// Checkboxes and ticks are listed explicitly (☐ ☑ ☒ ✅ ✔ ✓ ❌ ❎): whether \p{Extended_Pictographic}
+// covers them differs between ICU versions (CI's Node did not match ☐).
+const BULLETS =
+  '[-*+>•‣⁃∙·‧◦○●■□▪▫◆◇►▸▹▶➢➣➤➔→⇒✓✗✘–—\\u2190-\\u21FF\\u25A0-\\u25FF\\u2610-\\u2612\\u2705\\u2714\\u274C\\u274E\\u2794-\\u27BF]';
 
 /** One leading marker (and the spaces after it). Tried again and again until none is left. */
 const MARKER_RE = new RegExp(
