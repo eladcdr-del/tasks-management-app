@@ -23,12 +23,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const firebaseConfig = {
-  apiKey: '', //            לדוגמה: 'AIzaSy...'
-  authDomain: '', //        לדוגמה: 'homecare-12345.firebaseapp.com'
-  projectId: '', //         לדוגמה: 'homecare-12345'
-  storageBucket: '', //     לדוגמה: 'homecare-12345.firebasestorage.app' (לא בשימוש, אפשר להשאיר)
-  messagingSenderId: '', // לדוגמה: '123456789012'
-  appId: '' //              לדוגמה: '1:123456789012:web:abc123...'
+  apiKey: 'AIzaSyDlYTgOJNttjh-McbCtl366ujZyuR1b4es',
+  authDomain: 'homecare-49b3d.firebaseapp.com',
+  projectId: 'homecare-49b3d',
+  storageBucket: 'homecare-49b3d.firebasestorage.app',
+  messagingSenderId: '594233931298',
+  appId: '1:594233931298:web:931b28957c38ef26ef3c7b'
 };
 
 // אופציונלי: מפתח Web Push (VAPID) להתראות.
