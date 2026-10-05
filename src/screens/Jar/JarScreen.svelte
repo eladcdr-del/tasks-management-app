@@ -11,8 +11,9 @@
    *            sheet for the next treat. The CelebrationOverlay once per round (remembered per
    *            household and round on this device)
    *   history  earned treats, with who took part
-   * Marbles added since this device last looked drop in when the screen opens. No jar yet: an
-   * invitation to set one up.
+   * Marbles added since this device last looked drop in when the screen opens (the jar is drawn
+   * once this round's done tasks are in, at most DONE_WAIT_MS later). No jar yet: an invitation
+   * to set one up.
    */
   import { untrack } from 'svelte';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -50,6 +51,7 @@
   import { readSeen, statusLine, writeSeen } from './jarView';
 
   const t = he.jar;
+  const DONE_WAIT_MS = 600;
   const jar = $derived(household.jar);
   const ids = $derived(household.memberIds ?? household.members.map((m) => m.uid));
   const each = $derived(jar !== null && modeOf(jar) === 'each');
@@ -72,10 +74,16 @@
   // ── Marbles added since this device last looked drop in ────────────────────
   const hid = $derived(household.household?.id ?? null);
   let seen = $state<number | undefined>(undefined);
-  // The first frame with the jar and its round's tasks decides what is new to this device; later
-  // additions drop as they arrive.
+  /** Done tasks order the marbles; they are worth waiting a moment for, never longer. */
+  let doneWaitOver = $state(false);
   $effect(() => {
-    if (seen !== undefined || !hid || !jar || !tasks.doneLoaded) return;
+    const timer = setTimeout(() => (doneWaitOver = true), DONE_WAIT_MS);
+    return () => clearTimeout(timer);
+  });
+  // The first frame with the jar (and, normally, its round's tasks) decides what is new to this
+  // device; later additions drop as they arrive.
+  $effect(() => {
+    if (seen !== undefined || !hid || !jar || !(tasks.doneLoaded || doneWaitOver)) return;
     seen = untrack(() => readSeen(hid, jar.round));
   });
   $effect(() => {
