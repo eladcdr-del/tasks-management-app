@@ -256,6 +256,53 @@ test('delete leaves at once and can be undone within 5 seconds', async ({ page }
     .toBe('לקנות נורות לסלון');
 });
 
+test('delete is easy to find: a trash icon at the top does the same', async ({ page }) => {
+  await openApp(page, '#/task/seed-bulbs');
+  const detail = page.getByTestId('task-detail');
+  await expect(detail.getByLabel('כותרת המשימה')).toHaveValue('לקנות נורות לסלון');
+  // In the bar beside "שיתוף", in sight without scrolling.
+  const trash = detail.getByRole('button', { name: 'מחיקת המשימה' });
+  await expect(trash).toBeInViewport();
+  await trash.click();
+  // Not a repeating task: no question, it leaves at once with an undo.
+  await expect(page.getByRole('alertdialog')).toHaveCount(0);
+  await expect(page.getByTestId('task-detail')).toHaveCount(0);
+  await snackAction(page, /המשימה נמחקה/);
+  await expect
+    .poll(async () => (await taskById(page, 'seed-bulbs'))?.title)
+    .toBe('לקנות נורות לסלון');
+});
+
+test('deleting a task that repeats says first that the repeats stop', async ({ page }) => {
+  await openApp(page);
+  const arnona = await findOpen(page, 'לשלם ארנונה');
+  await openApp(page, `#/task/${arnona.id}`, { reset: false });
+  const detail = page.getByTestId('task-detail');
+  await expect(detail.locator('[data-field="recurrence"]')).toContainText('כל חודש');
+
+  await detail.getByRole('button', { name: 'מחיקת המשימה' }).click();
+  const dialog = page.getByRole('alertdialog', { name: 'למחוק את המשימה?' });
+  await expect(dialog).toContainText('המשימה חוזרת. מחיקה תעצור את החזרה.');
+  // The safe choice is focused; "ביטול" keeps it.
+  await expect(dialog.getByRole('button', { name: 'ביטול' })).toBeFocused();
+  await page.waitForTimeout(250);
+  await shot(page, 'detail-delete-recurring');
+  await dialog.getByRole('button', { name: 'ביטול' }).click();
+  await expect(dialog).toBeHidden();
+  expect((await taskById(page, arnona.id))?.status).toBe('open');
+
+  // The quiet button at the bottom asks the same; "מחיקה" deletes it, and no next one follows.
+  await detail.getByRole('button', { name: 'מחיקה', exact: true }).click();
+  await dialog.getByRole('button', { name: 'מחיקה' }).click();
+  await expect(page.getByTestId('task-detail')).toHaveCount(0);
+  await expect.poll(() => taskById(page, arnona.id)).toBeNull();
+  await expect
+    .poll(async () => (await openTasks(page)).filter((t) => t.title === 'לשלם ארנונה').length)
+    .toBe(0);
+  await snackAction(page, /המשימה נמחקה/);
+  await expect.poll(async () => (await taskById(page, arnona.id))?.status).toBe('open');
+});
+
 test('the owner block speaks to the viewer about a request', async ({ page }) => {
   await openApp(page, '#/task/seed-post'); // דני asked מיכל; she has not answered
   const block = page.getByTestId('owner-block');
