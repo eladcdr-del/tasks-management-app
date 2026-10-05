@@ -13,6 +13,7 @@ interface Hooks {
     tasks: {
       open: { id: string; title: string }[];
       create(draft: { title: string; categoryId: string | null }): string | null;
+      update(id: string, patch: Record<string, unknown>): void;
     };
   };
 }
@@ -203,6 +204,43 @@ test('tasks added into folded groups stay in sight, washed for a moment', async 
   await chips(page).getByRole('button', { name: 'פנויות' }).click();
   await expect(rows(group(page, 'shopping'))).toHaveCount(3);
   await expect(group(page, 'shopping').locator('[data-more]')).toHaveText('עוד 3');
+});
+
+test('"דורש תשומת לב" shows three, then "עוד N"; a new urgent task stays in sight', async ({
+  page
+}) => {
+  await openApp(page);
+  // Two more urgent tasks: five need attention.
+  await page.evaluate(() => {
+    const tasks = (window as unknown as HookWindow).__homecareTest.state.tasks;
+    for (const id of ['seed-ac', 'seed-washer']) tasks.update(id, { priority: 'urgent' });
+  });
+  const attention = section(page, 'attention');
+  await expect(attention.getByRole('heading', { level: 2 })).toHaveText(/דורש תשומת לב\s*5/);
+  await expect(rows(attention)).toHaveCount(3);
+  const more = attention.locator('[data-more]');
+  await expect(more).toHaveText('עוד 2');
+  await more.click();
+  await expect(rows(attention)).toHaveCount(5);
+  await expect(more).toHaveText('פחות');
+  await more.click();
+  await expect(rows(attention)).toHaveCount(3);
+
+  // Quick add, urgent: it sorts after the older urgent ones, yet shows right away.
+  await page.locator('[data-fab]').click();
+  const quick = page.getByTestId('quick-add');
+  await quick.getByLabel('מה צריך לעשות?').fill('להזמין חשמלאי דחוף');
+  await quick.getByRole('button', { name: 'הוספה' }).click();
+  await expect(quick.getByRole('status')).toContainText('נוסף ✓');
+  await page.goBack();
+  await expect(quick).toHaveCount(0);
+  const added = rows(attention).filter({ hasText: 'להזמין חשמלאי' });
+  await expect(added).toBeVisible();
+  await expect(added).toBeInViewport();
+  await expect(rows(attention)).toHaveCount(4);
+  await expect(more).toHaveText('עוד 2');
+  // Free: its small take action is right there.
+  await expect(added.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
 });
 
 test('reduced motion: the same list, without the movement', async ({ page }) => {

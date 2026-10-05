@@ -131,29 +131,32 @@
   let homeEl: HTMLElement | undefined = $state();
 
   /**
-   * Lists `ids` (all already in the time buckets): keeps the current tab and chip when they show
-   * every one of them, else the closest view that does (their tab, or "הכל" when they span tabs;
-   * chip "הכל" when the chip hides one). `prefer` replaces that choice when it lists them all.
+   * Brings just-added tasks into sight. For the ones that belong in the list, it keeps the current
+   * tab and chip when they show every one, else the closest view that does (their tab, or "הכל"
+   * when they span tabs; chip "הכל" when the chip hides one); `prefer` replaces that choice when it
+   * lists them all. Every one of them (attention included) stays in sight inside a folded block
+   * until the next view change, and gets a short wash.
    */
   function showTasks(ids: readonly string[], prefer?: HomeView) {
     const added = ids
       .map((id) => tasks.open.find((task) => task.id === id))
       .filter((task): task is Task => !!task);
+    const bucketOf = (task: Task) =>
+      (['today', 'week', 'later'] as const).find((b) => groups[b].some((x) => x.id === task.id));
+    const listed = added.filter(
+      (task) => bucketOf(task) && !groups.requested.some((x) => x.id === task.id)
+    );
     const lists = (v: HomeView) => {
       const shown = new Set(homeList(groups, v, household.uid, memberIds).map((x) => x.id));
-      return added.every((task) => shown.has(task.id));
+      return listed.every((task) => shown.has(task.id));
     };
     let next: HomeView = { tab: homeView.bucket, who: homeView.filter };
     if (prefer && lists(prefer)) next = prefer;
     else if (!lists(next)) {
-      const tabs = new Set(
-        added.map((task) =>
-          (['today', 'week', 'later'] as const).find((b) => groups[b].some((x) => x.id === task.id))
-        )
-      );
+      const tabs = new Set(listed.map(bucketOf));
       const tab: HomeTab =
         next.tab === 'all' || tabs.size !== 1 ? 'all' : ([...tabs][0] as HomeTab);
-      const who = added.every((task) =>
+      const who = listed.every((task) =>
         matchesWho(task, next.who, household.uid, household.memberIds)
       )
         ? next.who
@@ -173,22 +176,19 @@
   }
 
   // Tasks just added in quick add (it stays open for the next one, so there may be several): once
-  // the sheet closes and the last one is in the lists, list them. The ones above the bar
-  // (attention, a request to me) are in sight already.
+  // the sheet closes and the last one is on Home, show them.
   let quickAdds: string[] = [];
   $effect(() => {
     const id = homeView.lastAdded;
     if (id === null) return;
     if (!quickAdds.includes(id)) quickAdds = [...quickAdds, id];
     if (router.sheet !== null) return;
-    const has = (l: readonly Task[], x: string) => l.some((task) => task.id === x);
-    const inBuckets = (x: string) =>
-      has(groups.today, x) || has(groups.week, x) || has(groups.later, x);
-    if (!inBuckets(id) && !has(groups.attention, id) && !has(groups.requested, id)) return;
+    const lists = [groups.attention, groups.requested, groups.today, groups.week, groups.later];
+    if (!lists.some((l) => l.some((task) => task.id === id))) return;
     homeView.lastAdded = null;
-    const ids = quickAdds.filter((x) => inBuckets(x) && !has(groups.requested, x));
+    const ids = quickAdds;
     quickAdds = [];
-    if (ids.length > 0) untrack(() => showTasks(ids));
+    untrack(() => showTasks(ids));
   });
 
   // Many tasks added at once (quick add's list mode): show them with chip "פנויות" (nobody has
@@ -199,10 +199,7 @@
     const added = new Set(ids);
     if (!tasks.open.some((task) => added.has(task.id))) return;
     homeView.addedBatch = [];
-    untrack(() => {
-      const listed = ids.filter((id) => !groups.attention.some((x) => x.id === id));
-      showTasks(listed, { tab: 'all', who: 'free' });
-    });
+    untrack(() => showTasks(ids, { tab: 'all', who: 'free' }));
   });
 
   // ── Empty states ───────────────────────────────────────────────────────────────
