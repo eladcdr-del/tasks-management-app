@@ -2,6 +2,7 @@
 // TaskDetail screen (#/task/:id) and the task form fields (src/components/form/*).
 
 import { form, gendered, type Addressee } from '../gender';
+import { prefixed } from '../prefix';
 
 /** An actor phrase in the actor's own gender: act(dani, 'לקחה', 'לקח', 'לקח/ה') → "דני לקח". */
 type Actor = { displayName: string } & Exclude<Addressee, string>;
@@ -70,7 +71,8 @@ export const taskDetail = {
   ev: {
     created: (a: Actor) => act(a, 'הוסיפה', 'הוסיף', 'הוסיף/ה'),
     taken: (a: Actor) => act(a, 'לקחה', 'לקח', 'לקח/ה'),
-    requested: (a: Actor, to: string) => `${act(a, 'ביקשה', 'ביקש', 'ביקש/ה')} מ${to}`,
+    requested: (a: Actor, to: string) =>
+      `${act(a, 'ביקשה', 'ביקש', 'ביקש/ה')} ${prefixed('מ', to)}`,
     released: (a: Actor) => act(a, 'החזירה לרשימה', 'החזיר לרשימה', 'החזיר/ה לרשימה'),
     completed: (a: Actor) => act(a, 'סיימה', 'סיים', 'סיים/ה'),
     reopened: (a: Actor) => act(a, 'פתחה מחדש', 'פתח מחדש', 'פתח/ה מחדש'),
