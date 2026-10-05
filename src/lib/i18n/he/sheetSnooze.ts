@@ -20,6 +20,8 @@ export const sheetSnooze = {
   blocked: {
     title: 'היום הוא היום האחרון',
     body: 'מועד אחרון אי אפשר לדחות. אולי לעשות את זה היום, או לבקש עזרה?',
+    /** Nobody else in the household yet: there is no one to ask. */
+    bodyAlone: 'מועד אחרון אי אפשר לדחות. אולי לעשות את זה היום?',
     doIt: 'לסמן כבוצעה',
     askHelp: 'לבקש עזרה'
   },

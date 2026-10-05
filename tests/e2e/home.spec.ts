@@ -8,6 +8,7 @@ import { expect, openApp, shot, test } from './fixtures';
 interface Hooks {
   actAs(uid: string): Promise<void>;
   state: {
+    session: { leaveHousehold(): Promise<void> };
     ui: { current: { message: string } | null };
     tasks: {
       open: { id: string; status: string }[];
@@ -153,6 +154,38 @@ test('a request to me stands out whatever the tab, and counts in the pulse', asy
   await expect(card(section(page, 'attention'), 'seed-post')).toBeVisible();
   await expect(requested).toHaveCount(0);
   await expect(pulse(page, 'requested')).toHaveCount(0);
+});
+
+test('alone in the household: no "waiting" wall, and no "ask for help" dead end', async ({
+  page
+}) => {
+  await openApp(page);
+  // דני leaves: מיכל is alone, and his open tasks wait for someone to take them.
+  await page.evaluate(async () => {
+    const h = (window as unknown as HookWindow).__homecareTest;
+    await h.actAs('dani');
+    await h.state.session.leaveHousehold();
+    await h.actAs('michal');
+  });
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('בוקר טוב, מיכל');
+  await expect(pulse(page, 'waiting')).not.toHaveText('0');
+  await expect(section(page, 'waiting')).toHaveCount(0);
+  const plan = section(page, 'plan');
+  await expect(plan.locator('[data-task-id]').first()).toBeVisible();
+  await expect(plan.locator('[data-muted]')).toHaveCount(0);
+
+  // A hard deadline today: the blocked snooze sheet offers doing it, not asking nobody.
+  await page.evaluate(() =>
+    (window as unknown as HookWindow).__homecareTest.state.tasks.update('seed-shirt', {
+      dueDate: '2026-10-04'
+    })
+  );
+  await swipe(page, card(section(page, 'attention'), 'seed-shirt').locator('article'), 160);
+  const sheet = page.locator('[data-sheet-content="snooze"]');
+  await expect(sheet.getByRole('heading', { name: 'היום הוא היום האחרון' })).toBeVisible();
+  await expect(sheet).toContainText('מועד אחרון אי אפשר לדחות. אולי לעשות את זה היום?');
+  await expect(sheet.getByRole('button', { name: 'לסמן כבוצעה' })).toBeVisible();
+  await expect(sheet.getByRole('button', { name: 'לבקש עזרה' })).toHaveCount(0);
 });
 
 test('swiping toward inline-start snoozes: the card moves and the counter bumps', async ({

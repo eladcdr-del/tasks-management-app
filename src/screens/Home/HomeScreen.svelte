@@ -6,7 +6,9 @@
    *   jar strip   JarMini
    *   attention   "דורש תשומת לב" (only when non-empty)
    *   requested   "ביקשו ממך": what someone else asked me, whatever the date tab (only when non-empty)
-   *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty)
+   *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty, and only
+   *               once someone else is in the household: alone, "take" is noise and the plan lists
+   *               them anyway)
    *   plan        היום | השבוע | בהמשך + member filter, then the TaskCards (unowned ones muted)
    * Every list comes from tasks.groups (domain groupTasks); nothing is bucketed here.
    */
@@ -46,6 +48,7 @@
   const me = $derived(household.me);
   const others = $derived(household.members.filter((m) => m.uid !== household.uid));
   const memberIds = $derived(new Set(household.members.map((m) => m.uid)));
+  const alone = $derived(household.loaded && others.length === 0);
   const groups = $derived(tasks.groups);
 
   /** Unowned (or a former member's): highlighted in "waiting", quieter in the time lists. */
@@ -209,7 +212,7 @@
         </section>
       {/if}
 
-      {#if groups.waiting.length > 0}
+      {#if groups.waiting.length > 0 && !alone}
         <section class="block" bind:this={waitingEl} data-section="waiting">
           <SectionHeader
             id="home-waiting"
@@ -254,7 +257,7 @@
           <TaskList
             tasks={list}
             label={bucketOptions.find((o) => o.value === homeView.bucket)?.label ?? ''}
-            muted={isUnowned}
+            muted={alone ? undefined : isUnowned}
           />
         {:else}
           <div class="bucket-empty" data-empty={homeView.bucket}>
