@@ -23,8 +23,8 @@ export const notifications = {
   typesTitle: 'על מה להודיע לי',
   types: {
     requests: { label: 'בקשות ממני', desc: 'כשמישהו מבקש ממך משימה' },
-    reminders: { label: 'תזכורות', desc: 'בבוקר של יום היעד, וערב לפני מועד חשוב' },
-    partnerDone: { label: 'משימות שהושלמו', desc: 'כשבן או בת הזוג מסיימים משימה' },
+    reminders: { label: 'תזכורות', desc: 'בבוקר של יום היעד, וערב לפני מועד אחרון' },
+    partnerDone: { label: 'משימות שהושלמו', desc: 'כשמישהו אחר בבית מסיים משימה' },
     weekly: { label: 'סיכום שבועי', desc: 'ביום ראשון, משימות שמחכות כבר זמן מה' }
   },
   enabled: 'ההתראות הופעלו',
