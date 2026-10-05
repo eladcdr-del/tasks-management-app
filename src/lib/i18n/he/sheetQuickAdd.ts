@@ -11,7 +11,7 @@ export const sheetQuickAdd = {
   who: 'מי',
   added: 'נוסף ✓',
   /** Under the input while empty: what the smart parsing understands. */
-  hint: 'אפשר לכתוב "מחר", "עד יום חמישי", "דחוף", "כל חודש"',
+  hint: 'אפשר לכתוב "מחר", "עד יום חמישי", "דחוף", "כל שני וחמישי"',
   parsedLabel: 'זוהה בטקסט',
   dismissChip: (label: string) => `ביטול הזיהוי: ${label}`,
   hardDeadline: 'מועד אחרון קשיח',

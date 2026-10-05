@@ -9,8 +9,10 @@ An app for managing household tasks together, built for mom and dad (Hebrew, RTL
 ## What it does
 
 - **A clear picture at a glance.** The home screen shows what is overdue or urgent, what is due today, and what is waiting for someone to take it. Every task shows who owns it.
-- **Quick add.** Only a title is required. Hebrew phrases are recognized automatically and shown as chips you can remove. Examples: "להחזיר מכנסיים עד יום חמישי", "דחוף", "כל חודש".
-- **Fair split, no lecturing.** Take a task yourself, or ask your partner. The app never suggests who should do it.
+- **Quick add.** Only a title is required. Hebrew phrases are recognized automatically and shown as chips you can remove. Examples: "להחזיר מכנסיים עד יום חמישי", "דחוף", "כל שני וחמישי".
+- **Many at once.** Paste or type a list (one task per line, e.g. from WhatsApp or notes) and each line becomes a task, with the same recognition and a preview before adding.
+- **Repeats that fit real life.** Every day, every few days, weeks or months, or on chosen weekdays.
+- **Fair split, no lecturing.** Take a task yourself, or ask someone. A request waits for their answer ("אני לוקח/ת" or "לא מתאים לי"), and until then nobody holds the task. The app never suggests who should do it.
 - **Things that get postponed actually move.** Each task shows its age ("פתוחה 3 שבועות") and how often it was snoozed. Plans are grouped into today, this week and later, and a gentle weekly nudge covers stuck tasks.
 - **No more "you forgot".** History records who did what. When completing a task you can add a note, cost, place, contact and photos.
 - **House memory.** Search past tasks: "מתי החלפנו מצבר ובאיזה מוסך?"

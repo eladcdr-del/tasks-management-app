@@ -27,7 +27,7 @@ import type {
   Unsubscribe
 } from '../../domain/types';
 
-export const DEMO_STATE_VERSION = 3; // 3: Task.weekPlan
+export const DEMO_STATE_VERSION = 4; // 3: Task.weekPlan; 4: waiting requests, richer repeats (reseed)
 /** The idb-keyval key the demo state is stored under (in idb-keyval's default store). */
 export const DEFAULT_STORAGE_KEY = 'homecare.demo.v1';
 export const DEFAULT_PERSIST_DELAY_MS = 200;

@@ -34,6 +34,7 @@
 1. בתפריט: **Build** ← **Firestore Database** ← **Create database**.
 2. מיקום: `eur3 (europe-west)`. מצב: **production mode** ← **Create**.
 3. לשונית **Rules**: מוחקים את מה שיש שם. מדביקים את כל התוכן של הקובץ [`firestore.rules`](firestore.rules) מהריפו ← **Publish**.
+   - צריך לעשות את זה רק פעם אחת. אחרי שלב 6 (המפתח ב-GitHub), כל שינוי בכללים מתפרסם לבד (`.github/workflows/deploy-rules.yml`).
 4. לשונית **Indexes** ← **Composite** ← **Create index**:
    - Collection ID: `tasks`
    - שדות: `status` (Ascending), `completedAt` (Descending)
