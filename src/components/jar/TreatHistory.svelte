@@ -6,7 +6,7 @@
    * (household.deleteTreat: gone at once, with an undo). A removed row fades and folds away and the
    * rows below close the gap; an undone one unfolds back. Reduced motion: a short crossfade only.
    * Focus never drops to the page: after a delete it moves to the next row's "⋮" (else the
-   * previous one, else the section heading).
+   * previous one; after the last treat, to `focusFallback`, e.g. the screen's title).
    */
   import { untrack } from 'svelte';
   import { fade, slide } from 'svelte/transition';
@@ -28,13 +28,14 @@
     members: readonly Member[];
     today: ISODate;
     onDelete: (id: string) => void;
+    /** Where focus goes when the last treat is deleted (the whole list goes with it). */
+    focusFallback?: () => HTMLElement | null;
   }
 
-  let { treats, members, today, onDelete }: Props = $props();
+  let { treats, members, today, onDelete, focusFallback }: Props = $props();
   const t = he.jar;
 
   let listEl: HTMLUListElement | undefined = $state();
-  let headingEl: HTMLElement | undefined = $state();
   /** The treat whose deletion is being confirmed. */
   let asking = $state<EarnedTreat | null>(null);
   /** Keeps the dialog's words while it animates out. */
@@ -58,7 +59,7 @@
       neighbour
         ? (listEl?.querySelector<HTMLElement>(`[data-treat="${neighbour.id}"] [data-row-menu]`) ??
           null)
-        : (headingEl ?? null)
+        : (focusFallback?.() ?? null)
     );
   }
 
@@ -83,9 +84,7 @@
 
 {#if treats.length > 0}
   <section class="history" aria-labelledby="jar-history" transition:section>
-    <div bind:this={headingEl} tabindex="-1" class="heading">
-      <SectionHeader id="jar-history" title={t.history} count={treats.length} />
-    </div>
+    <SectionHeader id="jar-history" title={t.history} count={treats.length} />
     <ul class="treats" bind:this={listEl}>
       {#each treats as e (e.id)}
         {@const who = tookPart(e)}
@@ -148,19 +147,6 @@
   .history {
     display: grid;
     gap: var(--s3);
-  }
-
-  .heading {
-    border-radius: var(--r-sm);
-  }
-
-  .heading:focus {
-    outline: none;
-  }
-
-  .heading:focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
   }
 
   .treats {

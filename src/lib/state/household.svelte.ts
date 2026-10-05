@@ -192,8 +192,7 @@ export class HouseholdStore implements ScopedStore {
   /**
    * Sets the jar's treat and goal (without a jar it starts one: round 1, or after a delete the
    * round after the deleted one). `backfill`: domain backfillCounts when switching to 'each'
-   * mid-round.
-   * Queued write.
+   * mid-round. Queued write.
    */
   setJar(j: JarSettings, backfill?: Record<string, number> | null): void {
     // A jar delete still in its undo window goes first: the new jar then starts after it.

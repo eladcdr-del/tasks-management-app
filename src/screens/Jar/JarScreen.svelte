@@ -134,6 +134,8 @@
   // focus went with it (the edit sheet's opener, the redeem button), so focus lands on the
   // invitation to start a new one.
   let setupCta: HTMLElement | undefined = $state();
+  /** Focus lands here when the last earned treat is deleted. */
+  let titleEl: HTMLElement | undefined = $state();
   let hadJar = untrack(() => jar !== null);
   $effect(() => {
     const has = jar !== null;
@@ -146,7 +148,7 @@
 
 <section class="jar-screen" aria-labelledby="jar-title">
   <Header>
-    <h1 id="jar-title" class="title">{t.title}</h1>
+    <h1 id="jar-title" class="title" tabindex="-1" bind:this={titleEl}>{t.title}</h1>
     {#snippet actions()}
       {#if jar}
         <IconButton icon={Pencil} label={t.edit} variant="tonal" onclick={openSetup} />
@@ -225,6 +227,7 @@
       members={household.members}
       {today}
       onDelete={(id) => household.deleteTreat(id)}
+      focusFallback={() => titleEl ?? null}
     />
   </div>
 </section>
@@ -246,6 +249,16 @@
   .title {
     font: var(--font-title);
     color: var(--ink);
+    border-radius: var(--r-sm);
+  }
+
+  .title:focus {
+    outline: none;
+  }
+
+  .title:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 4px;
   }
 
   .content {

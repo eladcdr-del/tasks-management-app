@@ -306,6 +306,8 @@ test('the last treat folds the whole history away; the row animates out', async 
   await page.getByRole('alertdialog').getByRole('button', { name: 'מחיקה' }).click();
   await expect(page.getByRole('heading', { name: /צ׳ופרים שהרווחנו/ })).toHaveCount(0);
   await expect(treatRows(page)).toHaveCount(0);
+  // Nothing left to move to in the list: focus lands on the screen's title, not on the page.
+  await expect(page.getByRole('heading', { level: 1, name: 'הצנצנת' })).toBeFocused();
 });
 
 test('reduced motion: the menu opens and a row leaves without moving', async ({ page }) => {
