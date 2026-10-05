@@ -115,7 +115,8 @@ test('quick add parses Hebrew into chips, a chip can be dismissed, adding stays 
   const category = tokens.locator('[data-key^="category:"]');
   await expect(category).toContainText('החזרות');
   // The picker row reflects the parse.
-  await expect(sheet.locator('[data-picker="when"]')).toContainText('עד יום ה׳');
+  // "מתי" is the plan (none yet); the due date is its own chip above, as in the task screen
+  await expect(sheet.locator('[data-picker="when"]')).toContainText('בחירה');
   await expect(sheet.locator('[data-picker="category"]')).toContainText('החזרות');
   await shot(page, 'quick-add-chips');
 
