@@ -4,7 +4,7 @@
   //     opens an inline editor (name, address-as, colour)
   //   - household name (inline edit)
   //   - the invite card (InviteCard.svelte)
-  //   - leave the household (its own card; Dialog confirm)
+  //   - leave the household (its own card; Dialog confirm, with honest copy for the last member)
   // The gear in the header opens #/settings.
   import Settings from '@lucide/svelte/icons/settings';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -85,6 +85,8 @@
   // ── leaving ──
   let leaving = $state(false);
   let leaveBusy = $state(false);
+  /** The last one out closes the house for good: the dialog says so plainly. */
+  const lastMember = $derived(household.loaded && household.members.length <= 1);
 
   async function leave() {
     leaveBusy = true;
@@ -216,9 +218,9 @@
 <Dialog
   open={leaving}
   title={t.leaveTitle}
-  message={t.leaveBody}
+  message={lastMember ? t.leaveBodyLast(household.me ?? 'n') : t.leaveBody}
   tone="danger"
-  confirmLabel={t.leaveConfirm}
+  confirmLabel={lastMember ? t.leaveConfirmLast : t.leaveConfirm}
   loading={leaveBusy}
   onConfirm={leave}
   onCancel={() => (leaving = false)}

@@ -39,5 +39,12 @@ export const household = {
   leave: 'יציאה מהבית',
   leaveTitle: 'לצאת מהבית?',
   leaveBody: 'המשימות נשארות אצל שאר בני הבית. כדי לחזור תצטרכו קישור הזמנה חדש.',
-  leaveConfirm: 'יציאה'
+  leaveConfirm: 'יציאה',
+  /** The last member leaving: nobody can open the house again (the invite is revoked too). */
+  leaveBodyLast: gendered(
+    'את היחידה בבית. אחרי היציאה אף אחד לא יוכל לחזור אליו, גם לא את: המשימות, זיכרון הבית והצנצנת יאבדו.',
+    'אתה היחיד בבית. אחרי היציאה אף אחד לא יוכל לחזור אליו, גם לא אתה: המשימות, זיכרון הבית והצנצנת יאבדו.',
+    'אין בבית אף אחד מלבדך. אחרי היציאה אף אחד לא יוכל לחזור אליו: המשימות, זיכרון הבית והצנצנת יאבדו.'
+  ),
+  leaveConfirmLast: 'יציאה וסגירת הבית'
 } as const;

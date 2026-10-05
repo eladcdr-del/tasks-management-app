@@ -1093,6 +1093,11 @@ export async function createFirebaseRepositoryImpl(
             // The last one out must close the door: an open invite would admit a stranger.
             ...(last ? { invite: null } : {})
           });
+          // ...and revoke the link itself, so a link already sent says "cancelled", not "full".
+          // (The invites rule checks membership before the batch, so this is still allowed.)
+          if (last && household.invite) {
+            b.update(inviteRef(household.invite.code), { revoked: true });
+          }
           b.set(userRef(uid), { householdId: null, createdAt: serverTimestamp() });
           return { ack: commit(b), uid };
         });

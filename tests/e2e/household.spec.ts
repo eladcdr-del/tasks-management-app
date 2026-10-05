@@ -6,9 +6,16 @@ import { expect, openApp, shot, test } from './fixtures';
 
 interface Hooks {
   state: {
-    session: { phase: string };
+    session: {
+      phase: string;
+      createHousehold(
+        name: string,
+        profile: { displayName: string; photoURL: null; color: string; addressAs: string }
+      ): Promise<string>;
+    };
     household: { me: { color: string; displayName: string } | null };
   };
+  actAs(uid: string): Promise<void>;
 }
 type HookWindow = Window & { __homecareTest: Hooks; opened?: string[] };
 
@@ -113,6 +120,35 @@ test('leaving sits in its own card, not under the house name', async ({ page }) 
   await expect(
     page.getByRole('region', { name: 'יציאה מהבית' }).getByRole('button', { name: 'יציאה מהבית' })
   ).toBeVisible();
+});
+
+test('leaving: the usual copy with others in the house; plain words for the last member', async ({
+  page
+}) => {
+  await openApp(page, '#/household');
+  await ready(page);
+  await page.getByRole('button', { name: 'יציאה מהבית' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('המשימות נשארות אצל שאר בני הבית');
+  await dialog.getByRole('button', { name: 'ביטול' }).click();
+
+  // A newcomer founds a house of one.
+  await page.evaluate(async () => {
+    const hooks = (window as unknown as HookWindow).__homecareTest;
+    await hooks.actAs('newcomer');
+    await hooks.state.session.createHousehold('הבית של נועה', {
+      displayName: 'נועה',
+      photoURL: null,
+      color: 'plum',
+      addressAs: 'f'
+    });
+  });
+  await page.evaluate(() => (location.hash = '#/household'));
+  await expect(page.getByRole('heading', { level: 1, name: 'הבית של נועה' })).toBeVisible();
+  await page.getByRole('button', { name: 'יציאה מהבית' }).click();
+  await expect(dialog).toContainText('את היחידה בבית');
+  await expect(dialog).not.toContainText('שאר בני הבית');
+  await expect(dialog.getByRole('button', { name: 'יציאה וסגירת הבית' })).toBeVisible();
 });
 
 test('theme switch applies at once and is remembered', async ({ page }) => {
