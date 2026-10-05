@@ -1,0 +1,39 @@
+# HomeCare setup check: confirms the Firebase console steps in SETUP.md took effect (rules, index,
+# Google sign-in, authorized domain, Cloud Messaging). Read-only; prints verdicts and counts only.
+# Run it from Actions → verify-setup → Run workflow. See scripts/notify/verify-setup.ts.
+name: verify-setup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Guard (needs the secret)
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT secret missing (SETUP.md, step 6)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scripts/notify/package-lock.json
+
+      - run: npm ci --prefix scripts/notify --no-audit --no-fund
+
+      - name: Check the Firebase project
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: npx --prefix scripts/notify tsx scripts/notify/verify-setup.ts
