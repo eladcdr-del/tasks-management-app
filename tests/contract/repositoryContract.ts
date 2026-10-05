@@ -761,6 +761,24 @@ export function runRepositoryContract(
         expect(es.some((e) => e.type === 'requested' && e.taskId === id)).toBe(false);
       });
 
+      it('a list added back to back (quick add list mode): every task lands, one created event each, no push', async () => {
+        const { hid, A } = await solo();
+        const titles = Array.from({ length: 15 }, (_, i) => `משימה מהרשימה ${i + 1}`);
+        const ids = titles.map((title) => repo.createTask(hid, { title }));
+        expect(new Set(ids).size).toBe(15);
+
+        const open = await openOf(hid, (ts) => ids.every((id) => ts.some((t) => t.id === id)));
+        const added = ids.map((id) => open.find((t) => t.id === id)!);
+        expect(added.map((t) => t.title)).toEqual(titles);
+        expect(added.every((t) => t.ownerId === null && t.requestedBy === null)).toBe(true);
+
+        const es = await eventsOf(hid, (es) => ids.every((id) => hasEvent('created', id)(es)));
+        const mine = es.filter((e) => e.taskId !== null && ids.includes(e.taskId));
+        expect(mine).toHaveLength(15);
+        for (const e of mine) expectEventShape(e, 'created', A);
+        expect(mine.some((e) => e.push === 'pending')).toBe(false);
+      });
+
       it('an invalid draft (blank title) is rejected through onWriteError and never persists', async () => {
         const { hid } = await solo();
         const cap = captureWriteErrors();
