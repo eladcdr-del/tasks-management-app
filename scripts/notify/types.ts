@@ -69,6 +69,8 @@ export interface Task {
   ownerId: string | null; // null = waiting for someone to take it
   requestedBy: string | null;
   requestedAt: Millis | null;
+  /** The asked member while a request waits for their answer (ownerId null); missing = null. */
+  requestedOf?: string | null;
   createdBy: string;
   createdAt: Millis;
   updatedBy: string;
@@ -101,7 +103,9 @@ export type EventType =
   | 'deleted'
   | 'jar_filled'
   | 'jar_redeemed'
-  | 'member_joined';
+  | 'member_joined'
+  | 'accepted'
+  | 'declined';
 
 export interface ActivityEvent {
   id: string;
@@ -111,7 +115,7 @@ export interface ActivityEvent {
   taskTitle: string | null;
   targetId: string | null;
   createdAt: Millis;
-  /** The client writes 'pending' for requested | completed | jar_filled, else 'none'. */
+  /** The client writes 'pending' for requested | accepted | declined | completed | jar_filled. */
   push: 'pending' | 'none' | 'sent' | 'skipped';
 }
 

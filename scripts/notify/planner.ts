@@ -8,6 +8,8 @@
 //
 // Keys and coalescing. A Send has `keys: string[]`, one key per item it covers:
 //   requested   ev:{eventId}:{uid}                      (one event per Send)
+//   accepted    ev:{eventId}:{uid}                      (the asked member's answer, to the asker)
+//   declined    ev:{eventId}:{uid}
 //   completed   ev:{eventId}:{uid} for every coalesced event of the same actor
 //   jar_filled  ev:{eventId}:{uid}
 //   due         due:{taskId}:{date}:{uid} for every task in the per-recipient summary, where date is
@@ -33,7 +35,8 @@ import {
 } from './time.ts';
 import * as copy from './copy.ts';
 
-export type SendType = 'requested' | 'completed' | 'jar_filled' | 'due' | 'eve' | 'weekly';
+export type SendType =
+  'requested' | 'accepted' | 'declined' | 'completed' | 'jar_filled' | 'due' | 'eve' | 'weekly';
 
 export interface Send {
   /** Dedupe keys, at least one (see the header). */
@@ -160,11 +163,13 @@ export function isStuck(task: StuckFields, today: string): boolean {
 
 const TYPE_ORDER: Record<SendType, number> = {
   requested: 0,
-  completed: 1,
-  jar_filled: 2,
-  due: 3,
-  eve: 4,
-  weekly: 5
+  accepted: 1,
+  declined: 2,
+  completed: 3,
+  jar_filled: 4,
+  due: 5,
+  eve: 6,
+  weekly: 7
 };
 
 const byCreated = (a: ActivityEvent, b: ActivityEvent): number =>
@@ -210,12 +215,17 @@ export function plan(input: PlanInput): Plan {
       if (e.type === 'requested') {
         const target = e.targetId;
         const task = e.taskId ? openById.get(e.taskId) : undefined;
+        // Still asked of them: the request waits for their answer (requestedOf), or it is theirs
+        // (the previous app version assigned it at once; or they already said yes). Not withdrawn,
+        // declined, taken by someone else, done or deleted.
+        const stillAsked =
+          task !== undefined &&
+          (task.ownerId === target || (task.ownerId === null && task.requestedOf === target));
         const ok =
           target !== null &&
           target !== e.actorId &&
           nowMs - e.createdAt <= REQUEST_STALE_MS &&
-          task !== undefined &&
-          task.ownerId === target && // still asked of them: not released, reassigned, done or deleted
+          stillAsked &&
           canReceive(target, 'requests');
         if (!ok || !target || !task) {
           eventMarks.push({ eventId: e.id, push: 'skipped' });
@@ -228,6 +238,39 @@ export function plan(input: PlanInput): Plan {
           ...copy.requested(actorOf(e.actorId), e.taskTitle ?? task.title),
           url: copy.taskUrl(task.id),
           tag: `req:${e.id}`,
+          eventIds: [e.id]
+        });
+        eventMarks.push({ eventId: e.id, push: 'sent' });
+        continue;
+      }
+
+      if (e.type === 'accepted' || e.type === 'declined') {
+        // The asked member's answer goes to the asker (targetId), under their requests preference.
+        // Old news is skipped: an accepted task they no longer hold (released, done, deleted), or a
+        // declined one that is done, deleted or already taken by someone.
+        const asker = e.targetId;
+        const task = e.taskId ? openById.get(e.taskId) : undefined;
+        const current =
+          task !== undefined &&
+          (e.type === 'accepted' ? task.ownerId === e.actorId : task.ownerId === null);
+        const ok =
+          asker !== null &&
+          asker !== e.actorId &&
+          nowMs - e.createdAt <= REQUEST_STALE_MS &&
+          current &&
+          canReceive(asker, 'requests');
+        if (!ok || !asker || !task) {
+          eventMarks.push({ eventId: e.id, push: 'skipped' });
+          continue;
+        }
+        const words = e.type === 'accepted' ? copy.accepted : copy.declined;
+        sends.push({
+          keys: [`ev:${e.id}:${asker}`],
+          uid: asker,
+          type: e.type,
+          ...words(actorOf(e.actorId), e.taskTitle ?? task.title),
+          url: copy.taskUrl(task.id),
+          tag: `ans:${e.id}`,
           eventIds: [e.id]
         });
         eventMarks.push({ eventId: e.id, push: 'sent' });
@@ -276,7 +319,7 @@ export function plan(input: PlanInput): Plan {
         continue;
       }
 
-      // Only requested | completed | jar_filled are ever written as pending; settle anything else.
+      // Only the types above are ever written as pending; settle anything else.
       eventMarks.push({ eventId: e.id, push: 'skipped' });
     }
 

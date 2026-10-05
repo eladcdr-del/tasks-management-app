@@ -27,7 +27,11 @@ export const FALLBACK_ACTOR: Actor = { displayName: 'מישהו מהבית', add
 
 const VERBS = {
   asked: { f: 'ביקשה', m: 'ביקש', n: 'ביקש/ה' },
-  finished: { f: 'סיימה', m: 'סיים', n: 'סיים/ה' }
+  finished: { f: 'סיימה', m: 'סיים', n: 'סיים/ה' },
+  took: { f: 'לקחה', m: 'לקח', n: 'לקח/ה' },
+  cannot: { f: 'לא יכולה', m: 'לא יכול', n: 'לא יכול/ה' },
+  /** "אצלו" in the actor's form ("עכשיו אצלה"). */
+  with: { f: 'אצלה', m: 'אצלו', n: 'אצלו/ה' }
 } as const satisfies Record<string, Record<AddressAs, string>>;
 
 /** The actor's past-tense verb in their own form. Unknown forms fall back to neutral. */
@@ -62,6 +66,27 @@ export function requested(actor: Actor, taskTitle: string | null): Copy {
   return {
     title: `${actorName(actor)} ${actorVerb('asked', actor.addressAs)} ממך משימה`,
     body: cleanTitle(taskTitle)
+  };
+}
+
+/**
+ * To the asker, when the asked member said yes: "דני לקח: {title}" + "המשימה שביקשת עכשיו אצלו".
+ */
+export function accepted(actor: Actor, taskTitle: string | null): Copy {
+  return {
+    title: `${actorName(actor)} ${actorVerb('took', actor.addressAs)}: ${cleanTitle(taskTitle)}`,
+    body: `המשימה שביקשת עכשיו ${actorVerb('with', actor.addressAs)}`
+  };
+}
+
+/**
+ * To the asker, when the asked member said no. Gentle, and it suggests no one: "דני לא יכול
+ * לקחת: {title}" + "המשימה מחכה שמישהו ייקח" (the app's own words for an unowned task).
+ */
+export function declined(actor: Actor, taskTitle: string | null): Copy {
+  return {
+    title: `${actorName(actor)} ${actorVerb('cannot', actor.addressAs)} לקחת: ${cleanTitle(taskTitle)}`,
+    body: 'המשימה מחכה שמישהו ייקח'
   };
 }
 
