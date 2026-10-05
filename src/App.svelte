@@ -2,7 +2,8 @@
   // App root (1.1 → 2.4 → 3.1). Route outlet + FAB + bottom nav + sheet / snackbar hosts + update
   // prompt. Boot gating: the session's phase and ROUTE_META[route].access decide which routes may
   // render (components/shell/gate.ts):
-  //   booting       → splash (brand mark on cream, no text; an error + retry if boot failed)
+  //   booting       → splash (BootSplash: brand mark on cream; an error + retry if boot failed, a
+  //                   calm "slow connection" hint + retry if it takes more than 8 s)
   //   setup         → #/setup                       signed-out → #/welcome
   //   no-household  → onboarding ('auth' routes) and #/join; else #/onboarding/household, or
   //                   #/join/:code for an invite opened while signed out
@@ -11,7 +12,6 @@
   // The bottom nav and the FAB step aside while a sheet or the on-screen keyboard is open.
   import { untrack } from 'svelte';
   import { router } from '$lib/router/router.svelte';
-  import { he } from '$lib/i18n/he';
   import { rememberPendingInvite, session, takePendingInvite } from '$lib/state/session.svelte';
   import { gateTarget, routeAllowed } from '$components/shell/gate';
   import { viewport } from '$components/shell/viewport.svelte';
@@ -29,7 +29,7 @@
   import NotificationsStep from './screens/Onboarding/NotificationsStep.svelte';
   import JoinScreen from './screens/Join/JoinScreen.svelte';
   import SetupScreen from './screens/Setup/SetupScreen.svelte';
-  import AppMark from '$components/illustrations/AppMark.svelte';
+  import BootSplash from '$components/shell/BootSplash.svelte';
   import BottomNav from '$components/shell/BottomNav.svelte';
   import DemoBanner from '$components/shell/DemoBanner.svelte';
   import FabHost from '$components/shell/FabHost.svelte';
@@ -75,15 +75,7 @@
 </script>
 
 {#if phase === 'booting' || !allowed}
-  <div class="splash" data-phase={phase}>
-    <AppMark size={88} tile />
-    {#if session.error}
-      <div class="boot-error" role="alert">
-        <p>{he.errors.generic}</p>
-        <button type="button" onclick={() => location.reload()}>{he.common.retry}</button>
-      </div>
-    {/if}
-  </div>
+  <BootSplash {phase} failed={!!session.error} />
 {:else}
   <div class="app" class:with-nav={tab !== undefined} data-phase={phase}>
     {#if demoBanner}
@@ -155,37 +147,5 @@
 
   .with-nav main {
     padding-block-end: calc(var(--nav-h) + var(--safe-bottom));
-  }
-
-  .splash {
-    display: grid;
-    place-content: center;
-    justify-items: center;
-    gap: var(--s6);
-    min-block-size: 100dvh;
-    padding: var(--safe-top) var(--screen-pad) var(--safe-bottom);
-    background: var(--bg);
-  }
-
-  .boot-error {
-    display: grid;
-    justify-items: center;
-    gap: var(--s3);
-    text-align: center;
-  }
-
-  .boot-error p {
-    font: var(--font-callout);
-    color: var(--ink-2);
-  }
-
-  .boot-error button {
-    min-block-size: var(--tap-min);
-    padding-inline: var(--s5);
-    border-radius: var(--r-pill);
-    background: var(--accent-strong);
-    color: var(--ink-on-accent);
-    font: var(--font-callout);
-    font-weight: 600;
   }
 </style>
