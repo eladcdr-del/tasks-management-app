@@ -2,7 +2,7 @@
 // Home's list and its rows (feature "home") on the demo seed, signed in as מיכל: a short list is
 // flat; a long one folds into category groups of three with "עוד N" (homeView.expanded keeps a
 // group open, homeView.fresh keeps just-added tasks in sight); rows carry the request on their
-// meta line, and a free row's QuickTake takes the task or opens the request sheet.
+// meta line (the seat at the end of a row has its own tests: components/task/Seat.test.ts).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 import { createRawSnippet, flushSync } from 'svelte';
@@ -12,7 +12,6 @@ import type { Task } from '$lib/domain/types';
 import { household } from '$lib/state/household.svelte';
 import { tasks } from '$lib/state/tasks.svelte';
 import { ui } from '$lib/state/ui.svelte';
-import { router } from '$lib/router/router.svelte';
 
 // Svelte's motion helpers (pulled in through '$components/ui') read prefers-reduced-motion on import;
 // rows fade in and out (Web Animations), which jsdom lacks: a finished stand-in.
@@ -39,7 +38,6 @@ vi.hoisted(() => {
 import HomeList from './HomeList.svelte';
 import { homeView } from './homeView.svelte';
 import TaskCard from '$components/task/TaskCard.svelte';
-import QuickTake from '$components/task/QuickTake.svelte';
 
 let repo: DemoRepository;
 const settle = async () => {
@@ -164,11 +162,11 @@ describe('TaskCard row', () => {
     expect(document.querySelector('p[data-request]')).toBeNull();
   });
 
-  it('the asker sees a quiet line after the date', async () => {
+  it('the asker sees a short quiet line after the date (the seat says it waits)', async () => {
     await as(DANI);
     render(TaskCard, { task: task('seed-post'), variant: 'row' });
     const request = document.querySelector('.meta [data-request]')!;
-    expect(request.textContent).toBe('ביקשת ממיכל · מחכה לתשובה');
+    expect(request.textContent).toBe('ביקשת ממיכל');
     expect(request.classList.contains('quiet')).toBe(true);
     expect(document.querySelector('.meta')!.firstElementChild).not.toBe(request);
   });
@@ -187,27 +185,5 @@ describe('TaskCard row', () => {
     expect(document.querySelector('.trail [role="img"]')).toBeNull();
     expect(document.querySelector('.meta')?.textContent).not.toContain('קניות');
     expect(document.querySelector('[data-variant="row"]')).toBeTruthy();
-  });
-});
-
-describe('QuickTake', () => {
-  it('"אני לוקחת" takes the task at once', async () => {
-    render(QuickTake, { taskId: 'seed-bulbs', me: 'f', canRequest: true });
-    await fireEvent.click(screen.getByRole('button', { name: 'אני לוקחת' }));
-    await settle();
-    expect(task('seed-bulbs').ownerId).toBe(MICHAL);
-    expect(ui.current?.message).toBe('המשימה אצלך');
-  });
-
-  it('the hand icon opens the request sheet; alone, there is nobody to ask', async () => {
-    const open = vi.spyOn(router, 'openSheet').mockImplementation(() => {});
-    render(QuickTake, { taskId: 'seed-bulbs', me: 'm', canRequest: true });
-    expect(screen.getByRole('button', { name: 'אני לוקח' })).toBeTruthy();
-    await fireEvent.click(screen.getByRole('button', { name: 'לבקש מ…' }));
-    expect(open).toHaveBeenCalledWith({ name: 'request', taskId: 'seed-bulbs' });
-    cleanup();
-    render(QuickTake, { taskId: 'seed-bulbs', me: 'f', canRequest: false });
-    expect(screen.queryByRole('button', { name: 'לבקש מ…' })).toBeNull();
-    open.mockRestore();
   });
 });

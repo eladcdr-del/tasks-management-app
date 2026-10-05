@@ -26,7 +26,7 @@
     actions?: Snippet<[Task]>;
     /** Which cards get `actions` (default: all of them). */
     withActions?: (task: Task) => boolean;
-    /** Replaces the avatar (a compact "take"), or nothing. */
+    /** Replaces the avatar (Home's seat), or nothing. */
     trailing?: Snippet<[Task]>;
     /** Which cards get `trailing` (default: all of them). */
     withTrailing?: (task: Task) => boolean;

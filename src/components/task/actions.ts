@@ -7,6 +7,7 @@ import { ui } from '$lib/state/ui.svelte';
 import { haptic } from '$lib/platform/haptics';
 import { he } from '$lib/i18n/he';
 import type { TakeResult } from '$lib/data/repository';
+import type { Member } from '$lib/domain/types';
 
 /**
  * "אני לוקח/ת". Haptic at the tap (user activation), then the transaction. When someone else was
@@ -49,6 +50,34 @@ export function declineRequest(id: string): void {
   haptic('select');
   tasks.decline(id);
   ui.show(he.taskCard.declined);
+}
+
+/**
+ * "לבקש מדני" from the seat's menu: the request goes out at once (no sheet); it is a proposal that
+ * waits for their answer (domain/requests.ts). A fresh request can be taken back from the snackbar
+ * ("ביטול"); asking someone else instead of the one already asked cannot (that would ask the first
+ * one again).
+ */
+export function askFor(
+  taskId: string,
+  member: Pick<Member, 'uid' | 'displayName'>,
+  fresh: boolean
+) {
+  haptic('take');
+  tasks.request(taskId, member.uid);
+  const sent = he.sheetRequest.sent(member.displayName);
+  if (fresh) {
+    ui.show(sent, { action: he.common.undo, onAction: () => tasks.cancelRequest(taskId) });
+  } else {
+    ui.show(sent);
+  }
+}
+
+/** "ביטול הבקשה": the asker withdraws a request that still waits. */
+export function withdrawRequest(taskId: string): void {
+  haptic('select');
+  tasks.cancelRequest(taskId);
+  ui.show(he.taskDetail.cancelled);
 }
 
 export const openComplete = (taskId: string): void =>

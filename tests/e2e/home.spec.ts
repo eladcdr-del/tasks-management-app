@@ -5,8 +5,9 @@ import { expect, openApp, shot, test } from './fixtures';
 // signed in as מיכל): pulse attention 3 (1 overdue + 2 urgent), today 4, waiting 3; one request
 // waiting for מיכל's answer (דני asked her to pick up the parcel, planned for Tuesday): not hers
 // until she accepts. Under the sticky bar the tabs read היום 4 · השבוע 4 · בהמשך 4 · הכל 12 (the
-// request is shown above, in "ביקשו ממך", not again in the list). Free tasks sit in the list with
-// a small take action. The long-list behaviour (groups, the bar sticking) is in home-list.spec.ts.
+// request is shown above, in "ביקשו ממך", not again in the list). Every row ends with its seat: the
+// owner's avatar, or the empty seat "לקחת" that takes the task or asks someone (seat.spec.ts has the
+// seat's own flows). The long-list behaviour (groups, the bar sticking) is in home-list.spec.ts.
 
 interface Hooks {
   actAs(uid: string): Promise<void>;
@@ -73,9 +74,12 @@ test('the pulse, sections and header tell the story at a glance', async ({ page 
   const plan = section(page, 'plan');
   await expect(tab(page, /היום/)).toHaveAttribute('aria-checked', 'true');
   await expect(plan.locator('[data-task-id]')).toHaveCount(4);
-  await expect(card(plan, 'seed-bulbs').getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
-  await expect(card(plan, 'seed-bulbs').getByRole('button', { name: 'לבקש מ…' })).toBeVisible();
-  // Owned rows show their owner, not an action.
+  // A free task ends with its empty seat: one place to take it or ask someone.
+  const seat = card(plan, 'seed-bulbs').getByRole('button', { name: 'לקחת: לקנות נורות לסלון' });
+  await expect(seat).toBeVisible();
+  await expect(seat).toHaveAttribute('aria-haspopup', 'menu');
+  await expect(seat).toContainText('לקחת');
+  // Owned rows show their owner in the same place, not an action.
   await expect(card(plan, 'seed-dentist').locator('[data-action]')).toHaveCount(0);
   await expect(card(plan, 'seed-dentist').getByRole('img', { name: 'אצל מיכל' })).toBeVisible();
   // Snoozed 4 times and open for weeks: both on the row.
@@ -137,10 +141,18 @@ test('tapping a numeral scrolls to its list', async ({ page }) => {
   await expect(section(page, 'attention')).toBeInViewport();
 });
 
-test('take a free task with one tap: the row stays and shows its new owner', async ({ page }) => {
+test('take a free task from its seat ("אני"): the row stays and shows its new owner', async ({
+  page
+}) => {
   await openApp(page);
   const plan = section(page, 'plan');
-  await card(plan, 'seed-bulbs').getByRole('button', { name: 'אני לוקחת' }).click();
+  await card(plan, 'seed-bulbs')
+    .getByRole('button', { name: /^לקחת:/ })
+    .click();
+  await page
+    .getByRole('menu', { name: 'מי לוקח?' })
+    .getByRole('menuitem', { name: 'אני', exact: true })
+    .click();
   await snack(page).toContain('המשימה אצלך');
   await expect(pulse(page, 'waiting')).toHaveText('2');
   const mine = card(plan, 'seed-bulbs');
@@ -153,27 +165,30 @@ test('take a free task with one tap: the row stays and shows its new owner', asy
   await expect(plan.locator('[data-task-id="seed-bulbs"]')).toHaveCount(0);
 });
 
-test('request a free task from the partner', async ({ page }) => {
+test('ask the partner straight from the seat: it waits for his answer', async ({ page }) => {
   await openApp(page);
   await page.getByRole('button', { name: /^3 מחכות שמישהו ייקח/ }).click();
   const plan = section(page, 'plan');
-  await card(plan, 'seed-washer').getByRole('button', { name: 'לבקש מ…' }).click();
-  const sheet = page.locator('[data-sheet-content="request"]');
-  await expect(sheet).toBeVisible();
-  // The only other member is the only choice; nothing is ranked or suggested beyond that.
-  await expect(sheet.getByRole('radio', { name: 'דני' })).toBeChecked();
-  await expect(sheet.locator('[data-request-note]')).toHaveText(
-    'עד שיאשרו, המשימה מחכה שמישהו ייקח.'
-  );
-  await sheet.getByRole('button', { name: 'שליחת הבקשה' }).click();
-  await expect(sheet).toHaveCount(0);
+  await card(plan, 'seed-washer')
+    .getByRole('button', { name: /^לקחת:/ })
+    .click();
+  // No sheet: the request goes out from the menu at once.
+  await page.getByRole('menu').getByRole('menuitem', { name: 'לבקש מדני' }).click();
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.locator('[data-sheet-content="request"]')).toHaveCount(0);
   await snack(page).toContain('הבקשה נשלחה לדני');
-  // A proposal: until דני answers nobody holds it, so it is still free, with a quiet line.
+  // A proposal: until דני answers nobody holds it, so it is still free; its seat says it waits.
   await expect(pulse(page, 'waiting')).toHaveText('3');
   const waiting = card(plan, 'seed-washer');
   await expect(waiting).toHaveAttribute('data-owner', '');
-  await expect(waiting.locator('[data-request]')).toHaveText('ביקשת מדני · מחכה לתשובה');
-  await expect(waiting.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
+  await expect(waiting.locator('[data-request]')).toHaveText('ביקשת מדני');
+  const seat = waiting.getByRole('button', { name: /^מחכה לדני:/ });
+  await expect(seat).toContainText('מחכה לדני');
+  // Anyone may still take it.
+  await seat.click();
+  await expect(page.getByRole('menuitem', { name: 'אני לוקחת' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
 
   // On דני's side the undated request is right on Home, not buried under "בהמשך".
   await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('dani'));
@@ -229,8 +244,9 @@ test('a request to me stands out whatever the tab, and counts in the pulse', asy
 test('a snackbar never covers the FAB', async ({ page }) => {
   await openApp(page);
   await card(section(page, 'plan'), 'seed-bulbs')
-    .getByRole('button', { name: 'אני לוקחת' })
+    .getByRole('button', { name: /^לקחת:/ })
     .click();
+  await page.getByRole('menuitem', { name: 'אני', exact: true }).click();
   const bar = page.locator('[data-snackbar-host] .snackbar');
   await expect(bar).toContainText('המשימה אצלך');
   const fab = page.locator('[data-fab]');
@@ -254,13 +270,14 @@ test('alone in the household: new tasks stay in sight, and no "ask for help" dea
     await h.actAs('michal');
   });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('בוקר טוב, מיכל');
-  // His tasks are free now: one tap on the number lists them, each with "take" and nobody to ask.
+  // His tasks are free now: one tap on the number lists them, each with its empty seat; with nobody
+  // to ask, the seat opens no menu.
   await expect(pulse(page, 'waiting')).not.toHaveText('0');
   await pulse(page, 'waiting').click();
   const plan = section(page, 'plan');
   await expect(plan.locator('[data-task-id]').first()).toBeVisible();
-  await expect(plan.getByRole('button', { name: 'אני לוקחת' }).first()).toBeVisible();
-  await expect(page.getByRole('button', { name: 'לבקש מ…' })).toHaveCount(0);
+  await expect(plan.getByRole('button', { name: /^לקחת:/ }).first()).toBeVisible();
+  await expect(plan.locator('[data-seat][aria-haspopup]')).toHaveCount(0);
   // The chips still sort hers from the free ones; there is no one else to pick.
   await expect(chips(page).getByRole('button')).toHaveText(['הכל', 'שלי', 'פנויות']);
 
@@ -276,7 +293,7 @@ test('alone in the household: new tasks stay in sight, and no "ask for help" dea
   await expect(quick).toHaveCount(0);
   const added = plan.locator('[data-task-id]').filter({ hasText: 'לסדר את הבוידעם' });
   await expect(added).toBeInViewport();
-  await expect(added.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
+  await expect(added.getByRole('button', { name: /^לקחת:/ })).toBeVisible();
 
   // A hard deadline today: the blocked snooze sheet offers doing it, not asking nobody.
   await page.evaluate(() =>

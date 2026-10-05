@@ -1,5 +1,6 @@
 // owner: step 3.2 — only that step edits this file
-// TaskCard and the take / request actions shown on it.
+// TaskCard and the take / request actions shown on it: the "seat" at the end of a row (the owner's
+// avatar, or the empty seat that takes the task or asks someone) and its "מי לוקח?" menu.
 
 import { form, gendered, type Addressee } from '../gender';
 import { prefixed } from '../prefix';
@@ -34,6 +35,29 @@ export const taskCard = {
   decline: 'לא מתאים לי',
   /** Snackbar after "לא מתאים לי". */
   declined: 'בסדר, המשימה תחכה שמישהו ייקח',
+  /**
+   * The seat at the end of a row. Free: a dashed circle with "+" and "לקחת" under it; a request
+   * that waits: a faded ring with the asked member's initial and "מחכה לדני" under it.
+   */
+  seat: {
+    free: 'לקחת',
+    /** Accessible name of the free seat: "לקחת: לקנות נורות לסלון". */
+    freeLabel: (title: string) => `לקחת: ${title}`,
+    /** Under the faded ring of a request that waits: "מחכה לדני". */
+    waiting: (name: string) => `מחכה ${prefixed('ל', name)}`,
+    /** Accessible name of that ring: "מחכה לדני: לקנות נורות לסלון". */
+    waitingLabel: (name: string, title: string) => `מחכה ${prefixed('ל', name)}: ${title}`
+  },
+  /** The small menu the seat opens. Me first, then the others in the household's order. */
+  seatMenu: {
+    title: 'מי לוקח?',
+    /** Takes the task (my avatar beside it). */
+    me: 'אני',
+    /** Sends a request at once: "לבקש מדני". */
+    ask: (name: string) => `לבקש ${prefixed('מ', name)}`,
+    /** The asker withdraws a request that still waits. */
+    cancel: 'ביטול הבקשה'
+  },
   urgent: 'דחוף',
   high: 'חשוב',
   owner: (name: string) => `אצל ${name}`,

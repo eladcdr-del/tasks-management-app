@@ -6,8 +6,8 @@
    *   body      request line ("דני ביקש ממך" calls; "ביקשת מדני · מחכה לתשובה", "מיכל ביקשה מדני",
    *             "לבקשת מיכל" / "לבקשתך" are quiet) · title (2 lines, textDir) · meta row (status
    *             first, then the quiet context: plan hint, snoozes, age, category)
-   *   trailing  `trailing` (e.g. Home's small "take" action), else the owner's Avatar, or the dashed
-   *             "?" when nobody took it yet
+   *   trailing  `trailing` (Home's seat: the owner's avatar, or the empty seat that takes the task
+   *             or asks someone), else the owner's Avatar, or the dashed "?" when nobody took it yet
    *   pending   a micro-dot while the task has unsynced local writes
    *
    * Two variants. `card` (default) is a raised card of its own. `row` is the compact line used in
@@ -97,7 +97,12 @@
       case 'askedMe':
         return { kind: view.kind, text: t.requestedOfMe(who) };
       case 'iAsked':
-        return { kind: view.kind, text: t.iRequestedWaiting(nameOf(view.to)) };
+        // A row's seat already says "מחכה לדני": its line stays short.
+        return {
+          kind: view.kind,
+          text:
+            variant === 'row' ? t.iRequested(nameOf(view.to)) : t.iRequestedWaiting(nameOf(view.to))
+        };
       case 'between':
         return { kind: view.kind, text: t.requestedBetween(who, nameOf(view.to)) };
       case 'accepted':

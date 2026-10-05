@@ -4,8 +4,8 @@ import { expect, openApp, shot, test } from './fixtures';
 // Requests are proposals (demo seed, Sunday 2026-10-04 09:00): דני asked מיכל to pick up the parcel
 // (seed-post) and she has not answered. Until she does, nobody holds it: for her it is "ביקשו
 // ממך" with "אני לוקחת" / "לא מתאים לי"; for דני it is free (it waits for someone to take it), with
-// a quiet "ביקשת ממיכל · מחכה לתשובה" in his list. The flows: accept, decline, withdraw, and asking
-// from the sheet.
+// a quiet "ביקשת ממיכל" in his list and "מחכה למיכל" at its seat. The flows: accept, decline,
+// withdraw, and asking from the sheet (asking from a row's seat is in seat.spec.ts).
 
 interface TaskLite {
   id: string;
@@ -72,8 +72,8 @@ test('a request is not theirs yet: the asked member sees it to answer, everyone 
   await expect(pulse(page, 'waiting')).toHaveText('4');
   await expect(section(page, 'requested')).toHaveCount(0);
   const waiting = card(section(page, 'plan'), 'seed-post');
-  await expect(waiting.locator('[data-request]')).toHaveText('ביקשת ממיכל · מחכה לתשובה');
-  await expect(waiting.getByRole('button', { name: 'אני לוקח' })).toBeVisible();
+  await expect(waiting.locator('[data-request]')).toHaveText('ביקשת ממיכל');
+  await expect(waiting.getByRole('button', { name: /^מחכה למיכל:/ })).toBeVisible();
   // The balance row counts it for nobody.
   const balance = page.getByRole('group', { name: 'משימות פתוחות אצל כל אחד' });
   await expect(balance).toContainText('6');
@@ -117,11 +117,11 @@ test('decline: "לא מתאים לי" leaves it waiting for anyone, gently', asy
   await snack(page).toBe('בסדר, המשימה תחכה שמישהו ייקח');
   await expect(section(page, 'requested')).toHaveCount(0);
   await expect(pulse(page, 'waiting')).toHaveText('4');
-  // Free again: in the list (it is planned for Tuesday), with the take action.
+  // Free again: in the list (it is planned for Tuesday), with its empty seat.
   await page.locator('[data-pulse="waiting"]').click();
   const waiting = card(section(page, 'plan'), 'seed-post');
   await expect(waiting.locator('[data-request]')).toHaveCount(0);
-  await expect(waiting.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
+  await expect(waiting.getByRole('button', { name: /^לקחת:/ })).toBeVisible();
   await shots(page, 'requests-home-declined');
 
   await page.goto('./?demo=1#/task/seed-post');

@@ -7,20 +7,21 @@
    *               balance. Tap: attention / requests scroll to their block; today shows tab "היום"
    *               (chip "הכל"); waiting shows tab "הכל" with chip "פנויות"
    *   jar strip   JarMini
-   *   attention   "דורש תשומת לב" (only when non-empty): at most three, then "עוד N"; free ones
-   *               carry the small take action, an urgent request to me its two answers
+   *   attention   "דורש תשומת לב" (only when non-empty): at most three, then "עוד N"; every row
+   *               ends with its seat, an urgent request to me carries its two answers instead
    *   requested   "ביקשו ממך": requests waiting for my answer, whatever the tab (only when
    *               non-empty), each with "אני לוקח/ת" / "לא מתאים לי". Not mine until I accept
    *   bar         sticky: time tabs "היום · השבוע · בהמשך · הכל" with counts, and the chips
    *               "הכל · שלי · פנויות · <member>"; they combine (homeView, kept for the session)
    *   list        the open tasks of that view, minus what the blocks above already show
-   *               (domain/homeList). Free tasks sit in it with a small "אני לוקח/ת" and a hand icon
-   *               to ask someone; owned ones show the owner's avatar. Past six tasks it folds into
-   *               category groups of three with "עוד N" (HomeList)
+   *               (domain/homeList). Every row ends with its seat (components/task/Seat): the
+   *               owner's avatar, or the empty seat ("לקחת": me, or ask anyone at once), or a
+   *               request that waits ("מחכה לדני"). Past six tasks it folds into category groups of
+   *               three with "עוד N" (HomeList)
    * Adding: quick add's last task (homeView.lastAdded) and a list's tasks (homeView.addedBatch)
    * switch the bar to a view that lists them, stay in sight even inside a folded group
    * (homeView.fresh), and are scrolled to and washed for a moment (revealAdded.ts). Alone in the
-   * household, nothing changes but the missing "ask" icon: a new undated task is found the same way.
+   * household the seat takes a task at once (nobody to ask): a new undated task is found the same way.
    */
   import { tick, untrack } from 'svelte';
   import Plus from '@lucide/svelte/icons/plus';
@@ -36,7 +37,7 @@
   import { EmptyHome } from '$components/illustrations';
   import JarMini from '$components/jar/JarMini.svelte';
   import TaskList from '$components/task/TaskList.svelte';
-  import QuickTake from '$components/task/QuickTake.svelte';
+  import Seat from '$components/task/Seat.svelte';
   import { acceptRequest, declineRequest } from '$components/task/actions';
   import { isRequestFor } from '$lib/domain/buckets';
   import {
@@ -77,7 +78,6 @@
   const isUnowned = (task: Task): boolean => isFree(task, household.memberIds);
   /** A request waiting for my answer (it may sit in attention, with accept / decline). */
   const askedMe = (task: Task): boolean => isRequestFor(task, household.uid, household.memberIds);
-  const takeable = (task: Task): boolean => isUnowned(task) && !askedMe(task);
 
   // A chip on a member who left falls back to everyone.
   $effect(() => {
@@ -259,12 +259,10 @@
   }
 </script>
 
-<!-- A free task's row: take it, or ask someone. A request to me answers below the meta line instead,
-     with nothing at the end (no dashed "?": the line already says who asked). -->
-{#snippet quickTake(task: Task)}
-  {#if !askedMe(task)}
-    <QuickTake taskId={task.id} me={me ?? 'n'} canRequest={others.length > 0} />
-  {/if}
+<!-- Every row ends with its seat: who does it, or take it / ask someone. A request to me answers
+     below the meta line instead, with nothing at the end (the line already says who asked). -->
+{#snippet seat(task: Task)}
+  <Seat {task} />
 {/snippet}
 
 <!-- A request waiting for my answer: yes, or a gentle no. -->
@@ -344,8 +342,7 @@
             tasks={attention.shown}
             labelledby="home-attention"
             variant="row"
-            trailing={quickTake}
-            withTrailing={isUnowned}
+            trailing={seat}
             actions={requestActions}
             withActions={askedMe}
           >
@@ -380,7 +377,7 @@
             tasks={groups.requested}
             labelledby="home-requested"
             variant="row"
-            trailing={quickTake}
+            trailing={seat}
             actions={requestActions}
           />
         </section>
@@ -409,8 +406,7 @@
               <HomeList
                 tasks={list}
                 label={tabLabel(view.tab)}
-                trailing={quickTake}
-                withTrailing={takeable}
+                trailing={seat}
               />
             {:else}
               <div class="bucket-empty" data-empty={view.tab}>
