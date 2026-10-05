@@ -58,8 +58,10 @@
     onDismiss(reason);
   }
 
+  // `done` first: once dismissed, the host may already have dropped the message the props read
+  // from, while the outro still delivers pointer / focus events (and a second tap) to this element.
   function run() {
-    if (duration <= 0 || done) return;
+    if (done || duration <= 0) return;
     clearTimeout(timer);
     startedAt = performance.now();
     timer = setTimeout(() => finish('timeout'), remaining);
@@ -88,6 +90,7 @@
   });
 
   function act() {
+    if (done) return;
     onAction?.();
     finish('action');
   }
