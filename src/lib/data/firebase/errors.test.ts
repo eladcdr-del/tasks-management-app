@@ -1,5 +1,5 @@
 // SDK-free error mapping (errors.ts) and the Hebrew table it reads (he/errors.ts).
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RepoError } from '../repository';
 import { errors as table, PAGES_HOST } from '../../i18n/he/errors';
 import { he } from '../../i18n/he';
@@ -77,5 +77,33 @@ describe('toRepoError', () => {
     expect(isUnavailable({ code: 'unavailable' })).toBe(true);
     expect(isUnavailable(new RepoError('network'))).toBe(true);
     expect(isUnavailable(new RepoError('permission'))).toBe(false);
+  });
+});
+
+describe('toRepoError: Google sign-in without a usable connection', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('auth/internal-error from a failed script load says "no connection", not "something broke"', () => {
+    // The SDK attaches the <script> error event as customData.
+    const scriptFailed = { code: 'auth/internal-error', customData: new Event('error') };
+    expect(toRepoError(scriptFailed).code).toBe('network');
+    expect(repoErrorMessage(toRepoError(scriptFailed))).toBe(table.network);
+  });
+
+  it('auth/internal-error while the device is offline is a network error too', () => {
+    vi.stubGlobal('navigator', { onLine: false });
+    expect(toRepoError({ code: 'auth/internal-error' }).code).toBe('network');
+  });
+
+  it('any other auth/internal-error stays unknown', () => {
+    vi.stubGlobal('navigator', { onLine: true });
+    expect(toRepoError({ code: 'auth/internal-error' }).code).toBe('unknown');
+  });
+
+  it('a redirect that came back without a user explains itself (popup-blocked copy)', () => {
+    const lost = new RepoError('popup-blocked', ERROR_DETAIL.redirectLost);
+    expect(repoErrorMessage(lost)).toBe(table['popup-blocked']);
+    expect(errorMessage(lost)).toBe(table['popup-blocked']);
+    expect(table['popup-blocked']).toContain('נסו שוב');
   });
 });

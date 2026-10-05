@@ -28,8 +28,11 @@
 //  - After a transaction (which bypasses the local cache) its documents are read from the server
 //    for a while, until the listeners have caught up.
 //
-// SYNC: watchSync = navigator online/offline + this repo's queued/in-flight writes, re-evaluated on
-// onSnapshotsInSync. Offline-safe throughout: nothing here needs the network to accept a task write.
+// SYNC: watchSync = navigator online/offline + pending writes, re-evaluated on onSnapshotsInSync.
+// Pending = this repo's queued/in-flight writes, or (when more) the documents the task listeners
+// still see with hasPendingWrites: Firestore keeps unsent writes across a reload, which this
+// instance never made but which still wait to be sent. Offline-safe throughout: nothing here needs
+// the network to accept a task write.
 
 import {
   arrayRemove,
@@ -366,6 +369,8 @@ export async function createFirebaseRepositoryImpl(
 
   let queuedWrites = 0; // in the chain, not yet committed (or a transaction running)
   let inflightWrites = 0; // committed locally, waiting for the server
+  /** Doc path → listeners showing it with hasPendingWrites (metadata-change listeners only). */
+  const pendingDocs = new Map<string, number>();
   const syncSubs = new Set<(s: SyncState) => void>();
   let lastSync = '';
   let syncScheduled = false;
@@ -374,7 +379,8 @@ export async function createFirebaseRepositoryImpl(
   const online = (): boolean => typeof navigator === 'undefined' || navigator.onLine !== false;
 
   function syncState(): SyncState {
-    const pendingWrites = queuedWrites + inflightWrites;
+    // Max, not sum: my own writes show up in the listeners too.
+    const pendingWrites = Math.max(queuedWrites + inflightWrites, pendingDocs.size);
     return {
       status: !online() ? 'offline' : pendingWrites > 0 ? 'saving' : 'synced',
       pendingWrites
@@ -644,8 +650,22 @@ export async function createFirebaseRepositoryImpl(
   interface Emission {
     /** Documents in the snapshot (they count as live once shown). */
     paths: string[];
+    /** Those with writes not yet on the server (only from includeMetadataChanges listeners). */
+    pendingPaths: string[];
     fromCache: boolean;
     emit: () => void;
+  }
+
+  /** Paths whose pending state is reported by a listener that also hears when it clears. */
+  const pendingOf = (docs: DocumentSnapshot[], includeMetadataChanges: boolean): string[] =>
+    includeMetadataChanges
+      ? docs.filter((d) => d.metadata.hasPendingWrites).map((d) => d.ref.path)
+      : [];
+
+  function countPending(path: string, delta: 1 | -1): void {
+    const n = (pendingDocs.get(path) ?? 0) + delta;
+    if (n > 0) pendingDocs.set(path, n);
+    else pendingDocs.delete(path);
   }
 
   /**
@@ -662,17 +682,25 @@ export async function createFirebaseRepositoryImpl(
     start: (next: (e: Emission) => void, onError: (e: unknown) => void) => Unsubscribe
   ): { unsubscribe: Unsubscribe; isActive: () => boolean } {
     let held = new Set<string>();
+    let heldPending = new Set<string>();
     let active = true;
     let parked: Emission | null = null;
     let vouching = false;
-    const retrack = (paths: string[]) => {
+    const retrack = (paths: string[], pendingPaths: string[]) => {
       const next = new Set(paths);
       for (const p of next) if (!held.has(p)) retain(p);
       for (const p of held) if (!next.has(p)) release(p);
       held = next;
+      const nextPending = new Set(pendingPaths);
+      const added = [...nextPending].filter((p) => !heldPending.has(p));
+      const cleared = [...heldPending].filter((p) => !nextPending.has(p));
+      for (const p of added) countPending(p, 1);
+      for (const p of cleared) countPending(p, -1);
+      heldPending = nextPending;
+      if (added.length > 0 || cleared.length > 0) emitSync();
     };
     const show = (e: Emission) => {
-      retrack(e.paths);
+      retrack(e.paths, e.pendingPaths);
       deliver(e.emit);
     };
     const next = (e: Emission) => {
@@ -701,7 +729,7 @@ export async function createFirebaseRepositoryImpl(
       if (!active) return;
       const uid = auth.currentUser?.uid;
       if (uid && toRepoError(e).code === 'permission') knownMembers.delete(memberKey(uid, hid));
-      retrack([]);
+      retrack([], []);
       parked = null;
       listenerFailed(path, e);
     });
@@ -709,7 +737,7 @@ export async function createFirebaseRepositoryImpl(
       if (!active) return;
       active = false;
       stop();
-      retrack([]);
+      retrack([], []);
       listeners.delete(unsubscribe);
     };
     listeners.add(unsubscribe);
@@ -730,6 +758,7 @@ export async function createFirebaseRepositoryImpl(
           next: (snap) =>
             next({
               paths: [snap.ref.path],
+              pendingPaths: pendingOf([snap], includeMetadataChanges),
               fromCache: snap.metadata.fromCache,
               emit: () => onNext(snap, reg.isActive)
             }),
@@ -755,6 +784,7 @@ export async function createFirebaseRepositoryImpl(
           next: (snap) =>
             next({
               paths: snap.docs.map((d) => d.ref.path),
+              pendingPaths: pendingOf(snap.docs, includeMetadataChanges),
               fromCache: snap.metadata.fromCache,
               emit: () => onNext(snap)
             }),
@@ -1093,6 +1123,11 @@ export async function createFirebaseRepositoryImpl(
             // The last one out must close the door: an open invite would admit a stranger.
             ...(last ? { invite: null } : {})
           });
+          // ...and revoke the link itself, so a link already sent says "cancelled", not "full".
+          // (The invites rule checks membership before the batch, so this is still allowed.)
+          if (last && household.invite) {
+            b.update(inviteRef(household.invite.code), { revoked: true });
+          }
           b.set(userRef(uid), { householdId: null, createdAt: serverTimestamp() });
           return { ack: commit(b), uid };
         });

@@ -2,6 +2,8 @@
 // plus review screenshots of the setup and welcome screens.
 
 import type { Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { withoutFirebaseConfig } from './config';
 import { expect, openApp, shot, test } from './fixtures';
 
 interface Hooks {
@@ -111,9 +113,13 @@ test('snackbars show in the live region, run their action and go away', async ({
 });
 
 test.describe('screenshots', () => {
+  // The setup screen needs an empty firebase-config.ts: blank it in the served bundle (config.ts).
+  test.use({ serviceWorkers: 'block' });
+
   for (const scheme of ['light', 'dark'] as const) {
     test(`setup and welcome (${scheme})`, async ({ page }) => {
       await page.emulateMedia({ colorScheme: scheme });
+      await withoutFirebaseConfig(page);
       await page.goto('./#/');
       await expect(
         page
@@ -134,6 +140,10 @@ test.describe('screenshots', () => {
       await expect(page).toHaveURL(/#\/welcome$/);
       await expect(page.getByRole('button', { name: 'כניסה עם Google' })).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
+      // Mom's first screen: every line readable (contrast) and no developer words.
+      const axe = await new AxeBuilder({ page }).withRules(['color-contrast']).analyze();
+      expect(axe.violations.flatMap((v) => v.nodes.map((n) => n.target.join(' ')))).toEqual([]);
+      await expect(page.locator('main')).not.toContainText('Firebase');
       await shot(page, `welcome-${scheme}`);
     });
   }

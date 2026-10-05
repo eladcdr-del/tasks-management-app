@@ -3,10 +3,18 @@
 // Flow (Android Chrome, installed, display-mode standalone):
 //   1. signInWithPopup, called synchronously from the user's tap (no await before it), so Chrome
 //      opens the Google account chooser (a Custom Tab in standalone mode) instead of blocking it.
+//      Auth starts WITHOUT a popup/redirect resolver (init.ts), so launches never wait for Google's
+//      script; the resolver is passed here, and loads on the first tap.
 //   2. If the popup cannot work here (auth/popup-blocked, auth/operation-not-supported-in-this-
-//      environment, or auth/cancelled-popup-request while standalone) → signInWithRedirect. The page
-//      navigates to Google and back; `consumeRedirectResult` on the next boot finishes it, and
-//      onAuthStateChanged reports the user.
+//      environment, or auth/cancelled-popup-request while standalone):
+//      - authDomain is another host than the page (the GitHub Pages deploy: *.firebaseapp.com vs
+//        *.github.io) → no redirect: with third-party storage partitioning (Chrome 115+) its
+//        result is lost and the user would come back signed out, silently. RepoError
+//        ('popup-blocked') instead, which tells them to try again (the resolver is warm by then,
+//        so the popup opens at once) or to open the app in Chrome.
+//      - same host → signInWithRedirect, after marking the tab (sessionStorage). The next boot
+//        finishes it in `consumeRedirectResult`, which reads the redirect only when the mark is
+//        there, and reports a redirect that came back without a user instead of ignoring it.
 //   3. Errors: closed by the user → RepoError('unknown', 'cancelled') (the UI stays quiet);
 //      network → 'network'; auth/unauthorized-domain → RepoError('permission',
 //      'unauthorized-domain') with a Hebrew setup hint (he.errors.unauthorizedDomain).
@@ -14,6 +22,7 @@
 
 import {
   GoogleAuthProvider,
+  browserPopupRedirectResolver,
   getRedirectResult,
   onAuthStateChanged,
   signInWithCredential,
@@ -24,7 +33,44 @@ import {
 } from 'firebase/auth';
 import { RepoError } from '../repository';
 import type { AuthUser, Unsubscribe } from '../../domain/types';
-import { toRepoError } from './errors';
+import { ERROR_DETAIL, toRepoError } from './errors';
+
+/** sessionStorage mark: this tab left for Google through signInWithRedirect. */
+export const REDIRECT_MARK_KEY = 'homecare.authRedirect';
+
+function tabStorage(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function markRedirect(on: boolean): void {
+  try {
+    if (on) tabStorage()?.setItem(REDIRECT_MARK_KEY, '1');
+    else tabStorage()?.removeItem(REDIRECT_MARK_KEY);
+  } catch {
+    // Storage blocked: the redirect result is then simply not read.
+  }
+}
+
+/** Returns and clears the redirect mark. */
+function takeRedirectMark(): boolean {
+  try {
+    const marked = tabStorage()?.getItem(REDIRECT_MARK_KEY) === '1';
+    if (marked) markRedirect(false);
+    return marked;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether a redirect sign-in can come back to this page: authDomain is the page's own host. */
+export function redirectReturnsHere(auth: Pick<Auth, 'config'>): boolean {
+  if (typeof location === 'undefined') return false;
+  return auth.config.authDomain === location.host;
+}
 
 export function toAuthUser(u: User): AuthUser {
   return {
@@ -66,34 +112,39 @@ export async function signInWithGoogle(auth: Auth): Promise<void> {
   const provider = googleProvider();
   try {
     // Must be the first await: popups are only allowed inside the user's gesture.
-    await signInWithPopup(auth, provider);
+    await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     return;
   } catch (e) {
     const code = authCode(e);
-    const useRedirect =
+    const popupFailed =
       code === 'auth/popup-blocked' ||
       code === 'auth/operation-not-supported-in-this-environment' ||
       (code === 'auth/cancelled-popup-request' && isStandalone());
-    if (!useRedirect) throw toRepoError(e);
+    if (!popupFailed) throw toRepoError(e);
+    if (!redirectReturnsHere(auth)) throw new RepoError('popup-blocked', code);
   }
+  markRedirect(true);
   try {
     // Navigates away; the result is read by consumeRedirectResult on the next boot.
-    await signInWithRedirect(auth, provider);
+    await signInWithRedirect(auth, provider, browserPopupRedirectResolver);
   } catch (e) {
+    markRedirect(false);
     const err = toRepoError(e);
     throw err.code === 'unknown' ? new RepoError('popup-blocked', err.message) : err;
   }
 }
 
 /**
- * Completes a sign-in that went through signInWithRedirect (no-op otherwise). Returns the mapped
- * error of a failed redirect, or null. Browser only.
+ * Completes a sign-in that this tab started with signInWithRedirect (otherwise a no-op that loads
+ * nothing). Returns the mapped error of a failed redirect, a RepoError('popup-blocked',
+ * 'redirect-lost') when Google sent the user back without a sign-in, or null. Browser only.
  */
 export async function consumeRedirectResult(auth: Auth): Promise<RepoError | null> {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' || !takeRedirectMark()) return null;
   try {
-    await getRedirectResult(auth);
-    return null;
+    const result = await getRedirectResult(auth, browserPopupRedirectResolver);
+    if (result || auth.currentUser) return null;
+    return new RepoError('popup-blocked', ERROR_DETAIL.redirectLost);
   } catch (e) {
     return toRepoError(e);
   }

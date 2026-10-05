@@ -1,8 +1,13 @@
 <script lang="ts">
-  // owner: step 3.1. #/welcome: brand hero, one-line value prop, "כניסה עם Google".
+  // owner: step 3.1. #/welcome: brand hero, one-line value prop, "כניסה עם Google". Opened from an
+  // invite link (App.svelte keeps the code while signed out), it first says that they were
+  // invited, so the generic sign-in page does not look like the wrong link.
   // After a successful sign-in the boot gate takes over (no household → onboarding, member → Home,
   // a pending invite → #/join/:code); a first-timer without a pending invite goes to the profile
   // step first. Errors show inline (Banner); a closed popup stays quiet.
+  // Auth starts without Google's sign-in script (init.ts), so the first tap loads it: in Firebase
+  // mode the page preconnects to Google and the auth domain to make that tap quicker.
+  import MailOpen from '@lucide/svelte/icons/mail-open';
   import { AppMark } from '$components/illustrations';
   import { Banner, Button } from '$components/ui';
   import { he } from '$lib/i18n/he';
@@ -10,9 +15,16 @@
   import { isCancelled, repoErrorMessage } from '$lib/data/firebase/errors';
   import { router } from '$lib/router/router.svelte';
   import { peekPendingInvite, session } from '$lib/state/session.svelte';
+  import { firebaseConfig } from '../../../firebase-config';
   import OnboardingFrame from './OnboardingFrame.svelte';
 
   const t = he.onboarding.welcome;
+  /** Kept by App.svelte before it sent the visitor here (sessionStorage, read once). */
+  const invited = peekPendingInvite() !== null;
+  const preconnect =
+    session.mode === 'firebase'
+      ? ['https://apis.google.com', `https://${firebaseConfig.authDomain}`]
+      : [];
   let busy = $state(false);
   let error = $state<string | null>(null);
 
@@ -38,6 +50,12 @@
   }
 </script>
 
+<svelte:head>
+  {#each preconnect as origin (origin)}
+    <link rel="preconnect" href={origin} />
+  {/each}
+</svelte:head>
+
 <OnboardingFrame screen="welcome" title={t.title} lead={t.valueProp} centered>
   {#snippet hero()}
     <div class="mark">
@@ -47,6 +65,9 @@
   {/snippet}
 
   {#snippet actions()}
+    {#if invited}
+      <Banner tone="info" icon={MailOpen} title={t.invitedTitle} body={t.invitedBody} />
+    {/if}
     {#if error}
       <Banner tone="danger" title={t.errorTitle} body={error} />
     {/if}
@@ -107,7 +128,7 @@
 
   .privacy {
     font: var(--font-caption);
-    color: var(--ink-3);
+    color: var(--ink-2);
     text-align: center;
   }
 </style>

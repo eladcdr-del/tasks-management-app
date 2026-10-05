@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig, searchForWorkspaceRoot, type Plugin } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { VitePWA } from 'vite-plugin-pwa';
+import { firebaseConfig } from './firebase-config.ts';
 
 /** GitHub Pages project path. Override with BASE_PATH (always normalised to `/x/`). */
 function resolveBase(raw: string | undefined): string {
@@ -18,6 +19,10 @@ const outDir = process.env.BUILD_OUT_DIR || 'dist';
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as {
   version: string;
 };
+/** firebase-config.ts is filled in (same five keys as select.ts): every visitor uses Firebase. */
+const firebaseConfigured = (
+  ['apiKey', 'authDomain', 'projectId', 'appId', 'messagingSenderId'] as const
+).every((k) => firebaseConfig[k].trim() !== '');
 
 /** Import aliases — keep in sync with `paths` in tsconfig.base.json and vitest.config.ts. */
 export const alias = {
@@ -106,12 +111,14 @@ export default defineConfig({
         // The plugin adds manifest.webmanifest to the precache itself.
         globPatterns: ['**/*.{js,css,html,woff2,svg,png,ico}'],
         globIgnores: [
-          // The Firebase SDK chunks stay out of the precache: demo / setup users never need them.
-          // The SW caches them at runtime (CacheFirst) on first use instead (src/sw.ts).
-          // `index.esm-*` is the SDK core shared by the repository and messaging chunks.
-          '**/firebaseRepository-*.js',
-          '**/messaging-*.js',
-          '**/index.esm-*.js',
+          // Without a Firebase config (demo / setup only) the SDK chunks stay out of the precache;
+          // the SW caches them at runtime (CacheFirst) on first use instead (src/sw.ts). With one,
+          // every visitor needs them, and the first visit is not controlled by the SW yet, so
+          // runtime caching would miss them: they are precached, and the app opens offline after a
+          // single visit. `index.esm-*` is the SDK core shared by the repository and messaging.
+          ...(firebaseConfigured
+            ? []
+            : ['**/firebaseRepository-*.js', '**/messaging-*.js', '**/index.esm-*.js']),
           // Icon sources (scripts/generate-icons.mjs); the app never requests them.
           'icons/source-maskable.svg',
           'icons/badge.svg'

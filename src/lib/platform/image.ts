@@ -5,7 +5,7 @@
 // EncodedPhoto:
 //   full   longest edge ≤ 1600px, JPEG quality stepping 0.82 → 0.5 until ≤ 200 KB; if quality 0.5 is
 //          still too big, the image shrinks by 20% and the steps run again.
-//   thumb  longest edge ≤ 240px, same stepping, ≤ 15 KB (Memory cards, TaskDetail thumbs).
+//   thumb  longest edge ≤ 240px, same stepping, ≤ 14,500 bytes (Memory cards, TaskDetail thumbs).
 // Transparent pixels (PNG screenshots) are painted on white, since JPEG has no alpha.
 //
 // The canvas work sits behind a tiny `ImageEnv` so the budget logic is unit-testable without a
@@ -16,7 +16,11 @@ import type { EncodedPhoto } from '$lib/domain/types';
 export const FULL_MAX_EDGE = 1600;
 export const FULL_MAX_BYTES = 200 * 1024;
 export const THUMB_MAX_EDGE = 240;
-export const THUMB_MAX_BYTES = 15 * 1024;
+/**
+ * As a data URL (base64 + the 23-character prefix) this is at most 19,359 characters: inside the
+ * 20,000 that validate.ts and firestore.rules allow, with margin (15 KiB would overshoot them).
+ */
+export const THUMB_MAX_BYTES = 14_500;
 /** JPEG qualities tried in order (the blueprint's 0.82 → 0.5). */
 export const QUALITY_STEPS: readonly number[] = [0.82, 0.74, 0.66, 0.58, 0.5];
 /** After the last quality step, the image shrinks by this factor and the steps run again. */

@@ -13,6 +13,7 @@ import { ClockStore } from './clock.svelte';
 import {
   gateTarget,
   peekPendingInvite,
+  PROFILE_DRAFT_KEY,
   rememberPendingInvite,
   routeAllowed,
   SessionStore,
@@ -101,7 +102,8 @@ function makeStores() {
   const session = new SessionStore({
     scoped: [household, tasks],
     repoStores: [sync, ui],
-    onError: (e) => ui.pushError(e)
+    onError: (e) => ui.pushError(e),
+    joinColorCheckMs: 200
   });
   return { ui, household, tasks, sync, session };
 }
@@ -258,7 +260,8 @@ describe('phases and subscriptions', () => {
     expect(await session.joinHousehold(invite!.code, { ...PROFILE, displayName: 'רון' })).toBe(hid);
     expect(session.phase).toBe('ready');
     expect(peekPendingInvite()).toBeNull();
-    expect(c.active()).toEqual(ALL_ONE);
+    // (The joiner's colour check watches the members briefly; this demo house has nobody else.)
+    await vi.waitFor(() => expect(c.active()).toEqual(ALL_ONE));
   });
 
   it('onboarding actions reject with the RepoError and leave the phase as it was', async () => {
@@ -301,6 +304,76 @@ describe('phases and subscriptions', () => {
   });
 });
 
+describe('profile draft', () => {
+  it('survives a reload for the same account, is hidden from another, and goes on sign-out', async () => {
+    const c = await demoRepo('empty');
+    const before = makeStores();
+    await before.session.boot({ resolution: DEMO, createRepo: async () => c.repo });
+    await before.session.signIn();
+    const uid = before.session.user!.uid;
+    expect(before.session.profileDraft).toBeNull();
+    before.session.profileDraft = PROFILE;
+    expect(JSON.parse(sessionStorage.getItem(PROFILE_DRAFT_KEY)!)).toEqual({
+      uid,
+      profile: PROFILE
+    });
+
+    // The tab reloads (or Android brings a discarded tab back): a fresh store, same storage.
+    const after = makeStores();
+    expect(after.session.profileDraft).toBeNull(); // nobody is signed in yet
+    await after.session.boot({ resolution: DEMO, createRepo: async () => c.repo });
+    expect(after.session.user?.uid).toBe(uid);
+    expect(after.session.profileDraft).toEqual(PROFILE);
+
+    // Another account in the same tab never sees it.
+    c.repo.actAs('someone-else');
+    await after.session.settled();
+    expect(after.session.profileDraft).toBeNull();
+    c.repo.actAs(uid);
+    await after.session.settled();
+    expect(after.session.profileDraft).toEqual(PROFILE);
+
+    await after.session.signOut();
+    expect(sessionStorage.getItem(PROFILE_DRAFT_KEY)).toBeNull();
+  });
+
+  it('ignores a malformed stored draft', () => {
+    sessionStorage.setItem(PROFILE_DRAFT_KEY, '{"uid":"x","profile":{"displayName":"א"}}');
+    expect(makeStores().session.profileDraft).toBeNull();
+    sessionStorage.setItem(PROFILE_DRAFT_KEY, 'not json');
+    expect(makeStores().session.profileDraft).toBeNull();
+  });
+});
+
+describe('joining: colours', () => {
+  it('a joiner whose colour is already taken moves to the first free one', async () => {
+    const { session, household } = makeStores();
+    const c = await demoRepo(); // מיכל (terracotta) and דני (slate)
+    await session.boot({ resolution: DEMO, createRepo: async () => c.repo });
+    const invite = await household.createInvite();
+    c.repo.actAs('newcomer');
+    await session.settled();
+    await session.joinHousehold(invite!.code, { ...PROFILE, color: 'terracotta' });
+    await vi.waitFor(() => expect(household.me?.color).toBe('sage'));
+    expect(new Set(household.members.map((m) => m.color)).size).toBe(household.members.length);
+  });
+
+  it('a free colour is kept', async () => {
+    const { session, household } = makeStores();
+    const c = await demoRepo();
+    await session.boot({ resolution: DEMO, createRepo: async () => c.repo });
+    const invite = await household.createInvite();
+    c.repo.actAs('newcomer');
+    await session.settled();
+    const update = vi.spyOn(c.repo, 'updateMember');
+    await session.joinHousehold(invite!.code, { ...PROFILE, color: 'plum' });
+    await vi.waitFor(() => expect(household.members.length).toBe(3));
+    await flush();
+    expect(household.me?.color).toBe('plum');
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
 describe('route gating', () => {
   const routes: RouteName[] = [
     'home',
@@ -337,7 +410,6 @@ describe('route gating', () => {
       'household',
       'settings',
       'task',
-      'onboardingProfile',
       'onboardingInstall',
       'onboardingNotifications',
       'devGallery'

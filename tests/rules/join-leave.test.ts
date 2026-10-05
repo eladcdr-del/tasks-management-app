@@ -336,7 +336,7 @@ describe('last member leaving', () => {
   beforeEach(async () => {
     await seedHousehold(env(), { members: [ALICE] });
   });
-  const lastLeave = (clearInvite: boolean) => {
+  const lastLeave = (clearInvite: boolean, revokeCode?: string) => {
     const db = as(env(), ALICE);
     const b = writeBatch(db);
     b.delete(doc(db, path.member(ALICE)));
@@ -345,6 +345,7 @@ describe('last member leaving', () => {
       memberCount: increment(-1),
       ...(clearInvite ? { invite: null } : {})
     });
+    if (revokeCode) b.update(doc(db, path.invite(revokeCode)), { revoked: true });
     return b;
   };
   it('allowed: when the active invite is cleared in the same write', async () => {
@@ -353,6 +354,11 @@ describe('last member leaving', () => {
   });
   it('denied: leaving an empty household behind with a live invite', async () => {
     await assertFails(lastLeave(false).commit());
+  });
+  it('allowed: the same batch also revokes the invite document (membership is checked before it)', async () => {
+    await assertSucceeds(lastLeave(true, CODE).commit());
+    const invite = await getDoc(doc(as(env(), EVE), path.invite(CODE)));
+    expect(invite.get('revoked')).toBe(true);
   });
 });
 

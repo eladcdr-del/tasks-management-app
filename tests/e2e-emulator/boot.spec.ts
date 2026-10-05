@@ -22,6 +22,7 @@ interface Hooks {
       mode: string | null;
       user: { uid: string; displayName: string } | null;
       householdId: string | null;
+      signOut(): Promise<void>;
       createHousehold(
         name: string,
         profile: { displayName: string; photoURL: string | null; color: string; addressAs: string }
@@ -147,5 +148,55 @@ test('emulator boot: sign in, create a household, create a task, and it survives
   ).toMatchObject({ id, title: TITLE, priority: 'urgent', pending: false });
   await expect(page.locator('[data-me]')).toHaveText(MOM.name);
 
+  expect(errors).toEqual([]);
+});
+
+/** Google's sign-in script host: the SDK loads it (and then an iframe) for popups and redirects. */
+const GOOGLE_SCRIPT = /^https:\/\/apis\.google\.com\//;
+
+test('a signed-in launch never waits for Google’s sign-in script, even when it hangs', async ({
+  page
+}) => {
+  test.setTimeout(90_000);
+  const errors = trackPageErrors(page);
+  await page.goto('./?emulator=1#/');
+  await signIn(page, MOM.uid, MOM.name);
+  await page.evaluate(
+    (name) =>
+      (window as unknown as HookWindow).__homecareTest!.state.session.createHousehold('הבית שלנו', {
+        displayName: name,
+        photoURL: null,
+        color: 'terracotta',
+        addressAs: 'f'
+      }),
+    MOM.name
+  );
+  await phaseIs(page, 'ready');
+
+  // A weak connection: Google's script never answers (no failure either).
+  const googleRequests: string[] = [];
+  page.on('request', (r) => {
+    if (GOOGLE_SCRIPT.test(r.url())) googleRequests.push(r.url());
+  });
+  await page.route(GOOGLE_SCRIPT, () => {
+    /* never fulfilled */
+  });
+
+  const started = Date.now();
+  await page.reload();
+  await expect(page.locator('[data-me]')).toHaveText(MOM.name, { timeout: 8_000 });
+  expect(Date.now() - started).toBeLessThan(8_000);
+  expect(googleRequests).toEqual([]);
+
+  // Signed out, the welcome screen does not wait for it either (it loads on the tap).
+  await page.evaluate(() =>
+    (window as unknown as HookWindow).__homecareTest!.state.session.signOut()
+  );
+  await expect(page).toHaveURL(/#\/welcome$/);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'כניסה עם Google' })).toBeVisible({
+    timeout: 8_000
+  });
+  expect(googleRequests).toEqual([]);
   expect(errors).toEqual([]);
 });

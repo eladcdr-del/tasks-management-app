@@ -1,10 +1,13 @@
 import type { Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { withoutFirebaseConfig } from './config';
 import { expect, openApp, shot, test } from './fixtures';
 
 // Boot & adapter selection (step 2.4): setup when nothing is configured, the demo (?demo=1, reset,
 // as, stored mode, exit), and the phase gating of routes. The fixed clock (fixtures.ts) puts the
 // seed on Sunday 2026-10-04 09:00, where the pulse reads attention 3 / today 4 / waiting 3.
+// firebase-config.ts is filled in (the live project), so the build boots into Firebase mode; the
+// setup-screen tests blank the config in the served bundle (config.ts).
 
 const SETUP_TITLE = 'האפליקציה עוד לא חוברה ל-Firebase';
 const BANNER = 'מצב תצוגה';
@@ -50,51 +53,72 @@ const hooksReady = (page: Page) =>
 const phase = (page: Page) =>
   page.evaluate(() => (window as unknown as HookWindow).__homecareTest.state.session.phase);
 
-test('no config and no stored mode → the setup screen, whatever the deep link', async ({
-  page
-}) => {
-  const errors = trackErrors(page);
-  await page.goto('./#/memory');
-  await expect(page.getByRole('heading', { level: 1, name: SETUP_TITLE })).toBeVisible();
-  await expect(page).toHaveURL(/\/tasks-management-app\/#\/setup$/);
-  await expect(banner(page)).toHaveCount(0);
-  await expect(page.getByRole('navigation')).toHaveCount(0);
-  expect(await page.evaluate(() => localStorage.getItem('homecare.mode'))).toBeNull();
-  expect(errors).toEqual([]);
+test.describe('without a Firebase config', () => {
+  test.use({ serviceWorkers: 'block' }); // every chunk through page.route
+
+  test.beforeEach(async ({ page }) => {
+    await withoutFirebaseConfig(page);
+  });
+
+  test('no config and no stored mode → the setup screen, whatever the deep link', async ({
+    page
+  }) => {
+    const errors = trackErrors(page);
+    await page.goto('./#/memory');
+    await expect(page.getByRole('heading', { level: 1, name: SETUP_TITLE })).toBeVisible();
+    await expect(page).toHaveURL(/\/tasks-management-app\/#\/setup$/);
+    await expect(banner(page)).toHaveCount(0);
+    await expect(page.getByRole('navigation')).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('homecare.mode'))).toBeNull();
+    expect(errors).toEqual([]);
+  });
+
+  test('entering the demo (?demo=1) from setup → Home with the seeded data and the banner', async ({
+    page
+  }) => {
+    const errors = trackErrors(page);
+    await page.goto('./#/');
+    await expect(page.getByRole('heading', { level: 1, name: SETUP_TITLE })).toBeVisible();
+
+    await page.goto('./?demo=1#/');
+    await expectPulse(page, 3, 4, 3);
+    await expect(page.getByText('ארוחה במסעדה · 7 מתוך 10')).toBeVisible();
+    await expect(page.locator('[data-me]')).toHaveText('מיכל');
+    await expect(banner(page)).toContainText('מצב תצוגה · הנתונים לדוגמה');
+    await expect(page.getByRole('navigation', { name: 'ניווט ראשי' })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('homecare.mode'))).toBe('demo');
+    expect(await phase(page)).toBe('ready');
+
+    // The app clock is exposed for assertions (fixed clock: Sunday 09:00).
+    const clock = await page.evaluate(() => {
+      const c = (window as unknown as HookWindow).__homecareTest.clock; // fields are getters
+      return { today: c.today, wall: c.wall };
+    });
+    expect(clock.today).toBe('2026-10-04');
+    expect(clock.wall).toMatchObject({ hour: 9, weekday: 0 });
+
+    // The banner is accessible in both themes (contrast, names).
+    for (const colorScheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme });
+      const axe = await new AxeBuilder({ page }).include('.demo-banner').analyze();
+      expect(axe.violations.map((v) => v.id)).toEqual([]);
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    await shot(page, 'boot-demo-home');
+    expect(errors).toEqual([]);
+  });
 });
 
-test('entering the demo (?demo=1) from setup → Home with the seeded data and the banner', async ({
-  page
-}) => {
+test('with the live config, a fresh visit lands on the welcome screen', async ({ page }) => {
   const errors = trackErrors(page);
-  await page.goto('./#/');
-  await expect(page.getByRole('heading', { level: 1, name: SETUP_TITLE })).toBeVisible();
-
-  await page.goto('./?demo=1#/');
-  await expectPulse(page, 3, 4, 3);
-  await expect(page.getByText('ארוחה במסעדה · 7 מתוך 10')).toBeVisible();
-  await expect(page.locator('[data-me]')).toHaveText('מיכל');
-  await expect(banner(page)).toContainText('מצב תצוגה · הנתונים לדוגמה');
-  await expect(page.getByRole('navigation', { name: 'ניווט ראשי' })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem('homecare.mode'))).toBe('demo');
-  expect(await phase(page)).toBe('ready');
-
-  // The app clock is exposed for assertions (fixed clock: Sunday 09:00).
-  const clock = await page.evaluate(() => {
-    const c = (window as unknown as HookWindow).__homecareTest.clock; // fields are getters
-    return { today: c.today, wall: c.wall };
-  });
-  expect(clock.today).toBe('2026-10-04');
-  expect(clock.wall).toMatchObject({ hour: 9, weekday: 0 });
-
-  // The banner is accessible in both themes (contrast, names).
-  for (const colorScheme of ['light', 'dark'] as const) {
-    await page.emulateMedia({ colorScheme });
-    const axe = await new AxeBuilder({ page }).include('.demo-banner').analyze();
-    expect(axe.violations.map((v) => v.id)).toEqual([]);
-  }
-  await page.emulateMedia({ colorScheme: 'light' });
-  await shot(page, 'boot-demo-home');
+  await page.goto('./#/memory');
+  await expect(page.getByRole('button', { name: 'כניסה עם Google' })).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks-management-app\/#\/welcome$/);
+  expect(await page.evaluate(() => localStorage.getItem('homecare.mode'))).toBeNull();
+  expect(await phase(page)).toBe('signed-out');
+  expect(
+    await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.state.session.mode)
+  ).toBe('firebase');
   expect(errors).toEqual([]);
 });
 
@@ -134,16 +158,19 @@ test('a stored demo survives a reload without any params', async ({ page }) => {
   await expectPulse(page, 3, 4, 3);
 });
 
-test('exiting the demo returns to setup and forgets the mode', async ({ page }) => {
+test('exiting the demo returns to the welcome screen (live config) and forgets the mode', async ({
+  page
+}) => {
   const errors = trackErrors(page);
   await openApp(page, '#/memory');
   await banner(page).getByRole('button', { name: 'יציאה מהדמו' }).click();
-  await expect(page.getByRole('heading', { level: 1, name: SETUP_TITLE })).toBeVisible();
-  await expect(page).toHaveURL(/\/tasks-management-app\/#\/setup$/);
+  await expect(page.getByRole('button', { name: 'כניסה עם Google' })).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks-management-app\/#\/welcome$/);
   await expect(banner(page)).toHaveCount(0);
   expect(await page.evaluate(() => localStorage.getItem('homecare.mode'))).toBeNull();
   await page.reload();
-  await expect(page.getByRole('heading', { level: 1, name: SETUP_TITLE })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'כניסה עם Google' })).toBeVisible();
+  expect(await phase(page)).toBe('signed-out');
   expect(errors).toEqual([]);
 });
 
@@ -175,9 +202,9 @@ test('gating: signed out → welcome; an invite opened signed out comes back aft
   await openApp(page);
   await hooksReady(page);
 
-  // A user with no household lands on onboarding.
+  // A user with no household lands on onboarding, profile first (no silent neutral profile).
   await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('newcomer'));
-  await expect(page).toHaveURL(/#\/onboarding\/household$/);
+  await expect(page).toHaveURL(/#\/onboarding\/profile$/);
   expect(await phase(page)).toBe('no-household');
 
   // Signed out: everything leads to #/welcome; a join link is kept for after sign-in.
@@ -190,6 +217,7 @@ test('gating: signed out → welcome; an invite opened signed out comes back aft
   expect(await page.evaluate(() => sessionStorage.getItem('homecare.pendingInvite'))).toBe(
     'HomeCareTestInvite0000001'
   );
+  await expect(page.getByText('הוזמנת להצטרף לבית')).toBeVisible();
 
   await page.evaluate(() =>
     (window as unknown as HookWindow).__homecareTest.state.session.signIn()

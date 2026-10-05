@@ -16,7 +16,7 @@
 // (household, tasks) never reject; they use the snackbar.
 
 import { RepoError, type NewMemberProfile, type Repository } from '$lib/data/repository';
-import type { AuthUser, Unsubscribe } from '$lib/domain/types';
+import type { AuthUser, MemberColor, Unsubscribe } from '$lib/domain/types';
 import {
   createRepository,
   resolveMode,
@@ -58,6 +58,8 @@ export interface SessionStoreOptions {
   repoStores?: RepoStore[];
   /** Errors outside the boot (e.g. a later household lookup). Default: ui.pushError. */
   onError?: (e: unknown) => void;
+  /** After a join, how long to wait for the other members (colour check). Default 15 s. */
+  joinColorCheckMs?: number;
 }
 
 export interface BootOptions {
@@ -69,6 +71,15 @@ export interface BootOptions {
 
 /** Waits for `signIn`'s auth emission when an adapter reports it after the sign-in resolves. */
 const SIGN_IN_SETTLE_MS = 10_000;
+/** The member colours in the swatch picker's order (the first free one replaces a clash). */
+const MEMBER_COLORS: readonly MemberColor[] = [
+  'terracotta',
+  'sage',
+  'slate',
+  'plum',
+  'ochre',
+  'teal'
+];
 
 const toRepoError = (e: unknown): RepoError =>
   e instanceof RepoError ? e : new RepoError('unknown', e instanceof Error ? e.message : String(e));
@@ -82,8 +93,7 @@ export class SessionStore {
   booting = $state(true);
   /** A boot failure (the splash then offers a retry). */
   error = $state.raw<unknown>(null);
-  /** Profile collected by the onboarding profile step for createHousehold / joinHousehold (3.1). */
-  profileDraft = $state.raw<NewMemberProfile | null>(null);
+  #draft = $state.raw<StoredDraft | null>(loadProfileDraft());
 
   readonly phase: Phase = $derived(
     this.booting
@@ -100,6 +110,7 @@ export class SessionStore {
   #scoped: ScopedStore[];
   #repoStores: RepoStore[];
   #onError: (e: unknown) => void;
+  #joinColorCheckMs: number;
   #attached: HouseholdScope | null = null;
   #unsubAuth: Unsubscribe | null = null;
   /** Auth emissions are applied one at a time, in order. */
@@ -114,6 +125,22 @@ export class SessionStore {
     this.#scoped = opts.scoped ?? [defaultHousehold, defaultTasks];
     this.#repoStores = opts.repoStores ?? [defaultSync, defaultUi];
     this.#onError = opts.onError ?? ((e) => defaultUi.pushError(e));
+    this.#joinColorCheckMs = opts.joinColorCheckMs ?? 15_000;
+  }
+
+  /**
+   * Profile collected by the onboarding profile step for createHousehold / joinHousehold (3.1).
+   * Kept in sessionStorage (for the signed-in account only, cleared on sign-out), so a reload or a
+   * tab Android discarded between the steps does not lose the את / אתה choice.
+   */
+  get profileDraft(): NewMemberProfile | null {
+    const d = this.#draft;
+    return d && d.uid === (this.user?.uid ?? null) ? d.profile : null;
+  }
+
+  set profileDraft(profile: NewMemberProfile | null) {
+    this.#draft = profile ? { uid: this.user?.uid ?? null, profile } : null;
+    saveProfileDraft(this.#draft);
   }
 
   /** Starts the boot once (later calls return the same promise). Never rejects: see `error`. */
@@ -155,6 +182,7 @@ export class SessionStore {
     const repo = this.#requireRepo();
     // Tear down first: listeners must not outlive the credentials they were opened with.
     this.#detach();
+    this.profileDraft = null;
     this.user = null;
     this.householdId = null;
     try {
@@ -189,6 +217,7 @@ export class SessionStore {
     }
     takePendingInvite();
     this.#setHousehold(hid);
+    this.#keepColorUnique(repo, hid, profile.color);
     return hid;
   }
 
@@ -205,6 +234,35 @@ export class SessionStore {
       this.#setHousehold(hid);
       throw toRepoError(e);
     }
+  }
+
+  /**
+   * A joiner picks a colour without seeing the others' (members are readable only once joined).
+   * When the members list arrives and someone already uses that colour, mine moves to the first
+   * free one, so two people never share a colour (the household editor keeps it that way).
+   */
+  #keepColorUnique(repo: Repository, hid: string, color: MemberColor): void {
+    const uid = this.user?.uid;
+    if (!uid) return;
+    let stop: Unsubscribe | null = null;
+    let done = false;
+    const finish = () => {
+      done = true;
+      clearTimeout(timer);
+      stop?.();
+      stop = null;
+    };
+    const timer = setTimeout(finish, this.#joinColorCheckMs);
+    stop = repo.watchMembers(hid, (members) => {
+      // A list with only me may be my own write echoed from the local cache: wait for the rest.
+      if (done || members.length < 2 || !members.some((m) => m.uid === uid)) return;
+      finish();
+      const taken = new Set(members.filter((m) => m.uid !== uid).map((m) => m.color));
+      const free = MEMBER_COLORS.find((c) => !taken.has(c));
+      if (!taken.has(color) || !free || this.householdId !== hid) return;
+      repo.updateMember(hid, { color: free }).catch((e: unknown) => this.#onError(e));
+    });
+    if (done) finish(); // the list was delivered synchronously
   }
 
   // ── boot ──────────────────────────────────────────────────────────────────
@@ -324,6 +382,39 @@ export class SessionStore {
   }
 }
 
+// ── Profile draft (onboarding profile step → create / join) ──────────────────────────────────────
+
+export const PROFILE_DRAFT_KEY = 'homecare.profileDraft';
+
+interface StoredDraft {
+  /** The account it was filled in for (null: before sign-in, not used in practice). */
+  uid: string | null;
+  profile: NewMemberProfile;
+}
+
+function loadProfileDraft(): StoredDraft | null {
+  try {
+    const raw = sessionStore()?.getItem(PROFILE_DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw) as Partial<StoredDraft> | null;
+    const p = d?.profile;
+    if (!p || typeof p.displayName !== 'string' || typeof p.color !== 'string') return null;
+    if (p.addressAs !== 'f' && p.addressAs !== 'm' && p.addressAs !== 'n') return null;
+    return { uid: typeof d.uid === 'string' ? d.uid : null, profile: p };
+  } catch {
+    return null;
+  }
+}
+
+function saveProfileDraft(d: StoredDraft | null): void {
+  try {
+    if (d) sessionStore()?.setItem(PROFILE_DRAFT_KEY, JSON.stringify(d));
+    else sessionStore()?.removeItem(PROFILE_DRAFT_KEY);
+  } catch {
+    // Storage blocked: the draft lasts for this page load only.
+  }
+}
+
 // ── Pending invite (a signed-out visitor opened #/join/:code) ────────────────────────────────────
 
 export const PENDING_INVITE_KEY = 'homecare.pendingInvite';
@@ -375,7 +466,13 @@ const PHASE_ROUTES: Readonly<Record<Exclude<Phase, 'booting' | 'ready'>, readonl
 };
 
 /** Routes that make no sense once the user has a household. */
-const NOT_WHEN_READY: readonly RouteName[] = ['setup', 'welcome', 'onboardingHousehold', 'join'];
+const NOT_WHEN_READY: readonly RouteName[] = [
+  'setup',
+  'welcome',
+  'onboardingProfile',
+  'onboardingHousehold',
+  'join'
+];
 
 /** Whether `route` may render in `phase`. Nothing renders while booting; the dev gallery always may. */
 export function routeAllowed(phase: Phase, route: RouteName): boolean {

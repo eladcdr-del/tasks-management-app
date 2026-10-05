@@ -68,7 +68,9 @@
       </div>
       <div class="row">
         <Button icon={MessageCircle} block onclick={() => share(active.code)}>{t.resend}</Button>
-        <Button variant="secondary" icon={Copy} block onclick={copy}>{t.copy}</Button>
+        <Button variant="secondary" icon={Copy} block onclick={copy} data-invite-copy
+          >{t.copy}</Button
+        >
       </div>
       <Button variant="ghost" size="sm" icon={Link2Off} onclick={revoke} data-invite-revoke
         >{t.revoke}</Button
@@ -143,6 +145,6 @@
 
   .capacity {
     font: var(--font-caption);
-    color: var(--ink-3);
+    color: var(--ink-2);
   }
 </style>

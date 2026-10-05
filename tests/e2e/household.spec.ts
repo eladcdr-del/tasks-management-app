@@ -6,9 +6,16 @@ import { expect, openApp, shot, test } from './fixtures';
 
 interface Hooks {
   state: {
-    session: { phase: string };
+    session: {
+      phase: string;
+      createHousehold(
+        name: string,
+        profile: { displayName: string; photoURL: null; color: string; addressAs: string }
+      ): Promise<string>;
+    };
     household: { me: { color: string; displayName: string } | null };
   };
+  actAs(uid: string): Promise<void>;
 }
 type HookWindow = Window & { __homecareTest: Hooks; opened?: string[] };
 
@@ -38,10 +45,9 @@ test('I can change my colour from my own row', async ({ page }) => {
     .toBe('plum');
 });
 
-test('an invite link is created, shared through WhatsApp, shows its validity, and can be revoked', async ({
-  page
-}) => {
-  await page.addInitScript(() => {
+/** No real share sheet or popup: record what would have been opened. */
+function stubShare(page: Page) {
+  return page.addInitScript(() => {
     const w = window as unknown as HookWindow;
     w.opened = [];
     Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
@@ -50,6 +56,12 @@ test('an invite link is created, shared through WhatsApp, shows its validity, an
       return { opener: null } as unknown as Window;
     }) as typeof window.open;
   });
+}
+
+test('an invite link is created, shared through WhatsApp, shows its validity, and can be revoked', async ({
+  page
+}) => {
+  await stubShare(page);
   await openApp(page, '#/household');
   await ready(page);
   const card = page.locator('[data-invite-card]');
@@ -70,6 +82,73 @@ test('an invite link is created, shared through WhatsApp, shows its validity, an
   await card.getByRole('button', { name: 'ביטול קישור' }).click();
   await expect(link).toHaveCount(0);
   await expect(card.getByRole('button', { name: 'הזמנה בוואטסאפ' })).toBeVisible();
+});
+
+test('on a narrow phone (360px) both invite buttons keep their label on one line', async ({
+  page
+}) => {
+  await page.setViewportSize({ width: 360, height: 780 });
+  await stubShare(page);
+  await openApp(page, '#/household');
+  await ready(page);
+  const card = page.locator('[data-invite-card]');
+  await card.getByRole('button', { name: 'הזמנה בוואטסאפ' }).click();
+  for (const name of ['שליחה שוב', 'העתקה']) {
+    const button = card.getByRole('button', { name, exact: true });
+    await expect(button).toBeVisible();
+    const lines = await button.evaluate((el) => {
+      const tops = new Set<number>();
+      const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!n.textContent?.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const r of range.getClientRects()) tops.add(Math.round(r.top));
+      }
+      return tops.size;
+    });
+    expect(lines, name).toBe(1);
+  }
+});
+
+test('leaving sits in its own card, not under the house name', async ({ page }) => {
+  await openApp(page, '#/household');
+  await ready(page);
+  const houseSection = page.getByRole('region', { name: 'שם הבית' });
+  await expect(houseSection).toBeVisible();
+  await expect(houseSection.getByRole('button', { name: 'יציאה מהבית' })).toHaveCount(0);
+  await expect(
+    page.getByRole('region', { name: 'יציאה מהבית' }).getByRole('button', { name: 'יציאה מהבית' })
+  ).toBeVisible();
+});
+
+test('leaving: the usual copy with others in the house; plain words for the last member', async ({
+  page
+}) => {
+  await openApp(page, '#/household');
+  await ready(page);
+  await page.getByRole('button', { name: 'יציאה מהבית' }).click();
+  const dialog = page.getByRole('alertdialog');
+  await expect(dialog).toContainText('המשימות נשארות אצל שאר בני הבית');
+  await dialog.getByRole('button', { name: 'ביטול' }).click();
+
+  // A newcomer founds a house of one.
+  await page.evaluate(async () => {
+    const hooks = (window as unknown as HookWindow).__homecareTest;
+    await hooks.actAs('newcomer');
+    await hooks.state.session.createHousehold('הבית של נועה', {
+      displayName: 'נועה',
+      photoURL: null,
+      color: 'plum',
+      addressAs: 'f'
+    });
+  });
+  await page.evaluate(() => (location.hash = '#/household'));
+  await expect(page.getByRole('heading', { level: 1, name: 'הבית של נועה' })).toBeVisible();
+  await page.getByRole('button', { name: 'יציאה מהבית' }).click();
+  await expect(dialog).toContainText('את היחידה בבית');
+  await expect(dialog).not.toContainText('שאר בני הבית');
+  await expect(dialog.getByRole('button', { name: 'יציאה וסגירת הבית' })).toBeVisible();
 });
 
 test('theme switch applies at once and is remembered', async ({ page }) => {

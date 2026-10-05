@@ -1,9 +1,16 @@
-// Firebase initialization (owner step 2.2): app, Firestore with a persistent offline cache, Auth,
-// and the emulators in test/E2E mode. Called only from createFirebaseRepositoryImpl; no top-level
-// side effects.
+// Firebase initialization (owner step 2.2): app, Firestore with a persistent offline cache, Auth
+// (no sign-in resolver at start-up, see initAuth), and the emulators in test/E2E mode. Called only
+// from createFirebaseRepositoryImpl; no top-level side effects.
 
 import { deleteApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
-import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  connectAuthEmulator,
+  getAuth,
+  indexedDBLocalPersistence,
+  initializeAuth,
+  type Auth
+} from 'firebase/auth';
 import {
   connectFirestoreEmulator,
   getFirestore,
@@ -50,6 +57,25 @@ function chooseCache(): { cache: FirestoreLocalCache; kind: FirebaseHandles['cac
 }
 
 /**
+ * Auth WITHOUT a popup/redirect resolver. getAuth() would install browserPopupRedirectResolver, and
+ * on mobile browsers the SDK then makes every launch wait for Google's sign-in script
+ * (apis.google.com) and iframe before reporting the stored user: on a weak connection a signed-in
+ * member would stare at the splash. The resolver is passed only where it is needed instead
+ * (auth.ts: the sign-in itself, and a redirect this tab started). The stored user lives in
+ * IndexedDB (localStorage as the fallback), as with getAuth().
+ */
+function initAuth(app: FirebaseApp): Auth {
+  try {
+    return initializeAuth(app, {
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence]
+    });
+  } catch {
+    // Already initialized for this app (HMR, tests): reuse it.
+    return getAuth(app);
+  }
+}
+
+/**
  * Initializes (or, after HMR / in tests, reuses) the default app. Firestore settings can only be
  * applied once per app, so a second call reuses the running instance; emulator connections that
  * are already made are left alone.
@@ -69,7 +95,7 @@ export function initFirebase(cfg: FirebaseWebConfig, opts: FirebaseRepoOptions):
     fresh = false;
   }
 
-  const auth = getAuth(app);
+  const auth = initAuth(app);
   const emu = opts.emulator ?? null;
   if (emu) {
     if (fresh) {

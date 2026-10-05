@@ -1,6 +1,6 @@
 <script lang="ts">
   // owner: step 3.1. #/join/:code — keep the props contract (`code`).
-  // repo.previewInvite → "הזמנה ממיכל להצטרף ל'הבית שלנו'" and one join button
+  // repo.previewInvite → "הזמנה ממיכל להצטרף ל״הבית שלנו״" and one join button
   // (session.joinHousehold). Without a profile from the onboarding step, the profile fields sit
   // right here (prefilled from Google), so joining stays one screen. Hebrew errors for
   // not-found / revoked / expired / already-member / full. Signed-out visitors never get here:
