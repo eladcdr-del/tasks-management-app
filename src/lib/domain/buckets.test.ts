@@ -292,6 +292,13 @@ describe('sortTasks', () => {
     ]);
   });
 
+  it('on the same date, a deadline that day comes before a plan for it', () => {
+    const planned = task({ scheduledFor: '2026-10-06', createdAt: 100 });
+    const due = task({ dueDate: '2026-10-06', createdAt: 900 });
+    const dueLater = task({ dueDate: '2026-10-09', scheduledFor: '2026-10-06', createdAt: 50 });
+    expect(ids(sortTasks([planned, dueLater, due]))).toEqual([due.id, dueLater.id, planned.id]);
+  });
+
   it('then by createdAt ascending (oldest first)', () => {
     const newer = task({ dueDate: '2026-10-05', createdAt: 500 });
     const older = task({ dueDate: '2026-10-05', createdAt: 100 });
@@ -388,7 +395,7 @@ describe('groupTasks', () => {
     expect(new Set(ids(everything)).size).toBe(all.length);
   });
 
-  it('sorts every list by priority, then effective date (nulls last), then createdAt', () => {
+  it('sorts every list by priority, then effective date (nulls last, due before planned), then createdAt', () => {
     // attention: both urgent first (urgentLater has a date, urgentUnowned has none -> nulls last),
     // then the normal overdue ones by date.
     expect(ids(g.attention)).toEqual([
@@ -397,8 +404,9 @@ describe('groupTasks', () => {
       overdueUnowned.id,
       overdueMine.id
     ]);
-    // today: missedPlan (eff 10-03) before the two tasks dated today (tie broken by createdAt)
-    expect(ids(g.today)).toEqual([missedPlan.id, todayMine.id, todayUnowned.id]);
+    // today: missedPlan (eff 10-03) before the two tasks dated today, where the one due today
+    // comes before the one only planned for today
+    expect(ids(g.today)).toEqual([missedPlan.id, todayUnowned.id, todayMine.id]);
     // waiting: dated before undated
     expect(ids(g.waiting)).toEqual([todayUnowned.id, weekUnowned.id, laterUnowned.id]);
   });

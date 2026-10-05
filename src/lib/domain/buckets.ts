@@ -120,7 +120,8 @@ const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, normal: 2 
 
 /**
  * Display order used by every list: priority (urgent > high > normal), then effective date ascending
- * with undated tasks last, then createdAt ascending (oldest first). Stable, and returns a new array.
+ * with undated tasks last (on the same date, a deadline on that day before a mere plan), then
+ * createdAt ascending (oldest first). Stable, and returns a new array.
  */
 export function sortTasks<T extends Dated & Pick<Task, 'priority' | 'createdAt'>>(
   tasks: readonly T[]
@@ -135,6 +136,9 @@ export function sortTasks<T extends Dated & Pick<Task, 'priority' | 'createdAt'>
       if (eb === null) return -1;
       return ea < eb ? -1 : 1;
     }
+    const da = ea !== null && a.dueDate === ea;
+    const db = eb !== null && b.dueDate === eb;
+    if (da !== db) return da ? -1 : 1;
     return a.createdAt - b.createdAt;
   });
 }
