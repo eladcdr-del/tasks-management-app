@@ -747,7 +747,7 @@ describe('deadlineLabel (the hard-deadline badge)', () => {
 
 describe('PRIORITY_LABELS / RECURRENCE_LABELS', () => {
   it('names every priority and recurrence in Hebrew', () => {
-    expect(PRIORITY_LABELS).toEqual({ normal: 'רגילה', high: 'חשוב', urgent: 'דחוף' });
+    expect(PRIORITY_LABELS).toEqual({ normal: 'רגילה', high: 'חשובה', urgent: 'דחופה' });
     expect(RECURRENCE_LABELS).toEqual({ weekly: 'כל שבוע', monthly: 'כל חודש', yearly: 'כל שנה' });
   });
 });

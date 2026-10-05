@@ -218,7 +218,7 @@
           {/if}
           {#if task.priority !== 'normal' && !isDone}
             <Badge
-              label={PRIORITY_LABELS[task.priority]}
+              label={task.priority === 'urgent' ? he.taskCard.urgent : he.taskCard.high}
               kind={task.priority === 'urgent' ? 'urgent' : 'neutral'}
               tone="warn"
             />
