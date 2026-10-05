@@ -49,12 +49,22 @@ describe('TasksStore reads (seed, Sunday 2026-10-04 09:00)', () => {
     expect(store.openLoaded).toBe(true);
     expect(store.today).toBe('2026-10-04');
     expect(store.open).toHaveLength(16);
-    expect(store.pulse).toEqual({ attention: 3, today: 4, waiting: 3 });
+    expect(store.pulse).toEqual({ attention: 3, today: 4, waiting: 3, requested: 1 });
     const g = store.groups;
     expect([g.attention, g.waiting, g.today, g.week, g.later].map((l) => l.length)).toEqual([
       3, 3, 4, 5, 4
     ]);
+    // דני asked מיכל to pick up the parcel: the signed-in viewer's request.
+    expect(g.requested.map((t) => t.id)).toEqual(['seed-post']);
     expect(store.countsByMember).toEqual({ [MICHAL]: 7, [DANI]: 6 });
+  });
+
+  it('"requested" follows the signed-in user', () => {
+    store.setUser(DANI);
+    expect(store.groups.requested).toEqual([]);
+    expect(store.pulse.requested).toBe(0);
+    store.setUser(MICHAL);
+    expect(store.pulse.requested).toBe(1);
   });
 
   it('done tasks (newest first), recent events, byId and eventsFor', () => {
@@ -262,13 +272,13 @@ describe('TasksStore today', () => {
     store.attach({ repo, householdId: HID });
     await vi.advanceTimersByTimeAsync(0);
     expect(store.today).toBe('2026-10-04');
-    expect(store.groups).toEqual(groupTasks(store.open, '2026-10-04', MEMBERS));
+    expect(store.groups).toEqual(groupTasks(store.open, '2026-10-04', MEMBERS, MICHAL));
     vi.advanceTimersByTime(60_000);
     expect(store.today).toBe('2026-10-05');
     expect(clock.today).toBe('2026-10-05');
-    expect(store.groups).toEqual(groupTasks(store.open, '2026-10-05', MEMBERS));
-    expect(store.pulse).toEqual(pulseCounts(store.open, '2026-10-05', MEMBERS));
-    expect(store.pulse).not.toEqual(pulseCounts(store.open, '2026-10-04', MEMBERS));
+    expect(store.groups).toEqual(groupTasks(store.open, '2026-10-05', MEMBERS, MICHAL));
+    expect(store.pulse).toEqual(pulseCounts(store.open, '2026-10-05', MEMBERS, MICHAL));
+    expect(store.pulse).not.toEqual(pulseCounts(store.open, '2026-10-04', MEMBERS, MICHAL));
     clock.dispose();
   });
 });

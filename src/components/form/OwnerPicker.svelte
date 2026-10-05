@@ -23,7 +23,8 @@
 <div class="opts" role="group" aria-label={label}>
   {#if me}
     <MemberChip
-      person={{ ...me, displayName: t.me }}
+      person={me}
+      label={t.me}
       selected={value === me.uid}
       onclick={() => onChange(me.uid)}
       data-owner="me"

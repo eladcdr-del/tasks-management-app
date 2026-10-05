@@ -1,5 +1,5 @@
 <script lang="ts">
-  // owner: step 3.3. עדיפות: רגילה / חשוב / דחוף (single choice; "רגילה" is the default).
+  // owner: step 3.3. עדיפות: רגילה / חשובה / דחופה (single choice; "רגילה" is the default).
   import Flag from '@lucide/svelte/icons/flag';
   import type { Priority } from '$lib/domain/types';
   import { Chip } from '$components/ui';

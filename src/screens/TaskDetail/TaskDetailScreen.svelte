@@ -224,7 +224,7 @@
           {/if}
           {#if task.priority !== 'normal' && !isDone}
             <Badge
-              label={PRIORITY_LABELS[task.priority]}
+              label={task.priority === 'urgent' ? he.taskCard.urgent : he.taskCard.high}
               kind={task.priority === 'urgent' ? 'urgent' : 'neutral'}
               tone="warn"
             />
@@ -329,7 +329,8 @@
       </div>
     </div>
 
-    <footer class="action-bar">
+    <!-- data-action-bar: SnackbarHost lifts messages above this bar. -->
+    <footer class="action-bar" data-action-bar>
       {#if isDone}
         <Button size="lg" block variant="secondary" icon={RotateCcw} onclick={reopen}>{t.reopen}</Button>
       {:else}

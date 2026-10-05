@@ -142,7 +142,7 @@ describe('boot', () => {
     expect(session.user?.uid).toBe(MICHAL);
     expect(session.householdId).toBe(HID);
     await flush();
-    expect(tasks.pulse).toEqual({ attention: 3, today: 4, waiting: 3 });
+    expect(tasks.pulse).toEqual({ attention: 3, today: 4, waiting: 3, requested: 1 });
     expect(household.me?.displayName).toBe('מיכל');
     expect(household.partner?.displayName).toBe('דני');
     expect(sync.status).toBe('synced');
@@ -296,7 +296,7 @@ describe('phases and subscriptions', () => {
     await session.settled();
     await flush();
     expect(session.user?.uid).toBe(MICHAL);
-    expect(tasks.pulse).toEqual({ attention: 3, today: 4, waiting: 3 });
+    expect(tasks.pulse).toEqual({ attention: 3, today: 4, waiting: 3, requested: 1 });
     expect(c.active()).toEqual(ALL_ONE);
   });
 });

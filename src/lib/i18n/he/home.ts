@@ -11,6 +11,8 @@ export const home = {
     attention: 'באיחור או דחוף',
     today: 'להיום',
     waiting: 'מחכות שמישהו ייקח',
+    /** The row under the numerals while someone asked me for something. */
+    requested: 'ביקשו ממך',
     /** Screen-reader name of a numeral button: "3 באיחור או דחוף, מעבר לרשימה". */
     go: (n: number, what: string) => `${n} ${what}, מעבר לרשימה`
   },
@@ -20,6 +22,7 @@ export const home = {
   },
   sections: {
     attention: 'דורש תשומת לב',
+    requested: 'ביקשו ממך',
     waiting: 'מחכות שמישהו ייקח'
   },
   buckets: {
@@ -40,7 +43,10 @@ export const home = {
   empty: {
     today: {
       title: 'הכל סגור להיום. אפשר לנשום.',
-      body: 'מה שמתוכנן בהמשך מחכה בלשונית השבוע.'
+      /** Today's list is empty, but something waits above it (attention, or a request to me). */
+      rest: 'אין עוד משהו מתוכנן להיום',
+      /** Names the first tab that has tasks: "המשימות הבאות מחכות בלשונית "בהמשך"." */
+      body: (tab: string) => `המשימות הבאות מחכות בלשונית "${tab}".`
     },
     week: {
       title: 'השבוע נראה פנוי',

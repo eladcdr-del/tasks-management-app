@@ -472,11 +472,14 @@ export function snoozeBlockedText(reason: SnoozeBlockedReason): string {
 
 // ── Static labels ─────────────────────────────────────────────────────────────
 
-/** Priority names (the card shows high and urgent; the edit sheet names all three). */
+/**
+ * Priority names for the pickers and the "עדיפות" field, feminine to agree with עדיפות
+ * ("עדיפות: דחופה"). The card badges keep their own short "דחוף" / "חשוב" (he.taskCard).
+ */
 export const PRIORITY_LABELS: Readonly<Record<Priority, string>> = {
   normal: 'רגילה',
-  high: 'חשוב',
-  urgent: 'דחוף'
+  high: 'חשובה',
+  urgent: 'דחופה'
 };
 
 /** Recurrence names. */

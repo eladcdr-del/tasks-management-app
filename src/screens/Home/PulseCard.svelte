@@ -1,6 +1,9 @@
 <script lang="ts">
   // Pulse card (Home, step 3.2): three large tappable numerals that answer "what needs me?" at a
-  // glance, and a quiet balance row (open tasks per member: counts only, never advice).
+  // glance, a "ביקשו ממך N" row while someone asked me for something (tap → that list), and a quiet
+  // balance row (open tasks per member: counts only, never advice).
+  import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+  import HandHelping from '@lucide/svelte/icons/hand-helping';
   import { Card, MemberChip } from '$components/ui';
   import type { Member } from '$lib/domain/types';
   import { he } from '$lib/i18n/he';
@@ -8,10 +11,10 @@
   type Key = 'attention' | 'today' | 'waiting';
 
   interface Props {
-    pulse: Record<Key, number>;
+    pulse: Record<Key | 'requested', number>;
     members: readonly Member[];
     counts: Readonly<Record<string, number>>;
-    onpick: (key: Key) => void;
+    onpick: (key: Key | 'requested') => void;
   }
 
   let { pulse, members, counts, onpick }: Props = $props();
@@ -39,6 +42,19 @@
         </button>
       {/each}
     </div>
+    {#if pulse.requested > 0}
+      <button
+        type="button"
+        class="requested"
+        aria-label={t.go(pulse.requested, t.requested)}
+        onclick={() => onpick('requested')}
+      >
+        <HandHelping strokeWidth={1.75} aria-hidden="true" />
+        <span class="rl" aria-hidden="true">{t.requested}</span>
+        <span class="rn num" data-pulse="requested" aria-hidden="true">{pulse.requested}</span>
+        <ChevronLeft aria-hidden="true" />
+      </button>
+    {/if}
     {#if members.length > 0}
       <div class="balance" aria-label={he.home.balance.label} role="group">
         {#each members as m, i (m.uid)}
@@ -108,6 +124,46 @@
     font-weight: 400;
     color: var(--ink-2);
     text-wrap: balance;
+  }
+
+  .requested {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    inline-size: 100%;
+    min-block-size: var(--tap-min);
+    padding: var(--s2) var(--s4);
+    border-block-start: 1px solid var(--line);
+    color: var(--accent-ink);
+    font: var(--font-callout);
+    font-weight: 500;
+    text-align: start;
+    transition: background-color var(--d-fast) var(--ease-out);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .requested:active {
+    background: var(--surface-2);
+  }
+
+  .requested:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  .requested :global(svg) {
+    flex: none;
+    inline-size: var(--icon-sm);
+    block-size: var(--icon-sm);
+  }
+
+  .rl {
+    flex: 1;
+  }
+
+  .rn {
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
   }
 
   .balance {

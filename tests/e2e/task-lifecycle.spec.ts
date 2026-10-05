@@ -19,6 +19,7 @@ interface TaskLite {
   completion: { note: string; cost: number | null; photoIds: string[] } | null;
 }
 interface Hooks {
+  actAs(uid: string): Promise<void>;
   state: {
     tasks: { open: TaskLite[]; done: TaskLite[]; byId(id: string): TaskLite | null };
     ui: { current: { message: string; action?: string; onAction?: () => void } | null };
@@ -127,11 +128,11 @@ test('quick add parses Hebrew into chips, a chip can be dismissed, adding stays 
   // The hard deadline came from the returns category, so it goes with it (fields stay coherent).
   await expect(due).not.toHaveAttribute('data-hard', 'true');
 
-  // Explicit picks: priority "דחוף" (no "מי" is pre-selected).
+  // Explicit picks: priority "דחופה" (no "מי" is pre-selected).
   await expect(sheet.locator('[data-picker="owner"]')).toContainText('בחירה');
   await sheet.locator('[data-picker="priority"]').click();
   await sheet.locator('[data-priority="urgent"]').click();
-  await expect(sheet.locator('[data-picker="priority"]')).toContainText('דחוף');
+  await expect(sheet.locator('[data-picker="priority"]')).toContainText('דחופה');
 
   await input.press('Enter');
   await expect(sheet.getByRole('status')).toContainText('נוסף ✓');
@@ -243,4 +244,46 @@ test('delete leaves at once and can be undone within 5 seconds', async ({ page }
 
   await snackAction(page, /המשימה נמחקה/);
   await expect.poll(async () => (await taskById(page, 'seed-bulbs'))?.title).toBe('לקנות נורות לסלון');
+});
+
+test('the owner block speaks to the viewer about a request', async ({ page }) => {
+  await openApp(page, '#/task/seed-post'); // דני asked מיכל
+  const line = page.getByTestId('owner-block').locator('[data-request-line]');
+  await expect(line).toHaveText('דני ביקש ממך');
+  await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('dani'));
+  await expect(line).toHaveText('ביקשת ממיכל');
+});
+
+/** Pixels from the bottom of the snackbar on screen to the top of `selector` (≥ 0: no overlap). */
+async function gapAbove(page: Page, selector: string): Promise<number> {
+  const [b, a] = [
+    await page.locator('[data-snackbar-host] .snackbar').boundingBox(),
+    await page.locator(selector).boundingBox()
+  ];
+  return b && a ? a.y - (b.y + b.height) : -1;
+}
+
+test('on the task screen a snackbar sits above בוצע / דחייה', async ({ page }) => {
+  await openApp(page, '#/task/seed-ac');
+  const detail = page.getByTestId('task-detail');
+  await detail.getByRole('button', { name: 'דחייה' }).click();
+  await page.locator('[data-snooze="tomorrow"]').click();
+  await expect(page.locator('[data-snackbar-host] .snackbar')).toContainText('נדחתה למחר');
+  await expect.poll(() => gapAbove(page, '[data-action-bar]')).toBeGreaterThanOrEqual(0);
+});
+
+test('undo by a finger tap on the snackbar throws nothing', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await openApp(page, '#/task/seed-dentist');
+  const detail = page.getByTestId('task-detail');
+  await detail.getByRole('button', { name: 'בוצע', exact: true }).click();
+  await page.getByTestId('complete-sheet').getByRole('button', { name: 'סיום' }).click();
+  const bar = page.locator('[data-snackbar-host] .snackbar');
+  await expect(bar).toContainText('בוצע');
+  await expect.poll(() => gapAbove(page, '[data-action-bar]')).toBeGreaterThanOrEqual(0);
+  await bar.getByRole('button', { name: 'ביטול' }).tap();
+  await expect.poll(async () => (await taskById(page, 'seed-dentist'))?.status).toBe('open');
+  await expect(bar).toHaveCount(0);
+  expect(errors).toEqual([]);
 });

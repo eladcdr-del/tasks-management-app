@@ -33,7 +33,13 @@
   let memberId = $state<string | null>(null);
 
   const today = $derived(clock.today);
-  const filtering = $derived(query.trim() !== '' || categoryId !== null || memberId !== null);
+  const searching = $derived(query.trim() !== '');
+  const chipsSet = $derived(categoryId !== null || memberId !== null);
+  const filtering = $derived(searching || chipsSet);
+  /** No-results copy that names only what is set: a word, the chips, or both. */
+  const noMatchBody = $derived(
+    !chipsSet ? t.noMatchSearch : searching ? t.noMatchBody : t.noMatchFilter
+  );
   const results = $derived(searchDoneTasks(tasks.done, query, { categoryId, memberId }));
   const groups = $derived(groupByMonth(results));
   /** Only the categories the history actually has (plus a selected one). */
@@ -49,8 +55,7 @@
     if (filtering && tasks.doneLoaded && tasks.hasMoreDone) tasks.loadMoreDone();
   });
 
-  function clearAll() {
-    query = '';
+  function clearChips() {
     categoryId = null;
     memberId = null;
   }
@@ -120,10 +125,14 @@
       {#snippet illustration()}<EmptyMemory />{/snippet}
     </EmptyState>
   {:else if results.length === 0}
-    <EmptyState title={t.noMatchTitle} body={t.noMatchBody} compact>
+    <EmptyState title={t.noMatchTitle} body={noMatchBody} compact>
       {#snippet illustration()}<EmptyMemory />{/snippet}
       {#snippet action()}
-        <Button variant="secondary" onclick={clearAll}>{t.clearFilters}</Button>
+        {#if chipsSet}
+          <Button variant="secondary" onclick={clearChips}>{t.clearFilters}</Button>
+        {:else}
+          <Button variant="secondary" onclick={() => (query = '')}>{t.clearSearch}</Button>
+        {/if}
       {/snippet}
     </EmptyState>
   {:else}

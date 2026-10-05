@@ -1,7 +1,8 @@
 <script lang="ts">
   // SnoozeSheet (step 3.2): מחר / סוף השבוע / שבוע הבא / בעוד חודש, each with its date, plus a
   // custom date capped at a hard deadline (snoozeMaxDate). A hard deadline TODAY cannot move
-  // (snoozeBlockedReason 'deadline-today'): the sheet says so and offers doing it or asking for help.
+  // (snoozeBlockedReason 'deadline-today'): the sheet says so and offers doing it or asking for help
+  // (asking only when there is someone else in the household to ask).
   // The snooze history shows gently ("נדחתה פעמיים עד עכשיו"). One tap on an option snoozes.
   // Rendered by SheetHost; `onClose` pops the sheet's history entry.
   import AlarmClock from '@lucide/svelte/icons/alarm-clock';
@@ -24,6 +25,7 @@
   import { he } from '$lib/i18n/he';
   import { haptic } from '$lib/platform/haptics';
   import { router } from '$lib/router/router.svelte';
+  import { household } from '$lib/state/household.svelte';
   import { tasks } from '$lib/state/tasks.svelte';
   import { ui } from '$lib/state/ui.svelte';
 
@@ -41,6 +43,7 @@
   const max = $derived(task ? snoozeMaxDate(task, today) : null);
   const blocked = $derived(task ? snoozeBlockedReason(task, today) : null);
   const tomorrow = $derived(addDays(today, 1));
+  const canAsk = $derived(household.members.length > 1);
 
   let custom = $state(false);
   let date = $state<ISODate | null>(null);
@@ -67,7 +70,7 @@
       <span class="blocked-icon" aria-hidden="true"><LockClock size={26} /></span>
       <h2>{t.blocked.title}</h2>
       <p class="context" dir={textDir(task.title)}>{task.title}</p>
-      <p class="note">{t.blocked.body}</p>
+      <p class="note">{canAsk ? t.blocked.body : t.blocked.bodyAlone}</p>
       <div class="blocked-actions">
         <Button
           block
@@ -76,13 +79,15 @@
           onclick={() => router.openSheet({ name: 'complete', taskId: task.id })}
           >{t.blocked.doIt}</Button
         >
-        <Button
-          block
-          variant="secondary"
-          icon={HandHelping}
-          onclick={() => router.openSheet({ name: 'request', taskId: task.id })}
-          >{t.blocked.askHelp}</Button
-        >
+        {#if canAsk}
+          <Button
+            block
+            variant="secondary"
+            icon={HandHelping}
+            onclick={() => router.openSheet({ name: 'request', taskId: task.id })}
+            >{t.blocked.askHelp}</Button
+          >
+        {/if}
       </div>
     </div>
   {:else}

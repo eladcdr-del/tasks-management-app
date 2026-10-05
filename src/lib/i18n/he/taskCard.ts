@@ -2,6 +2,7 @@
 // TaskCard and the take / request actions shown on it.
 
 import { form, gendered, type Addressee } from '../gender';
+import { prefixed } from '../prefix';
 
 type Person = Addressee & { readonly displayName: string };
 
@@ -16,8 +17,8 @@ export const taskCard = {
   takenBySomeone: 'מישהו כבר לקח את המשימה',
   /** "דני ביקש ממך" (the requester's form). */
   requestedOfMe: (who: Person) => `${who.displayName} ${form(who, 'ביקשה', 'ביקש', 'ביקש/ה')} ממך`,
-  /** "ביקשת מדני" (Hebrew attaches the preposition). */
-  iRequested: (name: string) => `ביקשת מ${name}`,
+  /** "ביקשת מדני" (Hebrew attaches the preposition; "ביקשת מ-Michal" before a Latin name). */
+  iRequested: (name: string) => `ביקשת ${prefixed('מ', name)}`,
   urgent: 'דחוף',
   high: 'חשוב',
   owner: (name: string) => `אצל ${name}`,

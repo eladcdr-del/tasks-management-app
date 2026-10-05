@@ -8,7 +8,8 @@
 //   week horizon    the last day of "this week": Saturday, or NEXT Saturday on Friday and Saturday
 //   bucket          overdue | today | week | later, see bucketOf
 //   attention       overdue, OR urgent and not planned for a later day, OR a hard deadline today or
-//                   tomorrow (see needsAttention)
+//                   tomorrow (see needsAttention), OR an urgent request to the viewer (urgentRequestFor)
+//   requested       someone else asked the viewer to do it, see isRequestFor / groupTasks
 //   waiting         nobody (or a former member) owns it, see groupTasks
 
 import { addDays, endOfWeek, minISO, weekday } from './dates';
@@ -82,6 +83,33 @@ export function needsAttention(
   return task.priority === 'urgent' && (task.scheduledFor === null || task.scheduledFor <= today);
 }
 
+/**
+ * Someone else asked `me` to do it: `me` owns it and another uid requested it. Never true while the
+ * viewer is unknown (`me` null).
+ */
+export function isRequestFor(
+  task: Pick<Task, 'ownerId' | 'requestedBy'>,
+  me: string | null
+): boolean {
+  return me !== null && task.ownerId === me && task.requestedBy !== null && task.requestedBy !== me;
+}
+
+/**
+ * An urgent request to `me` needs attention whatever its plan: "לתקן את הברז מחר דחוף" from the
+ * partner must not read as "0 urgent". Once it is snoozed after the request, needsAttention's own
+ * rule takes over (out of attention until its new date), so a snooze still quiets it.
+ */
+export function urgentRequestFor(
+  task: Pick<Task, 'ownerId' | 'requestedBy' | 'requestedAt' | 'priority' | 'lastSnoozedAt'>,
+  me: string | null
+): boolean {
+  if (task.priority !== 'urgent' || !isRequestFor(task, me)) return false;
+  const snoozedSince =
+    task.lastSnoozedAt !== null &&
+    (task.requestedAt === null || task.lastSnoozedAt >= task.requestedAt);
+  return !snoozedSince;
+}
+
 const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, normal: 2 };
 
 /**
@@ -106,8 +134,13 @@ export function sortTasks<T extends Dated & Pick<Task, 'priority' | 'createdAt'>
 }
 
 export interface GroupedTasks {
-  /** needsAttention: overdue, urgent and not planned for later, or a hard deadline today/tomorrow. */
+  /**
+   * needsAttention: overdue, urgent and not planned for later, or a hard deadline today/tomorrow;
+   * plus an urgent request to the viewer (urgentRequestFor).
+   */
   attention: Task[];
+  /** Asked of the viewer by someone else ("ביקשו ממך"), not already in `attention`. */
+  requested: Task[];
   /** Unowned tasks (or a former member's) that are not already in `attention`. */
   waiting: Task[];
   today: Task[];
@@ -136,18 +169,24 @@ export type MemberIds = readonly string[] | undefined;
  *     not look done while work is waiting). The overlap is deliberate; the Home screen (3.2)
  *     de-emphasises unowned cards in the time lists. pulseCounts follows the lists, so its today and
  *     waiting numbers can count the same task.
+ *  4. `requested` ("ביקשו ממך": someone else asked the viewer `me`) works like `waiting`: shown
+ *     whatever the date tab, and still in its time bucket (a request due today counts for today).
+ *     Requests usually have no date, so they would otherwise sit unseen under "later". An urgent
+ *     request is attention instead (urgentRequestFor), until it is snoozed.
  *
  * Defensive: tasks whose status is not 'open' are ignored. A task owned by someone who is not in
  * `memberIds` (a member who left the household) is treated as unowned; with `memberIds` undefined
- * (not loaded yet) every owner is trusted.
+ * (not loaded yet) every owner is trusted. With `me` null (viewer unknown) nothing is a request.
  */
 export function groupTasks(
   openTasks: readonly Task[],
   today: ISODate,
-  memberIds: MemberIds
+  memberIds: MemberIds,
+  me: string | null = null
 ): GroupedTasks {
   const members = memberIds === undefined ? null : new Set(memberIds);
   const attention: Task[] = [];
+  const requested: Task[] = [];
   const waiting: Task[] = [];
   const today_: Task[] = [];
   const week: Task[] = [];
@@ -155,11 +194,12 @@ export function groupTasks(
 
   for (const t of openTasks) {
     if (t.status !== 'open') continue;
-    if (needsAttention(t, today)) {
+    if (needsAttention(t, today) || urgentRequestFor(t, me)) {
       attention.push(t);
       continue;
     }
-    if (t.ownerId === null || (members !== null && !members.has(t.ownerId))) waiting.push(t);
+    if (isRequestFor(t, me)) requested.push(t);
+    else if (t.ownerId === null || (members !== null && !members.has(t.ownerId))) waiting.push(t);
     const bucket = bucketOf(t, today);
     if (bucket === 'today') today_.push(t);
     else if (bucket === 'week') week.push(t);
@@ -168,6 +208,7 @@ export function groupTasks(
 
   return {
     attention: sortTasks(attention),
+    requested: sortTasks(requested),
     waiting: sortTasks(waiting),
     today: sortTasks(today_),
     week: sortTasks(week),
@@ -176,16 +217,23 @@ export function groupTasks(
 }
 
 /**
- * The three Pulse-card numerals (באיחור/דחוף, להיום, מחכות שמישהו ייקח), counted exactly as
- * groupTasks lists them (same `memberIds` handling; non-open tasks ignored).
+ * The three Pulse-card numerals (באיחור/דחוף, להיום, מחכות שמישהו ייקח) and its "ביקשו ממך" row,
+ * counted exactly as groupTasks lists them (same `memberIds` / `me` handling; non-open tasks
+ * ignored).
  */
 export function pulseCounts(
   openTasks: readonly Task[],
   today: ISODate,
-  memberIds: MemberIds
-): { attention: number; today: number; waiting: number } {
-  const g = groupTasks(openTasks, today, memberIds);
-  return { attention: g.attention.length, today: g.today.length, waiting: g.waiting.length };
+  memberIds: MemberIds,
+  me: string | null = null
+): { attention: number; today: number; waiting: number; requested: number } {
+  const g = groupTasks(openTasks, today, memberIds, me);
+  return {
+    attention: g.attention.length,
+    today: g.today.length,
+    waiting: g.waiting.length,
+    requested: g.requested.length
+  };
 }
 
 /**

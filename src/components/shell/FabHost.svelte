@@ -21,7 +21,7 @@
 
 <svelte:window {onscroll} />
 
-<div class="fab-host" class:hidden inert={hidden}>
+<div class="fab-host" class:hidden inert={hidden} data-fab-host>
   <Fab
     label={he.shell.fab}
     {extended}
