@@ -1,5 +1,5 @@
 // owner: step 3.3. The task's story for the "היסטוריה" timeline, in natural Hebrew ("מיכל ביקשה
-// מדני", "דני לקח"), oldest first. Pure: the screen passes the task, its events (tasks.eventsFor,
+// מדני", "דני לקח, לבקשת מיכל", "דני אמר שלא מתאים לו", "מיכל ביטלה את הבקשה מדני"), oldest first. Pure: the screen passes the task, its events (tasks.eventsFor,
 // newest first) and a member lookup.
 //  - Runs of edits by the same person collapse into one "עדכן/ה" line (the newest).
 //  - The live event window is limited (RECENT_EVENTS_LIMIT), so an old task may have lost its
@@ -24,6 +24,8 @@ const SHOWN: ReadonlySet<EventType> = new Set([
   'created',
   'taken',
   'requested',
+  'accepted',
+  'declined',
   'released',
   'completed',
   'reopened',
@@ -39,10 +41,12 @@ export function buildHistory(
   const actor = (uid: string | null | undefined) =>
     memberById(uid) ?? { displayName: he.taskDetail.someone, addressAs: 'n' as const };
 
+  // Events written in one batch share a time (a task created as a request): "added" comes first.
+  const tie = (e: ActivityEvent) => (e.type === 'created' ? 0 : e.type === 'requested' ? 1 : 2);
   const chronological = events
     .filter((e) => e.taskId === task.id && SHOWN.has(e.type))
     .slice()
-    .sort((a, b) => a.createdAt - b.createdAt);
+    .sort((a, b) => a.createdAt - b.createdAt || tie(a) - tie(b));
 
   const kept: ActivityEvent[] = [];
   for (const e of chronological) {
@@ -57,7 +61,7 @@ export function buildHistory(
     type: e.type,
     actorId: e.actorId,
     at: e.createdAt,
-    text: phrase(e.type, actor(e.actorId), actor(e.targetId).displayName)
+    text: phrase(e.type, actor(e.actorId), e.targetId ? actor(e.targetId).displayName : '')
   }));
 
   if (!items.some((i) => i.type === 'created')) {
@@ -98,8 +102,13 @@ function phrase(
       return ev.taken(a);
     case 'requested':
       return ev.requested(a, target);
+    case 'accepted':
+      return ev.accepted(a, target);
+    case 'declined':
+      return ev.declined(a);
     case 'released':
-      return ev.released(a);
+      // With a target, the asker withdrew a request that still waited for that member.
+      return target ? ev.withdrew(a, target) : ev.released(a);
     case 'completed':
       return ev.completed(a);
     case 'reopened':

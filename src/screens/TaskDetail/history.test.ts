@@ -49,6 +49,42 @@ describe('buildHistory', () => {
     ]);
   });
 
+  it('tells a request’s answers: accepted, declined (gently), withdrawn', () => {
+    const events = [
+      ev('created', 'michal', 0),
+      ev('requested', 'michal', 1, 'dani'),
+      ev('declined', 'dani', 2, 'michal'),
+      ev('requested', 'dani', 3, 'michal'),
+      ev('released', 'dani', 4, 'michal'),
+      ev('requested', 'michal', 5, 'dani'),
+      ev('accepted', 'dani', 6, 'michal'),
+      ev('released', 'dani', 7)
+    ];
+    expect(buildHistory(task, events, lookup).map((i) => i.text)).toEqual([
+      'מיכל הוסיפה',
+      'מיכל ביקשה מדני',
+      'דני אמר שלא מתאים לו',
+      'דני ביקש ממיכל',
+      'דני ביטל את הבקשה ממיכל',
+      'מיכל ביקשה מדני',
+      'דני לקח, לבקשת מיכל',
+      'דני החזיר לרשימה'
+    ]);
+    const her = [ev('accepted', 'michal', 1, 'dani'), ev('declined', 'michal', 2, 'dani')];
+    expect(
+      buildHistory(task, her, lookup)
+        .map((i) => i.text)
+        .slice(1)
+    ).toEqual(['מיכל לקחה, לבקשת דני', 'מיכל אמרה שלא מתאים לה']);
+  });
+
+  it('a task created as a request reads "added", then "asked", though both share a time', () => {
+    const events = [ev('requested', 'dani', 0, 'michal'), ev('created', 'dani', 0)]; // newest first
+    expect(buildHistory({ ...task, createdBy: 'dani' }, events, lookup).map((i) => i.text)).toEqual(
+      ['דני הוסיף', 'דני ביקש ממיכל']
+    );
+  });
+
   it('collapses a run of edits by the same person', () => {
     const events = [
       ev('edited', 'michal', 3),

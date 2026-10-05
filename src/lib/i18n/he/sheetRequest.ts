@@ -12,6 +12,11 @@ export const sheetRequest = {
   sent: (name: string) => `הבקשה נשלחה ${prefixed('ל', name)}`,
   /** Row subtitle of the member who already owns the task. */
   owns: (who: Addressee) => form(who, 'המשימה כבר אצלה', 'המשימה כבר אצלו', 'המשימה כבר אצלו/ה'),
+  /** Row subtitle of the member a request already waits for. */
+  waitingFor: (who: Addressee) =>
+    form(who, 'כבר מחכה לתשובה שלה', 'כבר מחכה לתשובה שלו', 'כבר מחכה לתשובה שלו/ה'),
+  /** Under the choices: a request is a proposal, not an assignment. */
+  note: 'עד שיאשרו, המשימה מחכה שמישהו ייקח.',
   alone: 'עוד אין בבית מישהו נוסף. אפשר להזמין מהלשונית "הבית שלנו".',
   missing: 'המשימה הזו כבר לא פתוחה.'
 } as const;

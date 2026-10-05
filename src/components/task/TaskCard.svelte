@@ -3,8 +3,9 @@
    * TaskCard (step 3.2): one open task, everywhere tasks are listed.
    *
    *   leading   CompletionCircle: the check animates, then (~300ms) the complete sheet opens
-   *   body      "דני ביקש ממך" line · title (2 lines, textDir) · meta row (status first, then the
-   *             quiet context: age, snoozes, plan hint, category)
+   *   body      request line ("דני ביקש ממך" calls; "ביקשת מדני · מחכה לתשובה", "מיכל ביקשה מדני",
+   *             "לבקשת מיכל" / "לבקשתך" are quiet) · title (2 lines, textDir) · meta row (status
+   *             first, then the quiet context: age, snoozes, plan hint, category)
    *   trailing  the owner's Avatar, or the dashed "?" when nobody took it yet
    *   pending   a micro-dot while the task has unsynced local writes
    *
@@ -24,6 +25,7 @@
   import type { Task } from '$lib/domain/types';
   import { ageDays } from '$lib/domain/age';
   import { categoryShort } from '$lib/domain/categories';
+  import { requestView, type RequestView } from '$lib/domain/requests';
   import { ageLabel, planHint, snoozedLabel, whenChip, RECURRENCE_LABELS } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
@@ -64,13 +66,28 @@
     const h = planHint(task, today);
     return h && !chip?.text.includes(h) ? h : '';
   });
-  const requestLine = $derived.by(() => {
-    if (!task.requestedBy || !task.ownerId) return '';
-    if (task.ownerId === me && task.requestedBy !== me && requester)
-      return t.requestedOfMe(requester);
-    if (task.requestedBy === me && task.ownerId !== me && owner)
-      return t.iRequested(owner.displayName);
-    return '';
+  /**
+   * The request, from where the viewer stands (domain/requests.ts). Waiting for my answer it calls
+   * (accent); everything else is a quiet line. An accepted request shows only to its two people.
+   */
+  const request = $derived.by((): { kind: RequestView['kind']; text: string } => {
+    const view = requestView(task, me, household.memberIds);
+    const who = requester ?? { displayName: he.taskDetail.someone, addressAs: 'm' as const };
+    const nameOf = (uid: string) => household.memberById(uid)?.displayName ?? he.taskDetail.someone;
+    switch (view.kind) {
+      case 'askedMe':
+        return { kind: view.kind, text: t.requestedOfMe(who) };
+      case 'iAsked':
+        return { kind: view.kind, text: t.iRequestedWaiting(nameOf(view.to)) };
+      case 'between':
+        return { kind: view.kind, text: t.requestedBetween(who, nameOf(view.to)) };
+      case 'accepted':
+        if (view.owner === me) return { kind: view.kind, text: t.atRequestOf(nameOf(view.by)) };
+        if (view.by === me) return { kind: view.kind, text: t.atMyRequest };
+        return { kind: 'none', text: '' };
+      default:
+        return { kind: 'none', text: '' };
+    }
   });
 
   // ── Completion: let the check be seen, then open the sheet; uncheck if it closes unfinished ──
@@ -201,9 +218,9 @@
   >
     <CompletionCircle label={task.title} bind:checked onchange={onCheck} />
     <div class="body">
-      {#if requestLine}
-        <p class="requested">
-          <HandHelping class="req-icon" strokeWidth={1.75} aria-hidden="true" />{requestLine}
+      {#if request.text}
+        <p class={['requested', { quiet: request.kind !== 'askedMe' }]} data-request={request.kind}>
+          <HandHelping class="req-icon" strokeWidth={1.75} aria-hidden="true" />{request.text}
         </p>
       {/if}
       <a
@@ -326,6 +343,11 @@
     gap: 5px;
     font: var(--font-caption);
     color: var(--accent-ink);
+  }
+
+  /* Not mine to answer: context, not a call. */
+  .requested.quiet {
+    color: var(--ink-2);
   }
 
   .requested :global(.req-icon) {
