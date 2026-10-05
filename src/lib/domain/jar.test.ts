@@ -284,14 +284,14 @@ describe('null passes through', () => {
 });
 
 describe('deleting a jar, and the round a new one starts at', () => {
-  it('a deleted jar remembers its own round (it earned no treat); progress and settings go', () => {
-    expect(jarDeletion(each({ round: 3 }))).toEqual({ jar: null, nextJarRound: 3 });
-    expect(jarDeletion(jar({ round: 1, count: 10 }))).toEqual({ jar: null, nextJarRound: 1 });
+  it('a deleted jar leaves the round after its own for the next jar; progress and settings go', () => {
+    expect(jarDeletion(each({ round: 3 }))).toEqual({ jar: null, nextJarRound: 4 });
+    expect(jarDeletion(jar({ round: 1, count: 10 }))).toEqual({ jar: null, nextJarRound: 2 });
   });
 
-  it('a broken round never yields a round below 1', () => {
-    expect(jarDeletion(jar({ round: 0 })).nextJarRound).toBe(1);
-    expect(jarDeletion(jar({ round: Number.NaN })).nextJarRound).toBe(1);
+  it('a broken round still moves past round 1', () => {
+    expect(jarDeletion(jar({ round: 0 })).nextJarRound).toBe(2);
+    expect(jarDeletion(jar({ round: Number.NaN })).nextJarRound).toBe(2);
   });
 
   it('a new jar starts at the remembered round, else at 1', () => {
@@ -307,13 +307,13 @@ describe('deleting a jar, and the round a new one starts at', () => {
     }
   });
 
-  it('delete → new jar → redeem never reuses a round that has a treat', () => {
-    // Round 3 was being filled (treats 1 and 2 exist). Deleted, then a new jar: round 3 again.
+  it('delete → new jar → redeem never uses a round twice', () => {
+    // Round 3 was being filled (treats 1 and 2 exist). Deleted, then a new jar: round 4.
     const next = freshJarRound(jarDeletion(each({ round: 3 })));
-    expect(next).toBe(3);
-    // Redeeming it records treats/3 and moves on to 4: rounds only go up.
+    expect(next).toBe(4);
+    // Redeeming it records treats/4 and moves on to 5: rounds only go up.
     const fresh: TreatJar = { ...each({ round: next, counts: { [M]: 5, [D]: 5 } }) };
-    expect(applyRedeem(fresh, 2_000)!.round).toBe(4);
+    expect(applyRedeem(fresh, 2_000)!.round).toBe(5);
   });
 });
 

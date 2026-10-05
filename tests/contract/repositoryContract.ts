@@ -1700,7 +1700,7 @@ export function runRepositoryContract(
         await jarOf(hid, (j) => j.round === jar.round + 1);
       }
 
-      it('deleteJar: the jar goes, earned treats stay, and a new jar starts at the deleted round', async () => {
+      it('deleteJar: the jar goes, earned treats stay, and a new jar starts at the next round', async () => {
         const { hid, A } = await solo();
         await earn(hid, 'גלידה בנמל');
         await repo.completeTask(hid, await newTask(hid, { title: 'בסבב 2' }), NO_DOCS, []);
@@ -1708,7 +1708,7 @@ export function runRepositoryContract(
 
         repo.deleteJar(hid);
         const h = await householdOf(hid, (h) => h.jar === null);
-        expect(h.nextJarRound).toBe(2); // round 2 earned no treat
+        expect(h.nextJarRound).toBe(3); // round 2 is never used again
         expect((await treatsOf(hid)).map((t) => [t.id, t.treat])).toEqual([['1', 'גלידה בנמל']]);
         // No event: deleting the jar is a setting, like setting it up.
         const es = await eventsOf(hid);
@@ -1717,34 +1717,34 @@ export function runRepositoryContract(
           'jar_filled'
         ]);
 
-        // A new jar starts at round 2 (never colliding with treats/1), from zero.
+        // A new jar starts at round 3 (a round is never used twice), from zero.
         await tick();
         repo.setJar(hid, { treat: 'ערב סרט', mode: 'each', share: 1 });
         const fresh = await jarOf(hid, (j) => j.treat === 'ערב סרט');
-        expect(fresh).toMatchObject({ round: 2, count: 0, counts: {}, mode: 'each', share: 1 });
+        expect(fresh).toMatchObject({ round: 3, count: 0, counts: {}, mode: 'each', share: 1 });
         expect(fresh.startedAt).toBeGreaterThanOrEqual(h.createdAt);
-        // It fills and is redeemed into treats/2; the history keeps both.
+        // It fills and is redeemed into treats/3; the history keeps both.
         const r = await repo.completeTask(hid, await newTask(hid, { title: 'א' }), NO_DOCS, []);
         expect(r.jarFilled).toBe(true);
         await jarOf(hid, (j) => j.counts?.[A] === 1);
         await tick();
         repo.redeemJar(hid);
-        expect(await jarOf(hid, (j) => j.round === 3)).toMatchObject({ count: 0, counts: {} });
+        expect(await jarOf(hid, (j) => j.round === 4)).toMatchObject({ count: 0, counts: {} });
         const ts = await treatsOf(hid, (ts) => ts.length === 2);
         expect(ts.map((t) => [t.id, t.treat])).toEqual([
-          ['2', 'ערב סרט'],
+          ['3', 'ערב סרט'],
           ['1', 'גלידה בנמל']
         ]);
       });
 
-      it('deleteJar of a jar in its first round lets the next one start at round 1 again', async () => {
+      it('deleteJar of a jar in its first round: the next one starts at round 2', async () => {
         const { hid } = await solo();
         repo.setJar(hid, { treat: 'פיצה', target: 5 });
         await jarOf(hid);
         repo.deleteJar(hid);
-        expect((await householdOf(hid, (h) => h.jar === null)).nextJarRound).toBe(1);
+        expect((await householdOf(hid, (h) => h.jar === null)).nextJarRound).toBe(2);
         repo.setJar(hid, { treat: 'סושי', target: 4 });
-        expect(await jarOf(hid, (j) => j.treat === 'סושי')).toMatchObject({ round: 1, count: 0 });
+        expect(await jarOf(hid, (j) => j.treat === 'סושי')).toMatchObject({ round: 2, count: 0 });
       });
 
       it('deleteJar without a jar changes nothing', async () => {
@@ -1781,7 +1781,7 @@ export function runRepositoryContract(
         repo.reopenTask(hid, old);
         await existing(hid, old, (t) => t.status === 'open');
         await sentinel(hid);
-        expect(await jarOf(hid)).toMatchObject({ treat: 'סרט', count: 0, counts: {}, round: 1 });
+        expect(await jarOf(hid)).toMatchObject({ treat: 'סרט', count: 0, counts: {}, round: 2 });
       });
 
       it('deleteTreat removes one earned treat; the other treats and the jar stay', async () => {

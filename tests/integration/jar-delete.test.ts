@@ -62,12 +62,12 @@ describe('deleting the jar (Firebase adapter)', () => {
     await eventually(() => household.last()?.jar === null, 'no jar');
     await eventually(async () => {
       const h = await serverDoc(`households/${hid}`);
-      return restValue(h?.jar) === null && restValue(h?.nextJarRound) === 1;
+      return restValue(h?.jar) === null && restValue(h?.nextJarRound) === 2;
     }, 'the delete on the server');
 
     r.setJar(hid, { treat: 'סרט', target: 4 });
     await eventually(() => household.last()?.jar?.treat === 'סרט', 'the new jar');
-    expect(household.last()!.jar).toMatchObject({ round: 1, count: 0, counts: {} });
+    expect(household.last()!.jar).toMatchObject({ round: 2, count: 0, counts: {} });
     household.stop();
   });
 
@@ -98,7 +98,7 @@ describe('deleting the jar (Firebase adapter)', () => {
     // Meanwhile another phone deletes the jar (round 1).
     await adminPatch(`households/${hid}`, {
       jar: { nullValue: null },
-      nextJarRound: { integerValue: '1' }
+      nextJarRound: { integerValue: '2' }
     });
 
     // Back online: refused, reported; the task is open again and the household holds no jar.

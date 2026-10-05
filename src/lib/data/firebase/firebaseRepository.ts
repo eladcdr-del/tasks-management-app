@@ -1837,7 +1837,7 @@ export async function createFirebaseRepositoryImpl(
               ...(share !== undefined ? { share } : {}),
               count: 0,
               counts: {},
-              // 1, or the round of a jar deleted earlier (the rules require exactly this).
+              // 1, or the round after a jar deleted earlier (the rules require exactly this).
               round: freshJarRound(household),
               startedAt: serverTimestamp()
             }
@@ -1851,7 +1851,7 @@ export async function createFirebaseRepositoryImpl(
       queued(async () => {
         const household = await mustReadHousehold(hid);
         if (!household.jar) return null; // nothing to delete
-        // {jar: null, nextJarRound: <its round>}: exactly the rules' delete transition.
+        // {jar: null, nextJarRound: <its round + 1>}: exactly the rules' delete transition.
         return newBatch().update(hhRef(hid), { ...jarDeletion(household.jar) });
       });
     },

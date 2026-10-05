@@ -198,18 +198,19 @@ export function applyRedeem(jar: TreatJar | null, now: Date | Millis): TreatJar 
 }
 
 /**
- * Deleting the jar (deleteJar): the jar goes, and its round is remembered as the household's
- * `nextJarRound`. That round earned no treat (a redeem moves a jar to the next round in the same
- * batch that records treats/{round}), so a new jar may start at it; every earlier round may have a
- * treat in the history and is never used again. The earned treats stay.
+ * Deleting the jar (deleteJar): the jar goes, and the household remembers the round a new jar
+ * starts at, `nextJarRound` = the deleted round + 1. Round numbers only go up and none is ever
+ * used twice: every earlier round may have a treat in the history (treats/{round}), and each round
+ * names one jar for good (what a device remembers per round, like a celebration, stays right).
+ * The earned treats stay.
  */
 export function jarDeletion(jar: TreatJar): { jar: null; nextJarRound: number } {
-  return { jar: null, nextJarRound: Math.max(1, Math.floor(whole(jar.round))) };
+  return { jar: null, nextJarRound: Math.max(1, Math.floor(whole(jar.round))) + 1 };
 }
 
 /**
  * The round a new jar starts at (setJar on a household without one): `nextJarRound` when a jar
- * was deleted, else 1. The rules require exactly this (firestore.rules jarTransitionOk), so a
+ * was deleted (the round after it), else 1. The rules require exactly this (firestore.rules jarTransitionOk), so a
  * new jar's treats/{round} can never collide with an earned treat.
  */
 export function freshJarRound(h: Pick<Household, 'nextJarRound'> | null | undefined): number {

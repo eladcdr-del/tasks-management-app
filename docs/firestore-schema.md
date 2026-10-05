@@ -51,7 +51,7 @@ the path uid. Nothing is readable or writable by anyone else. No collection-grou
 | createdAt     | Timestamp                   | create now, immutable                                              |
 | jar           | TreatJar \| null            | create `null` or a fresh jar; back to `null` only by the delete    |
 | invite        | `{code, expiresAt}` \| null | create `null`; `code` 24 base62; `expiresAt` > now, ≤ now + 7 d    |
-| nextJarRound? | int ≥ 1                     | never on create; written only by the jar delete (its round)        |
+| nextJarRound? | int ≥ 2                     | never on create; written only by the jar delete (its round + 1)    |
 
 `TreatJar = {treat: string 1..60, target: int 3..50, count: int ≥ 0, round: int ≥ 1, startedAt: Timestamp,
 mode?: 'together' | 'each', share?: int 1..20, counts?: {[uid]: int ≥ 0}}` (`share` is required when
@@ -84,7 +84,7 @@ Member update may change only `name`, `jar`, `invite` (and `nextJarRound`, by th
 | complete   | `{'jar.counts.<me>': increment(1)}` + `{'jar.count': increment(1)}` when it fills (together: always; each: while `counts[me] < share`)                     | my entry exactly +1, nothing else; `count` +1 or unchanged. **Previous version:** `{'jar.count': increment(1)}` alone                                                                                          |
 | reopen     | `{'jar.counts.<completer>': increment(-1)}` (a current member with an entry) + `{'jar.count': increment(-1)}` when that completion counted (and count > 0) | one current member's entry exactly −1 (never below 0); `count` −1 or unchanged. **Previous version:** `{'jar.count': increment(-1)}` alone. Only a completion of the current round (`completedAt ≥ startedAt`) |
 | redeem     | `{'jar.count': together ? increment(-target) : 0, 'jar.counts': {}, 'jar.round': increment(1), 'jar.startedAt': serverTimestamp()}`                        | only when full (by mode); settings unchanged; `treats/{round}` created in the same batch. **Previous version** (`count −target`, `counts` untouched): accepted for a together jar only                         |
-| delete     | `{jar: null, nextJarRound: jar.round}`                                                                                                                     | exactly these two keys; from a jar (not `null`); `nextJarRound` equals the deleted jar's round. Earned treats stay                                                                                             |
+| delete     | `{jar: null, nextJarRound: jar.round + 1}`                                                                                                                 | exactly these two keys; from a jar (not `null`); `nextJarRound` is the deleted jar's round + 1. Earned treats stay                                                                                             |
 
 Writes of the previous app version stay valid; they only move `count`, so in `each` mode `count`
 may drift a little from `Σ min(counts, share)` during the transition. Nothing relies on it: an
@@ -94,24 +94,27 @@ reopen: `count` may move or stay with a tally step (an offline view may misjudge
 #### Deleting the jar
 
 Any member may delete the jar (`deleteJar`, `domain/jar.ts` `jarDeletion`): it becomes `null`
-and the household remembers its round in `nextJarRound`. That round earned no treat (a redeem
-advances the round in the same batch that creates `treats/{round}`), while every earlier round may
-have one. A new jar must start at exactly `nextJarRound` (`freshJarRound`), so rounds only go up
-and a redeem can never collide with (or overwrite) an earned treat. Without a delete, nothing
-changes: `nextJarRound` is missing and a new jar starts at 1, as before.
+and the household remembers the round a new jar starts at, `nextJarRound` = the deleted round + 1.
+A new jar must start at exactly `nextJarRound` (`freshJarRound`), so round numbers only go up and
+none is ever used twice: a redeem can never collide with (or overwrite) an earned treat, and a
+round names one jar for good (what a device remembers per round, such as "this round was already
+celebrated" or "these marbles were already seen", stays right on every app version). Without a
+delete, nothing changes: `nextJarRound` is missing and a new jar starts at 1, as before. The
+history may show a gap in the jar numbers ("צנצנת 4" after "צנצנת 2"), as it does after deleting a
+treat.
 
 - **The previous app version** never deletes. It already reads a `null` jar as "no jar yet" and
-  shows the setup invitation. Its setup always writes round 1: accepted while `nextJarRound` is 1
-  (the deleted jar was in its first round), refused otherwise, so it can never start a round that
-  collides with the history (the app reports the write as not saved; the updated app sets the jar
-  up correctly). Its other writes are unchanged.
+  shows the setup invitation. Its setup always writes round 1, which is refused once a jar was
+  deleted, so it can never start a round that collides with the history (the app reports the
+  write as not saved; once updated it sets the jar up in the right round). Its other writes are
+  unchanged.
 - **A completion queued offline before the delete** carries a jar step (field increments). On a
   `null` jar that would build a jar without treat or target, so the rules refuse the whole
   completion batch (the app reports it; complete the task again). A completion made after the app
   has seen the delete has no jar step and lands normally. Clients read a stored map without a
   `treat` as no jar.
-- **A reopen** after a delete has no jar to step back (a new jar's round started after the
-  completion), so it writes no jar step.
+- **A reopen** after a delete has no jar to step back (a new jar started after the completion),
+  so it writes no jar step.
 - The app delays the delete for its 5-second undo window (like deleting a task); a new jar set up
   meanwhile commits the delete first.
 
@@ -326,7 +329,7 @@ enforces both limits, and every batch below is tested.
 | **completeTask** (transaction online, batch offline) | ≤ 3 × `set photos/{autoId}` · `update tasks/{id}` `{status: 'done', completedAt: now, completedBy: me, completion: {…, photoIds}, updatedBy, updatedAt}` (optionally `ownerId: me`) · +event `completed` · `update households/{hid}` with the jar's complete step (see Jar transitions) **only if jar ≠ null** · if recurring: `set tasks/{seriesId}__{nextDate}` · +event `jar_filled` if this completion makes the jar full (by its mode)                                                                                                                                            | 10    |
 | **reopenTask**                                       | `update tasks/{id}` `{status: 'open', completedAt: null, completedBy: null, completion: null, updatedBy, updatedAt}` · the jar's reopen step (see Jar transitions) only if jar ≠ null, the task was completed in the current round and the step is not empty · +event `reopened` · `delete` the untouched next instance (and its photos if wanted)                                                                                                                                                                                                                                     | 5     |
 | **redeemJar** (jar full)                             | `set treats/{String(round)}` `{treat, target, filledAt: now, redeemedAt: now, mode, share?, counts}` · `update households/{hid}` (redeem transition above) · +event `jar_redeemed`                                                                                                                                                                                                                                                                                                                                                                                                     | 6     |
-| deleteJar (a single write, no event)                 | `update households/{hid}` `{jar: null, nextJarRound: jar.round}` (delete transition above). No jar: nothing                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 1     |
+| deleteJar (a single write, no event)                 | `update households/{hid}` `{jar: null, nextJarRound: jar.round + 1}` (delete transition above). No jar: nothing                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | 1     |
 | deleteTreat (a single write, no event)               | `delete treats/{round}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | 1     |
 | createTask                                           | `set tasks/{autoId}` (create shape) · +event `created`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 3     |
 | takeTask (transaction online)                        | `update tasks/{id}` `{ownerId: me, requestedBy: null, requestedAt: null, requestedOf: null (if set), …touch}` · +event `taken`. By the asked member of a waiting request it is **acceptRequest**                                                                                                                                                                                                                                                                                                                                                                                       | 3     |
