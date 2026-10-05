@@ -14,8 +14,9 @@
   import Repeat from '@lucide/svelte/icons/repeat';
   import Users from '@lucide/svelte/icons/users';
   import Tag from '@lucide/svelte/icons/tag';
-  import type { CategoryId, Priority, RecurrenceFreq, TaskDraft } from '$lib/domain/types';
+  import type { CategoryId, Priority, TaskDraft } from '$lib/domain/types';
   import { DEFAULT_TZ } from '$lib/domain/dates';
+  import { firstPlanDate, type RecurrenceRule } from '$lib/domain/recurrence';
   import { categoryShort } from '$lib/domain/categories';
   import { parseQuickAdd, type MatchField, type ParseMatch } from '$lib/parser/quickAdd';
   import { Button, Chip, LockClock, PickerChip, categoryIcon } from '$components/ui';
@@ -26,7 +27,7 @@
   import CategoryPicker from '$components/form/CategoryPicker.svelte';
   import RecurrencePicker from '$components/form/RecurrencePicker.svelte';
   import type { PlanValue } from '$components/form/when';
-  import { PRIORITY_LABELS, RECURRENCE_LABELS, whenChip } from '$lib/i18n/format';
+  import { PRIORITY_LABELS, recurrenceText, whenChip } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
   import { tasks } from '$lib/state/tasks.svelte';
@@ -49,10 +50,11 @@
   interface Picks {
     /** undefined = not picked (ללא); a uid or null = picked. */
     owner?: string | null;
-    plan?: PlanValue;
+    /** `auto`: set by a recurrence pick (its first day), not by the user; see chooseRecurrence. */
+    plan?: PlanValue & { auto?: true };
     priority?: Priority;
     categoryId?: CategoryId | null;
-    recurrence?: RecurrenceFreq | null;
+    recurrence?: RecurrenceRule | null;
   }
 
   let text = $state('');
@@ -67,18 +69,28 @@
   const parsed = $derived(parseQuickAdd(text, new Date(clock.nowMs), DEFAULT_TZ, { dismissed }));
 
   // ── the effective draft: parsed values, overridden by explicit picks ──────────
-  const plan = $derived<PlanValue>(
-    picks.plan ?? {
-      scheduledFor: parsed.scheduledFor ?? null,
-      weekPlan: parsed.weekPlan ?? false
+  /** The parsed plan, without the one a parsed recurrence set ("כל שבוע") once a pick replaced it. */
+  const parsedPlan = $derived.by<PlanValue>(() => {
+    const fromRecurrence = parsed.matches.find((m) => m.kind === 'recurrence')?.alsoSets;
+    if (picks.recurrence !== undefined && parsed.scheduledFor === fromRecurrence?.scheduledFor) {
+      return { scheduledFor: null, weekPlan: false };
     }
+    return { scheduledFor: parsed.scheduledFor ?? null, weekPlan: parsed.weekPlan ?? false };
+  });
+  // a user's pick, else the parsed plan, else the first day a picked recurrence implies
+  const plan = $derived<PlanValue>(
+    picks.plan && !picks.plan.auto
+      ? picks.plan
+      : parsedPlan.scheduledFor !== null
+        ? parsedPlan
+        : (picks.plan ?? parsedPlan)
   );
   const priority = $derived<Priority>(picks.priority ?? parsed.priority ?? 'normal');
   const categoryId = $derived<CategoryId | null>(
     picks.categoryId !== undefined ? picks.categoryId : (parsed.categoryId ?? null)
   );
-  const recurrence = $derived<RecurrenceFreq | null>(
-    picks.recurrence !== undefined ? picks.recurrence : (parsed.recurrence?.freq ?? null)
+  const recurrence = $derived<RecurrenceRule | null>(
+    picks.recurrence !== undefined ? picks.recurrence : (parsed.recurrence ?? null)
   );
   const ownerId = $derived(picks.owner ?? null);
   const title = $derived(text.trim() === '' ? '' : parsed.title.trim());
@@ -92,7 +104,7 @@
     hardDeadline: parsed.dueDate ? (parsed.hardDeadline ?? false) : false,
     priority,
     categoryId,
-    recurrence: recurrence ? { freq: recurrence } : null,
+    recurrence: recurrence ? { ...recurrence } : null,
     ownerId
   });
 
@@ -100,7 +112,7 @@
   function overridden(m: ParseMatch): boolean {
     switch (m.field) {
       case 'scheduledFor':
-        return picks.plan !== undefined;
+        return picks.plan !== undefined && !picks.plan.auto;
       case 'priority':
         return picks.priority !== undefined;
       case 'categoryId':
@@ -181,6 +193,32 @@
   function choose(patch: Picks, close = true) {
     picks = { ...picks, ...patch };
     if (close) openPicker = null;
+  }
+
+  /**
+   * A picked recurrence. A new daily or listed-days series with no date of its own is planned on
+   * its first day, as the parser plans "כל יום" / "כל שני וחמישי" (מתי then shows it); that plan
+   * follows later picks until the user sets or clears מתי. The picker stays open while days or
+   * the custom row are being set (`settled` false).
+   */
+  function chooseRecurrence(rule: RecurrenceRule | null, settled: boolean) {
+    const next: Picks = { ...picks, recurrence: rule };
+    if (next.plan?.auto) delete next.plan;
+    picks = next;
+    const first =
+      rule && picks.plan === undefined && plan.scheduledFor === null && !draft.dueDate
+        ? firstPlanDate(rule, today)
+        : null;
+    if (first) picks = { ...picks, plan: { scheduledFor: first, weekPlan: false, auto: true } };
+    if (settled) openPicker = null;
+    // its value just grew ("כל שבועיים בימים א׳ וד׳"): keep the chip in view in the scrolling row
+    else
+      void tick().then(() =>
+        inputEl?.form
+          ?.querySelector('[data-picker="recurrence"]')
+          ?.closest('.picker-chip')
+          ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+      );
   }
 
   // ── submit ───────────────────────────────────────────────────────────────────
@@ -298,7 +336,7 @@
     />
     <PickerChip
       label={td.recurrence}
-      value={recurrence ? RECURRENCE_LABELS[recurrence] : null}
+      value={recurrence ? recurrenceText(recurrence) : null}
       icon={Repeat}
       aria-expanded={openPicker === 'recurrence'}
       onclick={() => toggle('recurrence')}
@@ -324,7 +362,11 @@
       {:else if openPicker === 'category'}
         <CategoryPicker value={categoryId} onChange={(c) => choose({ categoryId: c })} />
       {:else if openPicker === 'recurrence'}
-        <RecurrencePicker value={recurrence} onChange={(f) => choose({ recurrence: f })} />
+        <RecurrencePicker
+          value={recurrence}
+          date={draft.dueDate ?? (plan.weekPlan ? null : plan.scheduledFor)}
+          onChange={chooseRecurrence}
+        />
       {/if}
     </div>
   {/if}

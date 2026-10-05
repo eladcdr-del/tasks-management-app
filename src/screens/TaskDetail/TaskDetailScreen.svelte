@@ -17,12 +17,13 @@
   import Trash2 from '@lucide/svelte/icons/trash-2';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
-  import type { CategoryId, ISODate, Priority, RecurrenceFreq, TaskPatch } from '$lib/domain/types';
+  import type { CategoryId, ISODate, Priority, TaskPatch } from '$lib/domain/types';
+  import { ruleOf, type RecurrenceRule } from '$lib/domain/recurrence';
   import { getCategory } from '$lib/domain/categories';
   import {
     ageLabelText,
     PRIORITY_LABELS,
-    RECURRENCE_LABELS,
+    recurrenceText,
     formatDate,
     snoozedLabel,
     whenChip
@@ -240,7 +241,7 @@
             />
           {/if}
           {#if task.recurrence}
-            <Badge label={RECURRENCE_LABELS[task.recurrence.freq]} icon={Repeat} />
+            <Badge label={recurrenceText(task.recurrence)} icon={Repeat} />
           {/if}
           {#if age && age !== 'חדשה'}<Badge label={age} kind="age" />{/if}
           {#if task.snoozeCount >= 1 && !isDone}
@@ -314,13 +315,14 @@
           </FieldRow>
           <FieldRow
             label={t.recurrence}
-            value={task.recurrence ? RECURRENCE_LABELS[task.recurrence.freq] : null}
+            value={recurrenceText(task.recurrence) || null}
             icon={Repeat}
             name="recurrence"
           >
             <RecurrencePicker
-              value={task.recurrence?.freq ?? null}
-              onChange={(f: RecurrenceFreq | null) => patch({ recurrence: f ? { freq: f } : null })}
+              value={task.recurrence ? ruleOf(task.recurrence) : null}
+              date={task.dueDate ?? (task.weekPlan ? null : task.scheduledFor)}
+              onChange={(r: RecurrenceRule | null) => patch({ recurrence: r })}
             />
           </FieldRow>
         </section>

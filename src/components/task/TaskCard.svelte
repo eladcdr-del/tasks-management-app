@@ -24,7 +24,7 @@
   import type { Task } from '$lib/domain/types';
   import { ageDays } from '$lib/domain/age';
   import { categoryShort } from '$lib/domain/categories';
-  import { ageLabel, planHint, snoozedLabel, whenChip, RECURRENCE_LABELS } from '$lib/i18n/format';
+  import { ageLabel, planHint, snoozedLabel, whenChip, recurrenceText } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
   import { href } from '$lib/router/routes';
@@ -239,7 +239,7 @@
           />
         {/if}
         {#if task.recurrence}
-          <Badge variant="plain" icon={Repeat} label={RECURRENCE_LABELS[task.recurrence.freq]} />
+          <Badge variant="plain" icon={Repeat} label={recurrenceText(task.recurrence)} />
         {/if}
       </div>
       {#if actions}<div class="actions">{@render actions()}</div>{/if}
