@@ -173,19 +173,58 @@ service cloud.firestore {
         && isNotifyPrefs(d.notify);
     }
 
+    // The jar (src/lib/domain/jar.ts). Goal-mode keys are optional (jars set up before goal modes
+    // have none): `mode` 'together' | 'each' (missing = together), `share` 1..20 (required for
+    // each), `counts` {uid: completions this round}. Count/target keep their meaning for the
+    // previous app version: in 'each' mode count = Σ min(counts, share), target = share × members.
     function isJar(j) {
       return j is map
-        && hasExactly(j, ['treat', 'target', 'count', 'round', 'startedAt'])
+        && j.keys().hasAll(['treat', 'target', 'count', 'round', 'startedAt'])
+        && j.keys().hasOnly(['treat', 'target', 'count', 'round', 'startedAt', 'mode', 'share', 'counts'])
         && isStr(j.treat, 1, 60)
         && isInt(j.target, 3, 50)
         && j.count is int && j.count >= 0
         && j.round is int && j.round >= 1
-        && j.startedAt is timestamp;
+        && j.startedAt is timestamp
+        && (!('mode' in j) || j.mode in ['together', 'each'])
+        && (!('share' in j) || isInt(j.share, 1, 20))
+        && (jarMode(j) != 'each' || 'share' in j)
+        && (!('counts' in j) || j.counts is map);
     }
 
-    // A brand-new jar (household create, or first setup from null).
+    // A brand-new jar (household create, or first setup from null): nobody's tally yet.
     function isFreshJar(j) {
-      return isJar(j) && j.count == 0 && j.round == 1 && j.startedAt == request.time;
+      return isJar(j) && j.count == 0 && j.round == 1 && j.startedAt == request.time
+        && tallies(j) == {};
+    }
+
+    function jarMode(j) {
+      return j.get('mode', 'together');
+    }
+
+    function tallies(j) {
+      return j.get('counts', {});
+    }
+
+    // `uid`'s completions this round (0 when none were recorded).
+    function tallyOf(j, uid) {
+      return tallies(j).get(uid, 0);
+    }
+
+    // The jar is full: together, count reached target; each, EVERY current member (`ids`, at most
+    // 6) has done their share. Mirrors isFull in src/lib/domain/jar.ts.
+    function jarFull(j, ids) {
+      return jarMode(j) == 'each' ? everyoneDone(j, ids) : j.count >= j.target;
+    }
+
+    function everyoneDone(j, ids) {
+      return ids.size() >= 1 && ids.size() <= 6
+        && partDone(j, ids, 0) && partDone(j, ids, 1) && partDone(j, ids, 2)
+        && partDone(j, ids, 3) && partDone(j, ids, 4) && partDone(j, ids, 5);
+    }
+
+    function partDone(j, ids, i) {
+      return ids.size() <= i || tallyOf(j, ids[i]) >= j.share;
     }
 
     // household.invite: the household's single active invite, or null.
@@ -195,27 +234,106 @@ service cloud.firestore {
     }
 
     // Jar transitions allowed in one write (strictness decision, see docs/firestore-schema.md):
-    //   unchanged | first setup | edit treat/target | count +1 (complete) | count -1 (reopen, never < 0)
-    //   | redeem (only when full; surplus carries over; round +1; restart clock; treat recorded).
-    // The jar can never be removed once set (a re-created round 1 would collide with treats/1).
-    function jarTransitionOk(hid, o, n) {
+    //   unchanged | first setup | edit settings (treat, target, mode, share; progress untouched,
+    //   tallies untouched or backfilled) | completion | reopen | redeem (only when full; treat
+    //   recorded in the same batch).
+    // `ids` = the household's current memberIds. The jar can never be removed once set (a
+    // re-created round 1 would collide with treats/1).
+    function jarTransitionOk(hid, ids, o, n) {
       return n == o
         || (o == null && isFreshJar(n))
         || (o != null && isJar(n) && (
-              // edit treat and/or target; progress untouched
-              (n.count == o.count && n.round == o.round && n.startedAt == o.startedAt)
-              // completion +1 / reopen -1 (isJar already guarantees count >= 0)
-              || (n.treat == o.treat && n.target == o.target && n.round == o.round
-                  && n.startedAt == o.startedAt
-                  && (n.count == o.count + 1 || n.count == o.count - 1))
-              // redeem: requires treats/{round} to be created in the same batch
-              || (n.treat == o.treat && n.target == o.target
-                  && o.count >= o.target
-                  && n.count == o.count - o.target
-                  && n.round == o.round + 1
-                  && n.startedAt == request.time
-                  && existsAfter(/databases/$(database)/documents/households/$(hid)/treats/$(string(o.round))))
+              jarEditOk(ids, o, n)
+              || jarStepOk(ids, o, n, 1)
+              || jarStepOk(ids, o, n, -1)
+              || jarRedeemOk(hid, ids, o, n)
            ));
+    }
+
+    // Settings change, progress untouched. The tallies stay, or (switching to 'each' mid-round)
+    // are backfilled: current members' entries only go up, and add up to at most the count.
+    function jarEditOk(ids, o, n) {
+      return n.count == o.count && n.round == o.round && n.startedAt == o.startedAt
+        && (tallies(n) == tallies(o) || retallyOk(ids, tallies(o), tallies(n), o.count));
+    }
+
+    function retallyOk(ids, oc, nc, count) {
+      return nc.diff(oc).affectedKeys().hasOnly(ids)
+        && raised(ids, oc, nc, 0) && raised(ids, oc, nc, 1) && raised(ids, oc, nc, 2)
+        && raised(ids, oc, nc, 3) && raised(ids, oc, nc, 4) && raised(ids, oc, nc, 5)
+        && sumOf(ids, nc) <= count;
+    }
+
+    function raised(ids, oc, nc, i) {
+      return ids.size() <= i
+        || (nc.get(ids[i], 0) is int && nc.get(ids[i], 0) >= oc.get(ids[i], 0));
+    }
+
+    function sumOf(ids, m) {
+      return at(ids, m, 0) + at(ids, m, 1) + at(ids, m, 2) + at(ids, m, 3) + at(ids, m, 4)
+        + at(ids, m, 5);
+    }
+
+    function at(ids, m, i) {
+      return ids.size() <= i ? 0 : m.get(ids[i], 0);
+    }
+
+    // A completion (d = 1) or a reopen (d = -1); settings and round untouched.
+    //  - The previous app version: count ±1, tallies untouched.
+    //  - This version: exactly one tally moves by d (a completion: the caller's own; a reopen: the
+    //    original completer's, a current member, never below 0) and the count moves by d or stays
+    //    (in 'each' mode a completion past one's share fills nothing; offline, a stale view may
+    //    misjudge it, and the jar bookkeeping must never block the completion itself).
+    // isJar already guarantees count >= 0.
+    function jarStepOk(ids, o, n, d) {
+      let oc = tallies(o);
+      let nc = tallies(n);
+      let moved = nc.diff(oc).affectedKeys();
+      return n.treat == o.treat && n.target == o.target && n.round == o.round
+        && n.startedAt == o.startedAt
+        && n.get('mode', null) == o.get('mode', null)
+        && n.get('share', null) == o.get('share', null)
+        && ((moved.size() == 0 && n.count == o.count + d)
+            || (moved.size() == 1 && (n.count == o.count + d || n.count == o.count)
+                && (d == 1 ? ownTallyUp(oc, nc) : oneTallyDown(ids, oc, nc))));
+    }
+
+    function ownTallyUp(oc, nc) {
+      return nc.diff(oc).affectedKeys().hasOnly([me()])
+        && nc.get(me(), 0) is int
+        && nc.get(me(), 0) == oc.get(me(), 0) + 1;
+    }
+
+    // The single moved entry belongs to a current member and went down by exactly 1.
+    function oneTallyDown(ids, oc, nc) {
+      return nc.diff(oc).affectedKeys().hasOnly(ids)
+        && lowered(ids, oc, nc, 0) && lowered(ids, oc, nc, 1) && lowered(ids, oc, nc, 2)
+        && lowered(ids, oc, nc, 3) && lowered(ids, oc, nc, 4) && lowered(ids, oc, nc, 5);
+    }
+
+    function lowered(ids, oc, nc, i) {
+      return ids.size() <= i
+        || nc.get(ids[i], 0) == oc.get(ids[i], 0)
+        || (oc.get(ids[i], 0) >= 1 && nc.get(ids[i], 0) is int
+            && nc.get(ids[i], 0) == oc.get(ids[i], 0) - 1);
+    }
+
+    // Redeem: only when full; round +1; restart the clock; treats/{round} created in the same batch.
+    //  - This version: the tallies start over; together the surplus carries over, each restarts at 0.
+    //  - The previous app version (count -= target, tallies untouched): a 'together' jar only. An
+    //    'each' jar must clear its tallies, or the next round would start already full.
+    function jarRedeemOk(hid, ids, o, n) {
+      return n.treat == o.treat && n.target == o.target
+        && n.get('mode', null) == o.get('mode', null)
+        && n.get('share', null) == o.get('share', null)
+        && jarFull(o, ids)
+        && n.round == o.round + 1
+        && n.startedAt == request.time
+        && ((n.get('counts', null) == {}
+             && n.count == (jarMode(o) == 'each' ? 0 : o.count - o.target))
+            || (jarMode(o) != 'each' && tallies(n) == tallies(o)
+                && n.count == o.count - o.target))
+        && existsAfter(/databases/$(database)/documents/households/$(hid)/treats/$(string(o.round)));
     }
 
     function isRecurrence(r) {
@@ -335,7 +453,8 @@ service cloud.firestore {
           && isMember(hid)
           && (!changed().hasAny(['name']) || isStr(incoming().name, 1, 60))
           && (!changed().hasAny(['invite']) || isInviteRef(incoming().invite))
-          && (!changed().hasAny(['jar']) || jarTransitionOk(hid, existing().jar, incoming().jar));
+          && (!changed().hasAny(['jar'])
+              || jarTransitionOk(hid, existing().memberIds, existing().jar, incoming().jar));
       }
 
       // Join batch: the caller appends ONLY themself (arrayUnion + increment(1)) and creates their
@@ -584,12 +703,15 @@ service cloud.firestore {
       match /treats/{round} {
         allow get, list: if isMember(hid);
 
-        // Redeem batch: created for the CURRENT round of a FULL jar, copying its treat/target, while
-        // the same batch advances the jar to round + 1.
+        // Redeem batch: created for the CURRENT round of a FULL jar, copying its treat/target (and,
+        // optionally, its mode, share and tallies: who took part), while the same batch advances
+        // the jar to round + 1. The previous app version writes the four required keys only.
         allow create: if isMember(hid)
-          && hasExactly(incoming(), ['treat', 'target', 'filledAt', 'redeemedAt'])
+          && incoming().keys().hasAll(['treat', 'target', 'filledAt', 'redeemedAt'])
+          && incoming().keys().hasOnly(['treat', 'target', 'filledAt', 'redeemedAt', 'mode',
+                                        'share', 'counts'])
           && round.matches('^[1-9][0-9]{0,5}$')
-          && treatMatchesJar(hh(hid).jar, hhAfter(hid).jar);
+          && treatMatchesJar(hh(hid), hhAfter(hid).jar);
 
         // Only redeemedAt may be set, once, to now.
         allow update: if isMember(hid)
@@ -599,12 +721,16 @@ service cloud.firestore {
 
         allow delete: if false;
 
-        function treatMatchesJar(jar, after) {
+        function treatMatchesJar(h, after) {
+          let jar = h.jar;
           return jar != null
             && round == string(jar.round)
-            && jar.count >= jar.target
+            && jarFull(jar, h.memberIds)
             && incoming().treat == jar.treat
             && incoming().target == jar.target
+            && (!('mode' in incoming()) || incoming().mode == jarMode(jar))
+            && (!('share' in incoming()) || incoming().share == jar.get('share', null))
+            && (!('counts' in incoming()) || incoming().counts == tallies(jar))
             && incoming().filledAt is timestamp
             && incoming().filledAt >= jar.startedAt
             && incoming().filledAt <= request.time
