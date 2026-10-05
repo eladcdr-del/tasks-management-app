@@ -5,18 +5,20 @@
   //            for the household, so a failed registration never reads as "active"
   //   enable   "הפעלת התראות" while the permission has not been asked yet, "הפעלה מחדש" when it
   //            is allowed but this device is not registered (platform/push.ts)
-  //   denied   how to allow notifications again in Chrome (⋮ → הגדרות אתר → התראות)
+  //   denied   how to allow notifications again: in the installed app through Android's app info
+  //            (long-press the icon → פרטי האפליקציה → התראות), in a tab through the site info
   //   types    my member.notify switches {requests, reminders, partnerDone, weekly}; they are
   //            per person (all my devices), so they show in every state, the demo included
   // The status is re-read when the app returns to the foreground (the user may have changed the
-  // permission in the browser's site settings), on the Permissions API's change event, and when
-  // this device's registration changes.
+  // permission in the system or site settings), on the Permissions API's change event, and when
+  // this device's registration changes (UpdatePrompt registers a re-allowed permission on its own).
   import Bell from '@lucide/svelte/icons/bell';
   import BellRing from '@lucide/svelte/icons/bell-ring';
   import BellOff from '@lucide/svelte/icons/bell-off';
   import type { NotifyPrefs } from '$lib/domain/types';
   import { Button, Card, SectionHeader, Toggle } from '$components/ui';
   import { he } from '$lib/i18n/he';
+  import { installState } from '$lib/platform/install';
   import {
     enablePush,
     onPushRegistrationChange,
@@ -36,6 +38,7 @@
     return pushStatus();
   });
   const me = $derived(household.me);
+  const deniedSteps = installState().installed ? t.deniedStepsApp : t.deniedSteps;
 
   const STATUS: Record<PushStatus, string> = {
     granted: t.status.granted,
@@ -112,7 +115,7 @@
         <div class="help" data-denied-help>
           <p class="help-title">{t.deniedHelpTitle}</p>
           <ol>
-            {#each t.deniedSteps as step, i (i)}<li>{step}</li>{/each}
+            {#each deniedSteps as step, i (i)}<li>{step}</li>{/each}
           </ol>
         </div>
       {/if}

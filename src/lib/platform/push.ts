@@ -7,9 +7,11 @@
 //                      repo.registerDevice({ deviceId, householdId, token, userAgent })
 //   refreshPush()      app start / household ready with permission already granted: the same,
 //                      silently, writing the device doc only when the token or household changed
-//                      (or the last write is a week old)
+//                      (or the last write is a week old); blocked or reset, it forgets the
+//                      registration so that allowing again writes the device doc afresh
 //   disablePush()      sign-out: unregisterDevice + delete the FCM token (best effort, bounded)
 //   forgetPushRegistration()  the household was left: the next refresh registers again
+//   watchPushPermission()     permission re-allowed while the app is open: register right away
 //
 // Foreground messages (the app is visible) arrive through Firebase's onMessage and are shown as a
 // snackbar with an "open" action. The Firebase messaging SDK is only ever loaded by the dynamic
@@ -242,7 +244,12 @@ export async function enablePush(deps: Partial<PushDeps> = {}): Promise<EnableRe
 /** App start / household ready: refresh the token silently when permission is already granted. */
 export async function refreshPush(deps: Partial<PushDeps> = {}): Promise<void> {
   const d = withDefaults(deps);
-  if (pushSupport(d) !== 'granted') return;
+  const support = pushSupport(d);
+  // Blocked or reset: the browser dropped its push subscription, so register afresh once allowed.
+  if ((support === 'denied' || support === 'default') && readReg(d.storage) !== null) {
+    writeReg(d.storage, null);
+  }
+  if (support !== 'granted') return;
   try {
     await register(d, false);
   } catch (e) {
@@ -253,6 +260,38 @@ export async function refreshPush(deps: Partial<PushDeps> = {}): Promise<void> {
 /** The household was left (its device docs are deleted by the repository): register anew later. */
 export function forgetPushRegistration(storage: StorageLike | null = localStore()): void {
   writeReg(storage, null);
+}
+
+/**
+ * Notifications re-allowed (system or site settings) while the app is open: registers this device
+ * when the app comes back to the foreground, or when the Permissions API reports the change,
+ * without waiting for the next cold start (a block in between forgets the old registration, see
+ * refreshPush). Loads nothing while registered or not allowed. Returns an unsubscribe.
+ */
+export function watchPushPermission(
+  win: Window = window,
+  deps: Partial<PushDeps> = {}
+): () => void {
+  const check = () => {
+    if (win.document.visibilityState === 'hidden') return;
+    if (pushSupport(deps) !== 'granted' || !pushRegistered(deps)) void refreshPush(deps);
+  };
+  win.document.addEventListener('visibilitychange', check);
+  let status: PermissionStatus | null = null;
+  let disposed = false;
+  win.navigator.permissions
+    ?.query({ name: 'notifications' })
+    .then((s) => {
+      if (disposed) return;
+      status = s;
+      s.addEventListener('change', check);
+    })
+    .catch(() => {});
+  return () => {
+    disposed = true;
+    win.document.removeEventListener('visibilitychange', check);
+    status?.removeEventListener('change', check);
+  };
 }
 
 /** Sign-out: removes this device's doc and FCM token. Best effort, bounded; never rejects. */

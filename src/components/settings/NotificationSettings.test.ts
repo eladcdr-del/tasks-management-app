@@ -20,7 +20,11 @@ const push = vi.hoisted(() => ({
   pushStatus: vi.fn(),
   onPushRegistrationChange: vi.fn((_cb: () => void) => () => {})
 }));
+const install = vi.hoisted(() => ({
+  installState: vi.fn(() => ({ installed: false, canPrompt: false }))
+}));
 vi.mock('$lib/platform/push', () => push);
+vi.mock('$lib/platform/install', () => install);
 vi.mock('$lib/state/household.svelte', () => ({
   household: {
     me: { notify: { requests: true, reminders: true, partnerDone: true, weekly: true } },
@@ -35,6 +39,7 @@ const status = () => document.querySelector('[data-push-status]')?.textContent;
 beforeEach(() => {
   vi.clearAllMocks();
   ui.queue = [];
+  install.installState.mockReturnValue({ installed: false, canPrompt: false });
 });
 
 describe('NotificationSettings', () => {
@@ -71,6 +76,25 @@ describe('NotificationSettings', () => {
     changed();
     flushSync();
     expect(status()).toBe('ההתראות פעילות במכשיר הזה');
+  });
+
+  it('explains how to allow notifications again in the installed app', () => {
+    push.pushStatus.mockReturnValue('denied');
+    install.installState.mockReturnValue({ installed: true, canPrompt: false });
+    render(NotificationSettings);
+    expect(status()).toBe('ההתראות חסומות במכשיר הזה');
+    const help = document.querySelector('[data-denied-help]')!;
+    expect(help).toHaveTextContent('לחיצה ארוכה על הסמל של HomeCare');
+    expect(help).toHaveTextContent('"פרטי האפליקציה" ← "התראות"');
+    expect(help).not.toHaveTextContent('הכתובת');
+  });
+
+  it('and in a Chrome tab', () => {
+    push.pushStatus.mockReturnValue('denied');
+    render(NotificationSettings);
+    const help = document.querySelector('[data-denied-help]')!;
+    expect(help).toHaveTextContent('הסמל שליד הכתובת');
+    expect(help).not.toHaveTextContent('פרטי האפליקציה');
   });
 
   it('describes the reminder and completion switches as the notifier sends them', () => {

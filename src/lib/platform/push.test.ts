@@ -15,6 +15,7 @@ import {
   pushStatus,
   pushSupport,
   refreshPush,
+  watchPushPermission,
   type PushDeps
 } from './push';
 
@@ -286,11 +287,92 @@ describe('refreshPush', () => {
     expect(repo.registerDevice).toHaveBeenCalledTimes(1);
   });
 
+  it('forgets the registration once the permission is blocked or reset', async () => {
+    const denied = deps({ permission: 'denied' });
+    denied.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+    await refreshPush(denied.d);
+    expect(denied.storage.map.has(PUSH_REG_KEY)).toBe(false);
+    expect(denied.d.loadMessaging).not.toHaveBeenCalled();
+
+    const reset = deps({ permission: 'default' });
+    reset.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+    await refreshPush(reset.d);
+    expect(reset.storage.map.has(PUSH_REG_KEY)).toBe(false);
+
+    // Allowed again: the same token is written afresh (the notifier may have dropped the old doc).
+    reset.Notification.permission = 'granted';
+    await refreshPush(reset.d);
+    expect(reset.repo.registerDevice).toHaveBeenCalledTimes(1);
+  });
+
   it('swallows failures', async () => {
     const { d } = deps();
     vi.mocked(d.swReady).mockRejectedValue(new Error('no sw'));
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(refreshPush(d)).resolves.toBeUndefined();
+  });
+});
+
+describe('watchPushPermission', () => {
+  function fakePage(visibility: DocumentVisibilityState = 'visible') {
+    const doc = Object.assign(new EventTarget(), { visibilityState: visibility });
+    const status = new EventTarget();
+    const win = {
+      document: doc,
+      navigator: { permissions: { query: vi.fn(async () => status) } }
+    } as unknown as Window;
+    const show = (v: DocumentVisibilityState) => {
+      doc.visibilityState = v;
+      doc.dispatchEvent(new Event('visibilitychange'));
+    };
+    return { win, show, status };
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('registers this device when the app comes back with the permission re-allowed', async () => {
+    const { d, repo, storage, Notification } = deps({ permission: 'denied' });
+    const page = fakePage('hidden');
+    const stop = watchPushPermission(page.win, d);
+    Notification.permission = 'granted'; // allowed in Android's app info, app in the background
+    page.show('visible');
+    await vi.waitFor(() => expect(repo.registerDevice).toHaveBeenCalledTimes(1));
+    expect(storage.map.get(PUSH_REG_KEY)).toBe('h1|tok-1|1000000');
+    stop();
+  });
+
+  it('also reacts to the Permissions API change event', async () => {
+    const { d, repo, Notification } = deps({ permission: 'denied' });
+    const page = fakePage();
+    const stop = watchPushPermission(page.win, d);
+    await settle(); // the permission status is queried asynchronously
+    Notification.permission = 'granted';
+    page.status.dispatchEvent(new Event('change'));
+    await vi.waitFor(() => expect(repo.registerDevice).toHaveBeenCalledTimes(1));
+    stop();
+  });
+
+  it('loads nothing while registered, hidden or not allowed, and stops when unsubscribed', async () => {
+    const registered = deps();
+    registered.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+    const page = fakePage();
+    const stop = watchPushPermission(page.win, registered.d);
+    page.show('visible');
+    page.show('hidden');
+    await settle();
+    expect(registered.d.loadMessaging).not.toHaveBeenCalled();
+    stop();
+
+    const blocked = deps({ permission: 'denied' });
+    const page2 = fakePage();
+    const stop2 = watchPushPermission(page2.win, blocked.d);
+    page2.show('visible');
+    await settle();
+    expect(blocked.d.loadMessaging).not.toHaveBeenCalled();
+    stop2();
+    blocked.Notification.permission = 'granted';
+    page2.show('visible');
+    await settle();
+    expect(blocked.repo.registerDevice).not.toHaveBeenCalled();
   });
 });
 
