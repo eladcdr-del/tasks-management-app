@@ -14,6 +14,8 @@
     count?: number;
     /** Prefix shown before the name, e.g. "של" for the filter chip "של דני". */
     prefix?: string;
+    /** Shown instead of the name ("אני"); the avatar keeps the person's own initial. */
+    label?: string;
     selected?: boolean;
     onclick?: (e: MouseEvent) => void;
   }
@@ -22,6 +24,7 @@
     person,
     count,
     prefix,
+    label,
     selected = false,
     onclick,
     class: className,
@@ -30,6 +33,7 @@
 </script>
 
 {#snippet body()}
+  {@const name = label ?? person.displayName}
   <span class="face">
     <Avatar
       name={person.displayName}
@@ -40,7 +44,7 @@
       decorative
     />
     <span class="name">
-      {#if prefix}{prefix}{' '}{/if}<bdi dir={textDir(person.displayName)}>{person.displayName}</bdi>
+      {#if prefix}{prefix}{' '}{/if}<bdi dir={textDir(name)}>{name}</bdi>
     </span>
     {#if count !== undefined}<span class="count num">{count}</span>{/if}
   </span>
