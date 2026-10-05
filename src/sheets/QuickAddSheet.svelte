@@ -6,6 +6,9 @@
   //    overrides the parsed value of that field (the parsed chip is then shown as replaced).
   //    "מי" is never pre-filled: the app does not suggest who should do a task.
   //  - Enter (or "הוספה") adds the task; the sheet stays open with "נוסף ✓" for rapid entry.
+  //  - "הוספת כמה משימות בבת אחת" (or pasting several lines into the field) switches to the list
+  //    mode (QuickAddList): one task per line. The single form stays mounted, hidden, so its state
+  //    is back as it was on "חזרה למשימה אחת".
   import { tick } from 'svelte';
   import CalendarDays from '@lucide/svelte/icons/calendar-days';
   import CalendarClock from '@lucide/svelte/icons/calendar-clock';
@@ -14,6 +17,7 @@
   import Repeat from '@lucide/svelte/icons/repeat';
   import Users from '@lucide/svelte/icons/users';
   import Tag from '@lucide/svelte/icons/tag';
+  import ListPlus from '@lucide/svelte/icons/list-plus';
   import type { CategoryId, Priority, RecurrenceFreq, TaskDraft } from '$lib/domain/types';
   import { DEFAULT_TZ } from '$lib/domain/dates';
   import { categoryShort } from '$lib/domain/categories';
@@ -34,13 +38,15 @@
   import { clock } from '$lib/state/clock.svelte';
   import { haptic } from '$lib/platform/haptics';
   import { homeView } from '../screens/Home/homeView.svelte';
+  import { isMultiLine } from '$lib/parser/splitList';
+  import QuickAddList from './QuickAddList.svelte';
 
   interface Props {
     onClose: () => void;
   }
 
   // The host's scrim / Back / Escape close the sheet; adding keeps it open on purpose (rapid entry).
-  let { onClose: _onClose }: Props = $props();
+  let { onClose }: Props = $props();
 
   const t = he.sheetQuickAdd;
   const td = he.taskDetail;
@@ -62,6 +68,48 @@
   let flash = $state<string | null>(null);
   let flashTimer: ReturnType<typeof setTimeout> | undefined;
   let inputEl: HTMLInputElement | undefined = $state();
+
+  // ── list mode (many tasks at once) ───────────────────────────────────────────
+  let mode = $state<'one' | 'list'>('one');
+  let listText = $state('');
+  let listFromPaste = $state(false);
+
+  /** Switches to the list, adding `seed` (the typed text, or a paste) as its last lines. */
+  function openList(seed: string, pasted: boolean) {
+    const lines = seed.trim();
+    if (lines) listText = listText.trim() ? `${listText.trimEnd()}\n${lines}` : lines;
+    listFromPaste = pasted;
+    text = '';
+    openPicker = null;
+    mode = 'list';
+  }
+
+  async function closeList() {
+    mode = 'one';
+    listFromPaste = false;
+    await tick();
+    inputEl?.focus();
+  }
+
+  /** Several lines pasted into the field become a list instead of one squashed title. */
+  function pasteInto(e: Event, pasted: string) {
+    if (!isMultiLine(pasted)) return;
+    e.preventDefault();
+    const el = inputEl;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    openList(`${text.slice(0, start)}${pasted}${text.slice(end)}`, true);
+  }
+
+  function onPaste(e: ClipboardEvent) {
+    pasteInto(e, e.clipboardData?.getData('text/plain') ?? '');
+  }
+
+  // A keyboard's clipboard suggestion may insert the text without a paste event.
+  function onBeforeInput(e: InputEvent) {
+    if (!e.cancelable || e.inputType === 'insertFromPaste') return;
+    pasteInto(e, e.data ?? e.dataTransfer?.getData('text/plain') ?? '');
+  }
 
   const today = $derived(clock.today);
   const parsed = $derived(parseQuickAdd(text, new Date(clock.nowMs), DEFAULT_TZ, { dismissed }));
@@ -218,8 +266,23 @@
   });
 </script>
 
-<form class="quick-add" onsubmit={submit} data-testid="quick-add" novalidate>
-  <h2 class="title">{t.title}</h2>
+<form
+  class="quick-add"
+  onsubmit={submit}
+  data-testid="quick-add"
+  hidden={mode === 'list'}
+  novalidate
+>
+  <div class="head">
+    <h2 class="title">{t.title}</h2>
+    <Button
+      variant="ghost"
+      size="sm"
+      icon={ListPlus}
+      onclick={() => openList(text, false)}
+      data-list-open>{t.list.open}</Button
+    >
+  </div>
 
   <div class="input-well">
     <label class="sr-only" for="qa-title">{t.inputLabel}</label>
@@ -235,6 +298,8 @@
       enterkeyhint="done"
       maxlength={200}
       data-autofocus
+      onpaste={onPaste}
+      onbeforeinput={onBeforeInput}
     />
   </div>
 
@@ -342,10 +407,31 @@
   </div>
 </form>
 
+{#if mode === 'list'}
+  <QuickAddList bind:text={listText} pasted={listFromPaste} onBack={closeList} onDone={onClose} />
+{/if}
+
 <style>
   .quick-add {
     display: grid;
     gap: var(--s4);
+  }
+
+  .quick-add[hidden] {
+    display: none;
+  }
+
+  .head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--s1) var(--s3);
+  }
+
+  /* The link's text lines up with the field's edge. */
+  .head :global(.btn) {
+    margin-inline-end: calc(var(--s3-5) * -1);
   }
 
   .title {
