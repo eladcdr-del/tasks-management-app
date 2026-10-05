@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,16 +72,17 @@ describe('shouldRun', () => {
 });
 
 // The workflow's guard step must apply the same rule. Extract its shell script from notify.yml and
-// execute it for real with bash, the way the runner does.
+// execute it for real with bash, the way the runner does (the keepalive step too).
 describe('workflow guard step (.github/workflows/notify.yml)', () => {
   const here = dirname(fileURLToPath(import.meta.url));
   const yml = readFileSync(join(here, '../../.github/workflows/notify.yml'), 'utf8');
   const tmp = mkdtempSync(join(tmpdir(), 'notify-guard-'));
   afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
-  function guardScript(): string {
+  /** The `run: |` script of the step that has a line matching `marker`. */
+  function stepScript(marker: RegExp): string {
     const lines = yml.split('\n');
-    const idLine = lines.findIndex((l) => /^\s+id: guard\s*$/.test(l));
+    const idLine = lines.findIndex((l) => marker.test(l));
     expect(idLine).toBeGreaterThan(0);
     const runLine = lines.findIndex((l, i) => i > idLine && /^\s+run: \|\s*$/.test(l));
     const indent = (l: string) => l.length - l.trimStart().length;
@@ -99,7 +100,10 @@ describe('workflow guard step (.github/workflows/notify.yml)', () => {
     const output = join(tmp, `${name}.out`);
     const env: Record<string, string> = { PATH: process.env.PATH ?? '', GITHUB_OUTPUT: output };
     if (secret !== undefined) env.FIREBASE_SERVICE_ACCOUNT = secret;
-    const res = spawnSync('bash', ['-e', '-c', guardScript()], { env, encoding: 'utf8' });
+    const res = spawnSync('bash', ['-e', '-c', stepScript(/^\s+id: guard\s*$/)], {
+      env,
+      encoding: 'utf8'
+    });
     return { status: res.status, stdout: res.stdout, output: readFileSync(output, 'utf8') };
   }
 
@@ -138,5 +142,42 @@ describe('workflow guard step (.github/workflows/notify.yml)', () => {
       'gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/notify.yml/enable"'
     );
     expect(yml).toContain('npx --prefix scripts/notify tsx scripts/notify/index.ts');
+    expect(yml).toMatch(/\n  workflow_dispatch:\n/); // the external 5-minute scheduler's entry point
+  });
+
+  it('keepalive re-enables the workflow on every run, whatever the trigger or time', () => {
+    const script = stepScript(/^\s+- name: Keepalive/);
+    expect(script).not.toMatch(/\bdate\b|GITHUB_EVENT_NAME/); // no time slot, no trigger filter
+    // a fake gh on PATH records its arguments and exits with GH_EXIT
+    const bin = join(tmp, 'bin');
+    const log = join(tmp, 'gh.log');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'gh'), `#!/bin/sh\necho "$@" >> "${log}"\nexit "\${GH_EXIT:-0}"\n`, {
+      mode: 0o755
+    });
+    const keepalive = (event: string, ghExit = '0') =>
+      spawnSync('bash', ['-e', '-o', 'pipefail', '-c', script], {
+        env: {
+          PATH: `${bin}:${process.env.PATH ?? ''}`,
+          GITHUB_EVENT_NAME: event,
+          GITHUB_REPOSITORY: 'owner/repo',
+          GH_EXIT: ghExit
+        },
+        encoding: 'utf8'
+      });
+
+    for (const event of ['schedule', 'workflow_dispatch']) {
+      const r = keepalive(event);
+      expect(r.status, event).toBe(0);
+      expect(r.stdout).toContain('keepalive: workflow enable call sent');
+    }
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(
+      Array(2).fill('api -X PUT repos/owner/repo/actions/workflows/notify.yml/enable')
+    );
+
+    // a failed call warns and keeps the run green: the next run tries again
+    const failed = keepalive('schedule', '1');
+    expect(failed.status).toBe(0);
+    expect(failed.stdout).toContain('::warning::keepalive: the enable call failed');
   });
 });
