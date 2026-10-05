@@ -1,17 +1,23 @@
 // owner: step 5.1. Web push on the client (Blueprint §9).
 //
 //   pushSupport()      'unsupported' | 'demo' | 'not-configured' | 'default' | 'granted' | 'denied'
+//   pushStatus()       the same, with 'unregistered' for a granted permission whose device
+//                      registration for this household has not succeeded (Settings)
 //   enablePush()       permission prompt → (lazy) Firebase messaging → getToken on our SW →
 //                      repo.registerDevice({ deviceId, householdId, token, userAgent })
 //   refreshPush()      app start / household ready with permission already granted: the same,
 //                      silently, writing the device doc only when the token or household changed
-//                      (or the last write is a week old)
+//                      (or the last write is a week old); blocked or reset, it forgets the
+//                      registration so that allowing again writes the device doc afresh
 //   disablePush()      sign-out: unregisterDevice + delete the FCM token (best effort, bounded)
 //   forgetPushRegistration()  the household was left: the next refresh registers again
+//   watchPushPermission()     permission re-allowed while the app is open: register right away
 //
 // Foreground messages (the app is visible) arrive through Firebase's onMessage and are shown as a
-// snackbar with an "open" action. The Firebase messaging SDK is only ever loaded by the dynamic
-// import below, so demo / setup users and the entry chunk never carry it.
+// snackbar with an "open" action. The SW hands a push to a visible window only when this page
+// answers its PUSH_PING with "listening" (listenForSwMessages), so nothing is swallowed before
+// onMessage is wired. The Firebase messaging SDK is only ever loaded by the dynamic import below,
+// so demo / setup users and the entry chunk never carry it.
 
 import type { FirebaseApp } from 'firebase/app';
 import type { Repository } from '$lib/data/repository';
@@ -31,6 +37,8 @@ import type { ForegroundMessage } from '$lib/data/firebase/messaging';
 
 export type PushSupport =
   'unsupported' | 'demo' | 'not-configured' | 'default' | 'granted' | 'denied';
+
+export type PushStatus = PushSupport | 'unregistered';
 
 export type EnableResult = 'enabled' | 'denied' | 'default' | 'unavailable' | 'error';
 
@@ -58,6 +66,19 @@ export interface PushDeps {
   onForeground: (msg: ForegroundMessage) => void;
 }
 
+/** Stands in for blocked localStorage, so a session keeps one device id and knows it registered. */
+const memoryStorage: StorageLike = (() => {
+  const map = new Map<string, string>();
+  return {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k)
+  };
+})();
+
+const localStore = (win: PushDeps['win'] = typeof window === 'undefined' ? null : window) =>
+  safeLocalStorage(win) ?? memoryStorage;
+
 function defaultDeps(): PushDeps {
   const win = typeof window === 'undefined' ? null : window;
   return {
@@ -67,7 +88,7 @@ function defaultDeps(): PushDeps {
     config: firebaseConfig,
     vapidKey: configVapidKey,
     win,
-    storage: safeLocalStorage(win),
+    storage: localStore(win),
     loadMessaging: () => import('$lib/data/firebase/messaging'),
     swReady: () => navigator.serviceWorker.ready,
     now: () => Date.now(),
@@ -97,8 +118,8 @@ export function pushSupport(deps: Partial<PushDeps> = {}): PushSupport {
   return perm === 'granted' ? 'granted' : perm === 'denied' ? 'denied' : 'default';
 }
 
-/** This install's device id (a UUID kept in localStorage; a fresh one if storage is blocked). */
-export function getDeviceId(storage: StorageLike | null = safeLocalStorage()): string {
+/** This install's device id (a UUID kept in localStorage; per session if storage is blocked). */
+export function getDeviceId(storage: StorageLike | null = localStore()): string {
   try {
     const existing = storage?.getItem(DEVICE_ID_KEY);
     if (existing) return existing;
@@ -132,6 +153,8 @@ function readReg(storage: StorageLike | null): { hid: string; token: string; at:
   }
 }
 
+const regListeners = new Set<() => void>();
+
 function writeReg(storage: StorageLike | null, value: string | null): void {
   try {
     if (value === null) storage?.removeItem(PUSH_REG_KEY);
@@ -139,9 +162,33 @@ function writeReg(storage: StorageLike | null, value: string | null): void {
   } catch {
     // ignore
   }
+  for (const cb of regListeners) cb();
+}
+
+/** Calls `cb` whenever this device's registration record changes. Returns an unsubscribe. */
+export function onPushRegistrationChange(cb: () => void): () => void {
+  regListeners.add(cb);
+  return () => {
+    regListeners.delete(cb);
+  };
+}
+
+/** Whether this device has registered for the current household (a token the notifier can use). */
+export function pushRegistered(deps: Partial<PushDeps> = {}): boolean {
+  const d = withDefaults(deps);
+  return d.householdId !== null && readReg(d.storage)?.hid === d.householdId;
+}
+
+/** pushSupport(), except that 'granted' needs this device registered for the household too. */
+export function pushStatus(deps: Partial<PushDeps> = {}): PushStatus {
+  const d = withDefaults(deps);
+  const support = pushSupport(d);
+  return support === 'granted' && !pushRegistered(d) ? 'unregistered' : support;
 }
 
 let foregroundFor: FirebaseApp | null = null;
+/** Firebase's onMessage is wired in this page: the SW may hand us pushes (see PUSH_PING). */
+let foregroundReady = false;
 
 /** Gets the token and writes the device doc (when needed). Throws on failure. */
 async function register(d: PushDeps, force: boolean): Promise<boolean> {
@@ -154,7 +201,15 @@ async function register(d: PushDeps, force: boolean): Promise<boolean> {
   if (!token) return false;
   if (foregroundFor !== app) {
     foregroundFor = app;
-    void messaging.onForegroundMessage(app, d.onForeground);
+    foregroundReady = false;
+    messaging.onForegroundMessage(app, d.onForeground).then(
+      () => {
+        foregroundReady = foregroundFor === app;
+      },
+      () => {
+        foregroundFor = null;
+      }
+    );
   }
   const prev = readReg(d.storage);
   const fresh =
@@ -201,7 +256,12 @@ export async function enablePush(deps: Partial<PushDeps> = {}): Promise<EnableRe
 /** App start / household ready: refresh the token silently when permission is already granted. */
 export async function refreshPush(deps: Partial<PushDeps> = {}): Promise<void> {
   const d = withDefaults(deps);
-  if (pushSupport(d) !== 'granted') return;
+  const support = pushSupport(d);
+  // Blocked or reset: the browser dropped its push subscription, so register afresh once allowed.
+  if ((support === 'denied' || support === 'default') && readReg(d.storage) !== null) {
+    writeReg(d.storage, null);
+  }
+  if (support !== 'granted') return;
   try {
     await register(d, false);
   } catch (e) {
@@ -210,8 +270,40 @@ export async function refreshPush(deps: Partial<PushDeps> = {}): Promise<void> {
 }
 
 /** The household was left (its device docs are deleted by the repository): register anew later. */
-export function forgetPushRegistration(storage: StorageLike | null = safeLocalStorage()): void {
+export function forgetPushRegistration(storage: StorageLike | null = localStore()): void {
   writeReg(storage, null);
+}
+
+/**
+ * Notifications re-allowed (system or site settings) while the app is open: registers this device
+ * when the app comes back to the foreground, or when the Permissions API reports the change,
+ * without waiting for the next cold start (a block in between forgets the old registration, see
+ * refreshPush). Loads nothing while registered or not allowed. Returns an unsubscribe.
+ */
+export function watchPushPermission(
+  win: Window = window,
+  deps: Partial<PushDeps> = {}
+): () => void {
+  const check = () => {
+    if (win.document.visibilityState === 'hidden') return;
+    if (pushSupport(deps) !== 'granted' || !pushRegistered(deps)) void refreshPush(deps);
+  };
+  win.document.addEventListener('visibilitychange', check);
+  let status: PermissionStatus | null = null;
+  let disposed = false;
+  win.navigator.permissions
+    ?.query({ name: 'notifications' })
+    .then((s) => {
+      if (disposed) return;
+      status = s;
+      s.addEventListener('change', check);
+    })
+    .catch(() => {});
+  return () => {
+    disposed = true;
+    win.document.removeEventListener('visibilitychange', check);
+    status?.removeEventListener('change', check);
+  };
 }
 
 /** Sign-out: removes this device's doc and FCM token. Best effort, bounded; never rejects. */
@@ -256,14 +348,21 @@ function showForeground(msg: ForegroundMessage): void {
 }
 
 /**
- * Page side of the SW's notificationclick fallback: an uncontrolled window cannot be navigated by
- * the SW, so it posts { type: 'NAVIGATE', url }. Returns an unsubscribe.
+ * Page side of the SW's messages. Returns an unsubscribe.
+ *   PUSH_PING   before handing a push to a visible window, the SW asks through a MessagePort
+ *               whether our foreground handler is wired here; it shows the notification otherwise
+ *   NAVIGATE    the notificationclick fallback: an uncontrolled window cannot be navigated by the
+ *               SW, so it posts { type: 'NAVIGATE', url }
  */
-export function listenForSwNavigation(win: Window = window): () => void {
+export function listenForSwMessages(win: Window = window): () => void {
   const sw = win.navigator.serviceWorker as ServiceWorkerContainer | undefined;
   if (!sw) return () => {};
   const onMessage = (e: MessageEvent) => {
     const data = e.data as { type?: unknown; url?: unknown } | null;
+    if (data?.type === 'PUSH_PING') {
+      e.ports[0]?.postMessage(foregroundReady);
+      return;
+    }
     if (data?.type !== 'NAVIGATE' || typeof data.url !== 'string') return;
     const hash = appHash(data.url, new URL('./', win.document.baseURI).href);
     if (hash) router.navigate(hash);
