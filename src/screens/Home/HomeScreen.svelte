@@ -18,6 +18,10 @@
    *               owner's avatar, or the empty seat ("לקחת": me, or ask anyone at once), or a
    *               request that waits ("מחכה לדני"). Past six tasks it folds into category groups of
    *               three with "עוד N" (HomeList)
+   *   choosing    "בחירה" in the bar, or a long press on any row: rows show checkboxes, the bar
+   *               reads "ביטול · נבחרו 3 · בחירת הכל" (the visible list), and a bar at the bottom
+   *               offers "מחיקה (3)" (one snackbar, one undo) and "אני לוקח/ת (2)" (the free ones).
+   *               "ביטול", Escape, Back, or an action ends it (selection.svelte.ts)
    * Adding: quick add's last task (homeView.lastAdded) and a list's tasks (homeView.addedBatch)
    * switch the bar to a view that lists them, stay in sight even inside a folded group
    * (homeView.fresh), and are scrolled to and washed for a moment (revealAdded.ts). Alone in the
@@ -39,13 +43,16 @@
   import TaskList from '$components/task/TaskList.svelte';
   import Seat from '$components/task/Seat.svelte';
   import { acceptRequest, declineRequest } from '$components/task/actions';
+  import { watchClose } from '$components/task/closeWatch';
   import { isRequestFor } from '$lib/domain/buckets';
   import {
+    groupByCategory,
     homeList,
     isFree,
     matchesWho,
     nextTabWithTasks,
     preview,
+    shouldGroup,
     tabCounts,
     type HomeTab,
     type HomeView
@@ -60,7 +67,11 @@
   import { clock } from '$lib/state/clock.svelte';
   import { sync } from '$lib/state/sync.svelte';
   import { reducedMotion } from '$lib/platform/motion';
+  import { haptic } from '$lib/platform/haptics';
+  import { ui } from '$lib/state/ui.svelte';
   import PulseCard from './PulseCard.svelte';
+  import SelectionBar from './SelectionBar.svelte';
+  import { homeSelection } from './selection.svelte';
   import HomeControls from './HomeControls.svelte';
   import HomeList from './HomeList.svelte';
   import MoreToggle from './MoreToggle.svelte';
@@ -241,6 +252,90 @@
       : [...homeView.expanded, 'attention'];
   }
 
+  // ── Choosing several ────────────────────────────────────────────────────────────
+  const selecting = $derived(homeSelection.active);
+  /** Everything Home lists: only these can stay chosen. */
+  const listed = $derived(
+    new Set([...groups.attention, ...groups.requested, ...list].map((task) => task.id))
+  );
+  const chosen = $derived(tasks.open.filter((task) => homeSelection.has(task.id)));
+  const chosenFree = $derived(chosen.filter(isUnowned));
+  const allChosen = $derived(list.length > 0 && list.every((task) => homeSelection.has(task.id)));
+
+  // A tab or chip that hides a chosen task, or a task that left (done, deleted), lets it go.
+  $effect(() => {
+    if (!homeSelection.active) return;
+    const ids = listed;
+    untrack(() => {
+      if (ids.size === 0) homeSelection.exit();
+      else homeSelection.keepOnly(ids);
+    });
+  });
+
+  // Android's Back (and Escape) leaves the mode instead of the screen; leaving Home ends it too.
+  $effect(() => {
+    if (!homeSelection.active) return;
+    return watchClose(() => homeSelection.exit());
+  });
+  $effect(() => () => homeSelection.exit());
+
+  function onkeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || e.defaultPrevented || !homeSelection.active) return;
+    if (router.sheet !== null) return;
+    e.preventDefault();
+    homeSelection.exit();
+  }
+
+  /** "בחירת הכל": the whole visible list, its folded groups opened so every chosen row shows. */
+  function chooseAll() {
+    const ids = list.map((task) => task.id);
+    if (allChosen) {
+      homeSelection.release(ids);
+      return;
+    }
+    haptic('select');
+    homeSelection.choose(ids);
+    if (shouldGroup(list.length)) {
+      const keys = groupByCategory(list).map((g) => g.key);
+      homeView.expanded = [...new Set([...homeView.expanded, ...keys])];
+    }
+  }
+
+  function deleteChosen() {
+    const ids = chosen.map((task) => task.id);
+    if (ids.length === 0) return;
+    haptic('select');
+    tasks.removeMany(ids, t.select.deleted);
+    homeSelection.exit();
+  }
+
+  async function takeChosen() {
+    const ids = chosenFree.map((task) => task.id);
+    if (ids.length === 0) return;
+    haptic('take');
+    homeSelection.exit();
+    const { taken, lost } = await tasks.takeMany(ids);
+    if (lost.length > 0) {
+      haptic('warn');
+      ui.show(t.select.takenSome(taken.length, lost.length));
+    } else if (taken.length > 0) {
+      ui.show(t.select.taken(taken.length));
+    }
+  }
+
+  const selectControls = $derived(
+    listed.size > 0
+      ? {
+          active: selecting,
+          count: homeSelection.count,
+          all: allChosen,
+          onstart: () => homeSelection.start(),
+          onall: chooseAll,
+          oncancel: () => homeSelection.exit()
+        }
+      : undefined
+  );
+
   // ── Pulse ──────────────────────────────────────────────────────────────────────
   let attentionEl: HTMLElement | undefined = $state();
   let requestedEl: HTMLElement | undefined = $state();
@@ -262,7 +357,7 @@
 <!-- Every row ends with its seat: who does it, or take it / ask someone. A request to me answers
      below the meta line instead, with nothing at the end (the line already says who asked). -->
 {#snippet seat(task: Task)}
-  <Seat {task} />
+  <Seat {task} interactive={!selecting} />
 {/snippet}
 
 <!-- A request waiting for my answer: yes, or a gentle no. -->
@@ -278,7 +373,14 @@
   >
 {/snippet}
 
-<section class="home" aria-labelledby="home-title" bind:this={homeEl}>
+<svelte:window {onkeydown} />
+
+<section
+  class={['home', { selecting }]}
+  aria-labelledby="home-title"
+  data-selecting={selecting ? '' : undefined}
+  bind:this={homeEl}
+>
   <Header>
     <h1 id="home-title" class="greeting">
       {t.hello(greeting(clock.wall.hour))}<bdi data-me dir={textDir(me?.displayName)}
@@ -345,6 +447,7 @@
             trailing={seat}
             actions={requestActions}
             withActions={askedMe}
+            selection={homeSelection}
           >
             {#snippet footer()}
               {#if attention.hidden > 0 || attentionFoldable}
@@ -379,6 +482,7 @@
             variant="row"
             trailing={seat}
             actions={requestActions}
+            selection={homeSelection}
           />
         </section>
       {/if}
@@ -397,6 +501,7 @@
           who={homeView.filter}
           {others}
           onpick={pickView}
+          select={selectControls}
           bind:stuck
           bind:height={barHeight}
         />
@@ -407,6 +512,7 @@
                 tasks={list}
                 label={tabLabel(view.tab)}
                 trailing={seat}
+                selection={homeSelection}
               />
             {:else}
               <div class="bucket-empty" data-empty={view.tab}>
@@ -423,6 +529,16 @@
     {/if}
   </div>
 </section>
+
+{#if selecting}
+  <SelectionBar
+    count={chosen.length}
+    free={chosenFree.length}
+    me={me ?? 'n'}
+    ondelete={deleteChosen}
+    ontake={takeChosen}
+  />
+{/if}
 
 <style>
   .home {

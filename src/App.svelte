@@ -10,7 +10,8 @@
   //   ready         → 'auth' + 'household' routes; public routes and onboarding/profile and
   //                   onboarding/household → #/
   // A disallowed route never renders (the splash stands in for the frame before the redirect).
-  // The bottom nav and the FAB step aside while a sheet or the on-screen keyboard is open.
+  // The bottom nav and the FAB step aside while a sheet or the on-screen keyboard is open, and while
+  // Home's selection bar (choosing several tasks) takes their place.
   import { untrack } from 'svelte';
   import { router } from '$lib/router/router.svelte';
   import { rememberPendingInvite, session, takePendingInvite } from '$lib/state/session.svelte';
@@ -18,6 +19,7 @@
   import { viewport } from '$components/shell/viewport.svelte';
   import { startInstallCapture } from '$lib/platform/install';
   import HomeScreen from './screens/Home/HomeScreen.svelte';
+  import { homeSelection } from './screens/Home/selection.svelte';
   import MemoryScreen from './screens/Memory/MemoryScreen.svelte';
   import JarScreen from './screens/Jar/JarScreen.svelte';
   import HouseholdScreen from './screens/Household/HouseholdScreen.svelte';
@@ -52,7 +54,9 @@
   const tab = $derived(ready ? router.meta.tab : undefined);
   const fab = $derived(ready && router.meta.fab);
   const demoBanner = $derived(session.mode === 'demo' && route.name !== 'devGallery');
-  const chromeHidden = $derived(viewport.keyboardOpen || router.sheet !== null);
+  const chromeHidden = $derived(
+    viewport.keyboardOpen || router.sheet !== null || homeSelection.active
+  );
 
   startInstallCapture();
   viewport.start();

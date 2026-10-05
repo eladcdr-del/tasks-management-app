@@ -10,6 +10,11 @@
    *             or asks someone), else the owner's Avatar, or the dashed "?" when nobody took it yet
    *   pending   a micro-dot while the task has unsynced local writes
    *
+   * Choosing several (`selection`, Home): a long press on the card starts it with this card chosen.
+   * While it is on, a checkbox (a square in ink, not the round accent circle) takes the circle's
+   * place, a tap anywhere on the card toggles it, the chosen card gets a quiet ink wash, and nothing
+   * else on the card acts (no swipe, no link, no answers, no seat menu).
+   *
    * Two variants. `card` (default) is a raised card of its own. `row` is the compact line used in
    * Home's lists (TaskList variant="row" draws the surface and the hairlines between rows): the
    * meta row keeps to ONE line (badges that do not fit drop out, status badges come first) and the
@@ -43,6 +48,7 @@
   import { reducedMotion } from '$lib/platform/motion';
   import { openComplete, openSnooze } from './actions';
   import { armedAction, decideAxis, resist, revealing, threshold } from './swipe';
+  import { LONG_PRESS_MS, LONG_PRESS_SLOP, type RowSelection } from './selection';
 
   interface Props {
     task: Task;
@@ -57,6 +63,8 @@
     showCategory?: boolean;
     /** Swipe gestures (default on). */
     swipe?: boolean;
+    /** Choosing several tasks at once (Home): long press to start, then a tap toggles. */
+    selection?: RowSelection;
   }
 
   let {
@@ -66,8 +74,12 @@
     actions,
     trailing,
     showCategory = true,
-    swipe = true
+    swipe = true,
+    selection
   }: Props = $props();
+
+  const selecting = $derived(selection?.active ?? false);
+  const selected = $derived(selecting && (selection?.has(task.id) ?? false));
 
   const t = he.taskCard;
   const today = $derived(clock.today);
@@ -138,7 +150,15 @@
     }
   });
 
-  $effect(() => () => clearTimeout(timer));
+  $effect(() => () => {
+    clearTimeout(timer);
+    cancelPress();
+  });
+
+  /** Android shows a link's menu on a long press: not while the press is choosing the card. */
+  function oncontextmenu(e: MouseEvent) {
+    if (pressed || press || selecting) e.preventDefault();
+  }
 
   // ── Swipe ───────────────────────────────────────────────────────────────────
   let cardEl: HTMLElement | undefined = $state();
@@ -151,14 +171,46 @@
 
   const side = $derived(revealing(offset.current, rtl));
 
+  // ── Long press: starts choosing several (selection), with this card chosen ──────────
+  let press: { id: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null =
+    null;
+  let pressed = false;
+
+  function cancelPress() {
+    if (press) clearTimeout(press.timer);
+    press = null;
+  }
+
   function onpointerdown(e: PointerEvent) {
-    if (!swipe || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    if (selecting || (e.pointerType === 'mouse' && e.button !== 0)) return;
     const target = e.target as HTMLElement;
     if (target.closest('[data-no-swipe], .cc, .actions, .trail-actions')) return;
+    pressed = false;
+    if (selection) {
+      const id = e.pointerId;
+      cancelPress();
+      press = {
+        id,
+        x: e.clientX,
+        y: e.clientY,
+        timer: setTimeout(() => {
+          if (press?.id !== id) return;
+          press = null;
+          pressed = true;
+          drag = null; // a long press is not a swipe
+          haptic('select');
+          selection?.begin(task.id);
+        }, LONG_PRESS_MS)
+      };
+    }
+    if (!swipe) return;
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, claimed: false };
   }
 
   function onpointermove(e: PointerEvent) {
+    if (press && e.pointerId === press.id) {
+      if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > LONG_PRESS_SLOP) cancelPress();
+    }
     if (!drag || e.pointerId !== drag.id) return;
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
@@ -196,6 +248,13 @@
   }
 
   function endDrag(e: PointerEvent, cancelled: boolean) {
+    if (press?.id === e.pointerId) cancelPress();
+    if (pressed) {
+      // The press already chose this card: the click that ends it must not toggle it again (or
+      // open the task).
+      pressed = false;
+      if (!cancelled) swallowClick();
+    }
     if (!drag || e.pointerId !== drag.id) return;
     const claimed = drag.claimed;
     drag = null;
@@ -226,8 +285,12 @@
 {/snippet}
 
 <div
-  class={['swipe', { row: variant === 'row', muted: muted && variant === 'card', swiping }]}
+  class={[
+    'swipe',
+    { row: variant === 'row', muted: muted && variant === 'card', swiping, selecting, selected }
+  ]}
   data-task-id={task.id}
+  data-selected={selecting ? String(selected) : undefined}
   data-owner={task.ownerId ?? ''}
   data-variant={variant}
   data-muted={muted && variant === 'card' ? '' : undefined}
@@ -252,20 +315,41 @@
     {onpointermove}
     onpointerup={(e) => endDrag(e, false)}
     onpointercancel={(e) => endDrag(e, true)}
+    {oncontextmenu}
   >
-    <CompletionCircle label={task.title} bind:checked onchange={onCheck} />
+    {#if selecting}
+      <button
+        type="button"
+        role="checkbox"
+        class="pick"
+        aria-checked={selected}
+        aria-label={task.title}
+        data-pick
+        onclick={() => selection?.toggle(task.id)}
+      >
+        <span class="box" aria-hidden="true">
+          <Check size={16} strokeWidth={3} />
+        </span>
+      </button>
+    {:else}
+      <CompletionCircle label={task.title} bind:checked onchange={onCheck} />
+    {/if}
     <div class="body">
       {#if request.text && variant === 'card'}
         <p class={['requested', { quiet: request.kind !== 'askedMe' }]} data-request={request.kind}>
           <HandHelping class="req-icon" strokeWidth={1.75} aria-hidden="true" />{request.text}
         </p>
       {/if}
-      <a
-        class="title"
-        href={href('task', { id: task.id })}
-        dir={textDir(task.title)}
-        draggable="false">{task.title}</a
-      >
+      {#if selecting}
+        <span class="title" dir={textDir(task.title)}>{task.title}</span>
+      {:else}
+        <a
+          class="title link"
+          href={href('task', { id: task.id })}
+          dir={textDir(task.title)}
+          draggable="false">{task.title}</a
+        >
+      {/if}
       <div class="meta">
         {#if inlineRequest && request.kind === 'askedMe'}{@render requestMeta()}{/if}
         {#if task.priority === 'urgent'}
@@ -298,7 +382,7 @@
           <Badge variant="plain" icon={Repeat} label={recurrenceText(task.recurrence)} />
         {/if}
       </div>
-      {#if actions}<div class="actions">{@render actions(task)}</div>{/if}
+      {#if actions && !selecting}<div class="actions">{@render actions(task)}</div>{/if}
     </div>
     {#if trailing}
       <div class="trail trail-actions">{@render trailing(task)}</div>
@@ -416,18 +500,18 @@
   }
 
   /* The whole card opens the task; the circle and the action buttons sit above this layer. */
-  .title::after {
+  .title.link::after {
     content: '';
     position: absolute;
     inset: 0;
     border-radius: inherit;
   }
 
-  .title:focus-visible {
+  .title.link:focus-visible {
     outline: none;
   }
 
-  .title:focus-visible::after {
+  .title.link:focus-visible::after {
     outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
@@ -464,6 +548,93 @@
     align-items: center;
   }
 
+  /* ── Choosing several: a square ink checkbox; the whole card is its hit area ── */
+  .pick {
+    display: grid;
+    place-items: center;
+    flex: none;
+    inline-size: var(--tap-min);
+    block-size: var(--tap-min);
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--select-fg);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .pick::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border-radius: inherit;
+  }
+
+  .box {
+    display: grid;
+    place-items: center;
+    inline-size: 24px;
+    block-size: 24px;
+    border-radius: 7px;
+    box-shadow: inset 0 0 0 2px var(--ink-3);
+    background: var(--surface);
+    animation: pick-in var(--d-base) var(--ease-spring);
+    transition:
+      background-color var(--d-fast) var(--ease-out),
+      box-shadow var(--d-fast) var(--ease-out);
+  }
+
+  .box :global(svg) {
+    opacity: 0;
+    scale: 0.6;
+    transition:
+      opacity var(--d-fast) var(--ease-out),
+      scale var(--d-base) var(--ease-spring);
+  }
+
+  .pick[aria-checked='true'] .box {
+    background: var(--select-bg);
+    box-shadow: inset 0 0 0 2px var(--select-ring);
+  }
+
+  .pick[aria-checked='true'] .box :global(svg) {
+    opacity: 1;
+    scale: 1;
+  }
+
+  .pick:focus-visible {
+    outline: none;
+  }
+
+  .pick:focus-visible::after {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  @keyframes pick-in {
+    from {
+      scale: 0.5;
+      opacity: 0;
+    }
+  }
+
+  .selecting .card {
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: pointer;
+  }
+
+  .selected .card,
+  .row.selected .card {
+    background: color-mix(in srgb, var(--select-soft) 75%, var(--surface));
+  }
+
+  /* The seat is a picture while choosing: the tap belongs to the card. */
+  .selecting .trail-actions {
+    z-index: auto;
+    pointer-events: none;
+  }
+
   .pending {
     position: absolute;
     inset-block-start: 10px;
@@ -482,6 +653,7 @@
   }
 
   .row .card {
+    -webkit-touch-callout: none;
     align-items: center;
     gap: 0;
     min-block-size: 50px;
@@ -508,7 +680,7 @@
     line-height: 1.375;
   }
 
-  .row .title:focus-visible::after {
+  .row .title.link:focus-visible::after {
     outline-offset: -2px;
   }
 
@@ -612,6 +784,15 @@
   @media (prefers-reduced-motion: reduce) {
     .armed .under-label {
       animation: none;
+    }
+
+    .box {
+      animation: none;
+    }
+
+    .box :global(svg) {
+      scale: 1;
+      transition: opacity var(--d-fast) linear;
     }
   }
 </style>

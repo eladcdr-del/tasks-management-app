@@ -8,6 +8,7 @@ import { expect, openApp, shot, test } from './fixtures';
 // request is shown above, in "ביקשו ממך", not again in the list). Every row ends with its seat: the
 // owner's avatar, or the empty seat "לקחת" that takes the task or asks someone (seat.spec.ts has the
 // seat's own flows). The long-list behaviour (groups, the bar sticking) is in home-list.spec.ts.
+// Choosing several tasks at once is in home-select.spec.ts.
 
 interface Hooks {
   actAs(uid: string): Promise<void>;

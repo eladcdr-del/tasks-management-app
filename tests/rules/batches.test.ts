@@ -351,3 +351,33 @@ describe('take (transaction) and request (batch)', () => {
     await assertSucceeds(b.commit());
   });
 });
+
+describe('delete batch, several in a row (Home: choosing several tasks)', () => {
+  const IDS = ['task-a', 'task-b', 'task-c'];
+
+  beforeEach(async () => {
+    await seedTwoMemberHousehold(env());
+    for (const id of IDS) await seedTask(env(), id, { ownerId: id === 'task-b' ? BOB : null });
+  });
+
+  /** deleteTask: the task gone + a 'deleted' event in the deleter's name (one batch per task). */
+  const deleteBatch = (db: Firestore, actor: string, id: string) => {
+    const b = writeBatch(db);
+    b.delete(doc(db, path.task(id)));
+    b.set(doc(db, path.event(`del-${id}`)), eventDoc(actor, 'deleted', { taskId: id }));
+    return b;
+  };
+
+  it('allowed: one member deletes three tasks back to back, whoever holds them', async () => {
+    const db = as(env(), ALICE);
+    // The previous app version wrote exactly this batch for its single delete: unchanged.
+    for (const id of IDS) await assertSucceeds(deleteBatch(db, ALICE, id).commit());
+    for (const id of IDS) expect(await readAsAdmin(path.task(id))).toBeUndefined();
+  });
+
+  it('denied: an outsider; a deleted event in another member’s name', async () => {
+    await assertFails(deleteBatch(as(env(), EVE), EVE, 'task-a').commit());
+    await assertFails(deleteBatch(as(env(), ALICE), BOB, 'task-a').commit());
+    expect(await readAsAdmin(path.task('task-a'))).toBeTruthy();
+  });
+});

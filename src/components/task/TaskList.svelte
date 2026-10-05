@@ -5,13 +5,14 @@
   //
   // variant "card": separate raised cards. variant "row": compact rows on one raised surface with
   // inset hairlines between them (Home's lists), and an optional `footer` on that surface (a
-  // "עוד N" toggle).
+  // "עוד N" toggle). `selection` reaches every card (choosing several at once, Home).
   import type { Snippet } from 'svelte';
   import { flip } from 'svelte/animate';
   import { fade } from 'svelte/transition';
   import type { Task } from '$lib/domain/types';
   import { dur, easeOut, reducedMotion } from '$lib/platform/motion';
   import TaskCard from './TaskCard.svelte';
+  import type { RowSelection } from './selection';
 
   interface Props {
     tasks: readonly Task[];
@@ -34,6 +35,8 @@
     showCategory?: boolean;
     /** Under the rows, on the same surface (variant row). */
     footer?: Snippet;
+    /** Choosing several tasks at once (Home). */
+    selection?: RowSelection;
     id?: string;
     class?: string;
   }
@@ -50,6 +53,7 @@
     withTrailing,
     showCategory = true,
     footer,
+    selection,
     id,
     class: className
   }: Props = $props();
@@ -85,6 +89,7 @@
           muted={muted?.(task) ?? false}
           actions={act ? actions : undefined}
           trailing={trail ? trailing : undefined}
+          {selection}
         />
       </li>
     {/each}

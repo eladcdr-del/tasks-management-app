@@ -8,6 +8,7 @@
   import { tick } from 'svelte';
   import { CategoryIcon } from '$components/ui';
   import TaskList from '$components/task/TaskList.svelte';
+  import type { RowSelection } from '$components/task/selection';
   import { categoryLabel } from '$lib/domain/categories';
   import { groupByCategory, preview, shouldGroup, type GroupKey } from '$lib/domain/homeList';
   import type { Task } from '$lib/domain/types';
@@ -24,9 +25,11 @@
     withTrailing?: (task: Task) => boolean;
     actions?: Snippet<[Task]>;
     withActions?: (task: Task) => boolean;
+    /** Choosing several tasks at once. */
+    selection?: RowSelection;
   }
 
-  let { tasks, label, trailing, withTrailing, actions, withActions }: Props = $props();
+  let { tasks, label, trailing, withTrailing, actions, withActions, selection }: Props = $props();
 
   const grouped = $derived(shouldGroup(tasks.length));
   const groups = $derived(grouped ? groupByCategory(tasks) : []);
@@ -57,7 +60,16 @@
 </script>
 
 {#if !grouped}
-  <TaskList {tasks} {label} variant="row" {trailing} {withTrailing} {actions} {withActions} />
+  <TaskList
+    {tasks}
+    {label}
+    variant="row"
+    {trailing}
+    {withTrailing}
+    {actions}
+    {withActions}
+    {selection}
+  />
 {:else}
   <div class="groups">
     {#each groups as g (g.key)}
@@ -83,6 +95,7 @@
           {withTrailing}
           {actions}
           {withActions}
+          {selection}
         >
           {#snippet footer()}
             {#if p.hidden > 0 || foldable}

@@ -13,6 +13,7 @@ An app for managing household tasks together, built for mom and dad (Hebrew, RTL
 - **Many at once.** Paste or type a list (one task per line, e.g. from WhatsApp or notes) and each line becomes a task, with the same recognition and a preview before adding.
 - **Repeats that fit real life.** Every day, every few days, weeks or months, or on chosen weekdays.
 - **Fair split, no lecturing.** The end of every row shows who does it. A free task has an empty seat ("לקחת"): tap it to take the task yourself or to ask anyone in the house. A request waits for their answer ("אני לוקח/ת" or "לא מתאים לי"), and until then nobody holds the task. The app never suggests who should do it.
+- **Tidy up in one go.** Choose several tasks ("בחירה", or a long press on a row) and delete them or take them all at once. One "ביטול" brings back everything that was deleted.
 - **Things that get postponed actually move.** Each task shows its age ("פתוחה 3 שבועות") and how often it was snoozed. Plans are grouped into today, this week and later, and a gentle weekly nudge covers stuck tasks.
 - **No more "you forgot".** History records who did what. When completing a task you can add a note, cost, place, contact and photos.
 - **House memory.** Search past tasks: "מתי החלפנו מצבר ובאיזה מוסך?"
