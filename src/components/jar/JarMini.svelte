@@ -10,6 +10,7 @@
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
   import { href } from '$lib/router/routes';
+  import { household } from '$lib/state/household.svelte';
 
   interface Props {
     jar: TreatJar | null;
@@ -17,7 +18,8 @@
 
   let { jar }: Props = $props();
   const t = he.jar;
-  const full = $derived(isFull(jar));
+  const ids = $derived(household.memberIds ?? []);
+  const full = $derived(isFull(jar, ids));
   const uid = $props.id();
   const clipId = `${uid}-clip`;
 </script>
@@ -40,8 +42,8 @@
           clip-path={`url(#${clipId})`}
           x="0"
           width="24"
-          y={25 - 18 * progress(jar)}
-          height={18 * progress(jar) + 1}
+          y={25 - 18 * progress(jar, ids)}
+          height={18 * progress(jar, ids) + 1}
         />
       </svg>
     </span>

@@ -3,6 +3,7 @@ import type {
   ActivityEvent, AddressAs, AuthUser, Completion, DeviceToken, EarnedTreat, Household, Invite,
   InvitePreview, ISODate, Member, MemberColor, Photo, SyncState, Task, TaskDraft, TaskPatch, Unsubscribe, EncodedPhoto
 } from '../domain/types';
+import type { JarSettings } from '../domain/jar';
 
 export class RepoError extends Error { constructor(public code: 'not-found'|'expired'|'revoked'|'full'|'already-member'|'permission'|'popup-blocked'|'network'|'conflict'|'unknown', msg?: string) { super(msg ?? code); } }
 export type TakeResult = { ok: true } | { ok: false; takenBy: string };
@@ -37,11 +38,11 @@ export interface Repository {
   releaseTask(hid: string, id: string): void;                    // ownerId=null; on a request that waits it is cancelRequest
   snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
   completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: EncodedPhoto[]): Promise<CompleteResult>; // photos already compressed+thumbnailed by platform/image.ts; ≤3 stored
-  reopenTask(hid: string, id: string): void;                     // undo: status open, jar −1, delete auto-created next instance if untouched
+  reopenTask(hid: string, id: string): void;                     // undo: status open, jar back (applyReopen, this round's completions only), delete auto-created next instance if untouched
   deleteTask(hid: string, id: string): void;                     // UI delays call 5s for Undo
   getPhoto(hid: string, photoId: string): Promise<Photo | null>;
-  setJar(hid: string, j: { treat: string; target: number }): void;
-  redeemJar(hid: string): void;                                  // writes treats/{round}, resets jar
+  setJar(hid: string, j: JarSettings, backfill?: Record<string, number>): void; // domain/jar.ts cleanJarSettings; a first call starts round 1. backfill: backfillCounts (switching to 'each' mid-round)
+  redeemJar(hid: string): void;                                  // writes treats/{round} (who took part), starts the next round (applyRedeem)
   watchTreats(hid: string, cb: (t: EarnedTreat[]) => void): Unsubscribe;
   watchRecentEvents(hid: string, limit: number, cb: (e: ActivityEvent[]) => void): Unsubscribe;
   registerDevice(d: Omit<DeviceToken,'createdAt'|'updatedAt'>): Promise<void>;

@@ -20,7 +20,12 @@
 // (or the real time) in Asia/Jerusalem, exactly like the adapters do.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { RepoError, type NewMemberProfile, type Repository } from '$lib/data/repository';
+import {
+  RepoError,
+  type CompleteResult,
+  type NewMemberProfile,
+  type Repository
+} from '$lib/data/repository';
 import { addDays, addMonths, endOfWeek, todayISO } from '$lib/domain/dates';
 import { isInviteCode } from '$lib/domain/ids';
 import { applyRedeem } from '$lib/domain/jar';
@@ -1566,10 +1571,12 @@ export function runRepositoryContract(
 
     describe('jar and treats', () => {
       it('setJar starts a jar at 0 in round 1; changing it keeps count and round', async () => {
-        const { hid } = await solo();
+        const { hid, A } = await solo();
         repo.setJar(hid, { treat: 'ארוחה במסעדה', target: 10 });
         const jar = await jarOf(hid);
         expect(jar).toMatchObject({ treat: 'ארוחה במסעדה', target: 10, count: 0, round: 1 });
+        // A legacy {treat, target} is a 'together' jar; no tallies yet.
+        expect(jar).toMatchObject({ mode: 'together', counts: {} });
         expect(typeof jar.startedAt).toBe('number');
 
         for (const title of ['א', 'ב']) {
@@ -1581,7 +1588,8 @@ export function runRepositoryContract(
           ...jar,
           treat: 'סרט בקולנוע',
           target: 5,
-          count: 2
+          count: 2,
+          counts: { [A]: 2 }
         });
       });
 
@@ -1639,6 +1647,23 @@ export function runRepositoryContract(
         expect(await treatsOf(hid)).toEqual([]);
       });
 
+      it("a redeemed treat records who took part (the round's tallies)", async () => {
+        const { hid, A, B } = await pair();
+        repo.setJar(hid, { treat: 'ארוחה במסעדה', target: 3 });
+        await jarOf(hid);
+        await repo.completeTask(hid, await newTask(hid, { title: 'א' }), NO_DOCS, []);
+        await env.asUser(B);
+        await repo.completeTask(hid, await newTask(hid, { title: 'ב' }), NO_DOCS, []);
+        await repo.completeTask(hid, await newTask(hid, { title: 'ג' }), NO_DOCS, []);
+        await jarOf(hid, (j) => j.count === 3);
+        await tick();
+        repo.redeemJar(hid);
+        const jar = await jarOf(hid, (j) => j.round === 2);
+        expect(jar).toMatchObject({ count: 0, counts: {}, mode: 'together' });
+        const [treat] = await treatsOf(hid, (ts) => ts.length === 1);
+        expect(treat).toMatchObject({ mode: 'together', counts: { [A]: 1, [B]: 2 } });
+      });
+
       it('watchTreats lists earned treats newest round first', async () => {
         const { hid } = await solo();
         for (const treat of ['גלידה בנמל', 'סרט בקולנוע']) {
@@ -1656,6 +1681,169 @@ export function runRepositoryContract(
           ['2', 'סרט בקולנוע'],
           ['1', 'גלידה בנמל']
         ]);
+      });
+    });
+
+    // ── jar goal modes ───────────────────────────────────────────────────────
+
+    describe('jar goal modes ("כל אחד תורם")', () => {
+      /** `uid` completes `n` fresh tasks (signed in as them afterwards). */
+      async function closeTasks(hid: string, uid: string, n: number): Promise<CompleteResult[]> {
+        await env.asUser(uid);
+        const out: CompleteResult[] = [];
+        for (let i = 0; i < n; i++) {
+          const id = await newTask(hid, { title: `משימה ${uid} ${i}` });
+          out.push(await repo.completeTask(hid, id, NO_DOCS, []));
+        }
+        return out;
+      }
+
+      it('setJar each: a share per member, target = share × members, everyone at 0', async () => {
+        const { hid } = await pair();
+        repo.setJar(hid, { treat: 'ערב סרט', mode: 'each', share: 4 });
+        const jar = await jarOf(hid);
+        expect(jar).toMatchObject({
+          treat: 'ערב סרט',
+          mode: 'each',
+          share: 4,
+          target: 8,
+          count: 0,
+          counts: {},
+          round: 1
+        });
+      });
+
+      it('fills only when EVERY member has done their part; extra completions are a bonus', async () => {
+        const { hid, A, B } = await pair();
+        repo.setJar(hid, { treat: 'גלידה', mode: 'each', share: 2 });
+        await jarOf(hid);
+        // מיכל closes 3: two fill her part, the third is a bonus (count stays at her share).
+        const mine = await closeTasks(hid, A, 3);
+        expect(mine.map((r) => r.jarFilled)).toEqual([false, false, false]);
+        expect(await jarOf(hid, (j) => j.counts?.[A] === 3)).toMatchObject({
+          count: 2,
+          counts: { [A]: 3 }
+        });
+        // דני closes his part: the second one fills the jar.
+        const his = await closeTasks(hid, B, 2);
+        expect(his.map((r) => r.jarFilled)).toEqual([false, true]);
+        expect(await jarOf(hid, (j) => j.counts?.[B] === 2)).toMatchObject({
+          count: 4,
+          counts: { [A]: 3, [B]: 2 }
+        });
+        const es = await eventsOf(hid, (es) => es.some((e) => e.type === 'jar_filled'));
+        const filled = es.filter((e) => e.type === 'jar_filled');
+        expect(filled).toHaveLength(1);
+        expectEventShape(filled[0]!, 'jar_filled', B);
+      });
+
+      it("a reopen reverses exactly what the completion added, also for someone else's task", async () => {
+        const { hid, A, B } = await pair();
+        repo.setJar(hid, { treat: 'פיצה', mode: 'each', share: 2 });
+        await jarOf(hid);
+        await env.asUser(A);
+        const ids: string[] = [];
+        for (const title of ['א', 'ב', 'ג']) {
+          const id = await newTask(hid, { title });
+          await repo.completeTask(hid, id, NO_DOCS, []);
+          ids.push(id);
+        }
+        await jarOf(hid, (j) => j.counts?.[A] === 3);
+        // Undoing her third (a bonus) lowers her tally only.
+        repo.reopenTask(hid, ids[2]!);
+        expect(await jarOf(hid, (j) => j.counts?.[A] === 2)).toMatchObject({ count: 2 });
+        // דני reopens one of hers: HER tally and the count go down.
+        await env.asUser(B);
+        repo.reopenTask(hid, ids[1]!);
+        expect(await jarOf(hid, (j) => j.counts?.[A] === 1)).toMatchObject({
+          count: 1,
+          counts: { [A]: 1 }
+        });
+      });
+
+      it('redeem: the treat records mode, share and who did what; everyone starts from 0', async () => {
+        const { hid, A, B } = await pair();
+        repo.setJar(hid, { treat: 'בוקר בלי משימות', mode: 'each', share: 1 });
+        await jarOf(hid);
+        await closeTasks(hid, A, 2);
+        await closeTasks(hid, B, 1);
+        await jarOf(hid, (j) => j.counts?.[A] === 2 && j.counts?.[B] === 1);
+        await tick();
+        repo.redeemJar(hid);
+        const jar = await jarOf(hid, (j) => j.round === 2);
+        expect(jar).toMatchObject({ mode: 'each', share: 1, count: 0, counts: {} });
+        const [treat] = await treatsOf(hid, (ts) => ts.length === 1);
+        expect(treat).toMatchObject({
+          id: '1',
+          treat: 'בוקר בלי משימות',
+          mode: 'each',
+          share: 1,
+          target: 3,
+          counts: { [A]: 2, [B]: 1 }
+        });
+      });
+
+      it('a member who joins mid-round has a part too: not full until they do it', async () => {
+        const { hid, A } = await solo();
+        repo.setJar(hid, { treat: 'ארוחה', mode: 'each', share: 1 });
+        await jarOf(hid);
+        const [first] = await closeTasks(hid, A, 1);
+        expect(first!.jarFilled).toBe(true);
+        const invite = await repo.createInvite(hid);
+        const B = user('dani');
+        await env.asUser(B);
+        await repo.joinHousehold(invite.code, PROFILES.dani);
+        await householdOf(hid, (h) => h.memberIds.includes(B));
+        // Not full any more: redeeming changes nothing.
+        const cap = captureWriteErrors();
+        repo.redeemJar(hid);
+        await sentinel(hid);
+        cap.stop();
+        expect(await treatsOf(hid)).toEqual([]);
+        const [his] = await closeTasks(hid, B, 1);
+        expect(his!.jarFilled).toBe(true);
+      });
+
+      it('a reopen after the round changed leaves the new round alone', async () => {
+        const { hid, A } = await solo();
+        repo.setJar(hid, { treat: 'סרט', mode: 'each', share: 1 });
+        await jarOf(hid);
+        const id = await newTask(hid, { title: 'לתלות תמונה' });
+        await repo.completeTask(hid, id, NO_DOCS, []);
+        await jarOf(hid, (j) => j.counts?.[A] === 1);
+        await tick();
+        repo.redeemJar(hid);
+        await jarOf(hid, (j) => j.round === 2);
+        await closeTasks(hid, A, 1);
+        await jarOf(hid, (j) => j.counts?.[A] === 1 && j.round === 2);
+        repo.reopenTask(hid, id); // completed in round 1
+        await existing(hid, id, (t) => t.status === 'open');
+        await sentinel(hid);
+        expect(await jarOf(hid)).toMatchObject({ round: 2, count: 1, counts: { [A]: 1 } });
+      });
+
+      it('switching to each mid-round can attribute untracked completions (backfill)', async () => {
+        const { hid, A, B } = await pair();
+        repo.setJar(hid, { treat: 'גלידה', target: 10 });
+        await jarOf(hid);
+        await closeTasks(hid, A, 2);
+        await closeTasks(hid, B, 1);
+        await jarOf(hid, (j) => j.count === 3);
+        await env.asUser(A);
+        // More than the jar counted: rejected, nothing changes.
+        const cap = captureWriteErrors();
+        repo.setJar(hid, { treat: 'גלידה', mode: 'each', share: 3 }, { [A]: 3, [B]: 2 });
+        await waitFor(() => cap.errors.length > 0, 'write error');
+        cap.stop();
+        expect(await jarOf(hid)).toMatchObject({ mode: 'together', counts: { [A]: 2, [B]: 1 } });
+        // Within what the jar counted: accepted.
+        repo.setJar(hid, { treat: 'גלידה', mode: 'each', share: 3 }, { [A]: 2, [B]: 1 });
+        expect(await jarOf(hid, (j) => j.mode === 'each')).toMatchObject({
+          share: 3,
+          target: 6,
+          count: 3,
+          counts: { [A]: 2, [B]: 1 }
+        });
       });
     });
 

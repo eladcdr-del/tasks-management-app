@@ -109,6 +109,26 @@ export function jarStartPending(snap: Snap): boolean {
 
 // ── households ────────────────────────────────────────────────────────────────
 
+/** Per-member tallies: whole numbers ≥ 0 only (anything else is dropped). */
+function countsFrom(v: unknown): Record<string, number> | undefined {
+  if (!isMap(v)) return undefined;
+  const out: Record<string, number> = {};
+  for (const [uid, n] of Object.entries(v)) {
+    if (typeof n === 'number' && Number.isInteger(n) && n >= 0) out[uid] = n;
+  }
+  return out;
+}
+
+/** The goal-mode fields (domain/jar.ts), present only when stored: older docs have none. */
+function goalFrom(j: Record<string, unknown>): Pick<TreatJar, 'mode' | 'share' | 'counts'> {
+  const counts = countsFrom(j.counts);
+  return {
+    ...(j.mode === 'each' || j.mode === 'together' ? { mode: j.mode } : {}),
+    ...(typeof j.share === 'number' && Number.isInteger(j.share) ? { share: j.share } : {}),
+    ...(counts ? { counts } : {})
+  };
+}
+
 function jarFrom(v: unknown): TreatJar | null {
   if (!v || typeof v !== 'object') return null;
   const j = v as Record<string, unknown>;
@@ -117,7 +137,8 @@ function jarFrom(v: unknown): TreatJar | null {
     target: num(j.target),
     count: num(j.count),
     round: num(j.round, 1),
-    startedAt: millisOr0(j.startedAt)
+    startedAt: millisOr0(j.startedAt),
+    ...goalFrom(j)
   };
 }
 
@@ -408,7 +429,8 @@ export function treatFromSnap(snap: Snap, writeTime?: number): EarnedTreat {
     treat: str(d.treat),
     target: num(d.target),
     filledAt: millisOr0(d.filledAt),
-    redeemedAt: millis(d.redeemedAt)
+    redeemedAt: millis(d.redeemedAt),
+    ...goalFrom(d)
   };
 }
 

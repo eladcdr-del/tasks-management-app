@@ -28,8 +28,9 @@
 
   const t = he.jar;
   const jar = $derived(household.jar);
-  const full = $derived(isFull(jar));
-  const left = $derived(remaining(jar));
+  const ids = $derived(household.memberIds ?? []);
+  const full = $derived(isFull(jar, ids));
+  const left = $derived(remaining(jar, ids));
 
   /** Marble colours: this round's completions in order; older ones (not loaded) in member colours. */
   const colors = $derived.by((): (MemberColor | null)[] => {

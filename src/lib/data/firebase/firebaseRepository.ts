@@ -75,7 +75,15 @@ import {
 import { sortTasks } from '../../domain/buckets';
 import { isoDateAt, isValidISO, todayISO } from '../../domain/dates';
 import { inviteCode, isInviteCode } from '../../domain/ids';
-import { applyCompletion, isFull } from '../../domain/jar';
+import {
+  applyCompletion,
+  backfillAllowed,
+  completionStep,
+  isFull,
+  modeOf,
+  reopenStep,
+  type JarSettings
+} from '../../domain/jar';
 import { buildNextInstance, ensureAnchor, ruleOf, sameRule } from '../../domain/recurrence';
 import { pendingRequestOf } from '../../domain/requests';
 import { snoozePatch } from '../../domain/snooze';
@@ -233,6 +241,37 @@ class TrackedBatch implements Writer {
     this.batch.delete(ref);
     return this;
   }
+}
+
+/** A uid usable as a dotted field-path segment (`jar.counts.<uid>`): Firebase uids always are. */
+const FIELD_KEY_RE = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * The household update of a completion by `uid` (domain completionStep): the completer's tally
+ * +1 and, when the completion fills the jar, `jar.count` +1. Increments, so concurrent completions
+ * by different members both land.
+ */
+function completionJarWrite(jar: TreatJar, uid: string): DocumentData {
+  if (!FIELD_KEY_RE.test(uid)) return { 'jar.count': increment(1) }; // the classic write
+  return {
+    [`jar.counts.${uid}`]: increment(1),
+    ...(completionStep(jar, uid).count ? { 'jar.count': increment(1) } : {})
+  };
+}
+
+/** The household update undoing a completion by `completer` (domain reopenStep), or null. */
+function reopenJarWrite(
+  jar: TreatJar,
+  completer: string | null,
+  memberIds: readonly string[]
+): DocumentData | null {
+  const step = reopenStep(jar, completer, memberIds);
+  const data: DocumentData = {};
+  if (step.tally && completer !== null && FIELD_KEY_RE.test(completer)) {
+    data[`jar.counts.${completer}`] = increment(-1);
+  }
+  if (step.count) data['jar.count'] = increment(-1);
+  return Object.keys(data).length > 0 ? data : null;
 }
 
 function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
@@ -1592,8 +1631,8 @@ export async function createFirebaseRepositoryImpl(
 
           /**
            * The complete-batch of docs/firestore-schema.md §3 (≤ 3 photos, task done, completed
-           * event, jar +1 if there is a jar, the next instance, jar_filled). `household` null =
-           * unknown (offline and uncached): no jar write. `nextDoc` null = do not write it.
+           * event, the jar step if there is a jar, the next instance, jar_filled). `household`
+           * null = unknown (offline and uncached): no jar write. `nextDoc` null = do not write it.
            */
           const writeCompletion = (
             w: Writer,
@@ -1622,8 +1661,9 @@ export async function createFirebaseRepositoryImpl(
             });
             w.set(newEventRef(hid), eventDoc('completed', uid, task));
             const jar = household?.jar ?? null;
-            const jarFilled = !isFull(jar) && isFull(applyCompletion(jar));
-            if (jar) w.update(hRef, { 'jar.count': increment(1) });
+            const ids = household?.memberIds ?? [];
+            const jarFilled = !isFull(jar, ids) && isFull(applyCompletion(jar, uid), ids);
+            if (jar) w.update(hRef, completionJarWrite(jar, uid));
             if (next && writeNext) w.set(taskRef(hid, next.id), nextInstanceDoc(next, household));
             if (jarFilled) w.set(newEventRef(hid), eventDoc('jar_filled', uid, null));
             return jarFilled;
@@ -1728,9 +1768,12 @@ export async function createFirebaseRepositoryImpl(
           ...touch(uid)
         });
         for (const pid of task.completion?.photoIds ?? []) b.delete(photoRef(hid, pid));
-        // Never below 0 (the rules deny it): skipped when the jar is empty.
-        if (household?.jar && household.jar.count > 0) {
-          b.update(hhRef(hid), { 'jar.count': increment(-1) });
+        // Only a completion of the jar's current round comes back out of it (applyReopen); never
+        // below 0 (the rules deny it), so an empty step writes nothing.
+        const jar = household?.jar ?? null;
+        if (household && jar && completedAt >= jar.startedAt) {
+          const data = reopenJarWrite(jar, task.completedBy, household.memberIds);
+          if (data) b.update(hhRef(hid), data);
         }
         if (expected && autoNext && isUntouchedInstance(autoNext, expected)) {
           b.delete(taskRef(hid, expected.id));
@@ -1765,16 +1808,36 @@ export async function createFirebaseRepositoryImpl(
 
     // jar
 
-    setJar(hid: string, j: { treat: string; target: number }): void {
+    setJar(hid: string, j: JarSettings, backfill?: Record<string, number>): void {
       queued(async () => {
-        const { treat, target } = cleanJar(j);
+        cleanJar(j, 1); // fail fast, before any read
         const household = await mustReadHousehold(hid);
+        const { treat, mode, target, share } = cleanJar(j, household.memberCount);
+        const jar = household.jar;
+        if (backfill && !(jar && backfillAllowed(jar, household.memberIds, backfill))) {
+          invalid('the backfill does not match the jar');
+        }
         const b = newBatch();
-        if (household.jar) {
-          b.update(hhRef(hid), { 'jar.treat': treat, 'jar.target': target });
+        if (jar) {
+          b.update(hhRef(hid), {
+            'jar.treat': treat,
+            'jar.target': target,
+            'jar.mode': mode,
+            ...(share !== undefined ? { 'jar.share': share } : {}),
+            ...(backfill ? { 'jar.counts': { ...backfill } } : {})
+          });
         } else {
           b.update(hhRef(hid), {
-            jar: { treat, target, count: 0, round: 1, startedAt: serverTimestamp() }
+            jar: {
+              treat,
+              target,
+              mode,
+              ...(share !== undefined ? { share } : {}),
+              count: 0,
+              counts: {},
+              round: 1,
+              startedAt: serverTimestamp()
+            }
           });
         }
         return b;
@@ -1786,18 +1849,27 @@ export async function createFirebaseRepositoryImpl(
         const household = await mustReadHousehold(hid);
         const jar = household.jar;
         if (!jar) throw notFound('jar');
-        if (!isFull(jar)) throw new RepoError('conflict', 'the jar is not full yet');
+        if (!isFull(jar, household.memberIds)) {
+          throw new RepoError('conflict', 'the jar is not full yet');
+        }
         const filledAt = await filledAtOf(hid, jar);
+        const each = modeOf(jar) === 'each';
         const b = newBatch();
+        // Who took part: the round's tallies, exactly as the jar holds them (the rules compare).
         b.set(doc(treatsCol(hid), String(jar.round)), {
           treat: jar.treat,
           target: jar.target,
           filledAt: filledAt ?? serverTimestamp(),
-          redeemedAt: serverTimestamp()
+          redeemedAt: serverTimestamp(),
+          mode: modeOf(jar),
+          ...(each && jar.share !== undefined ? { share: jar.share } : {}),
+          counts: { ...jar.counts }
         });
-        // = applyRedeem: the surplus carries over, the round advances, the clock restarts.
+        // = applyRedeem: the round advances, the clock restarts, the tallies start over. Together
+        // the surplus carries over; each, everyone starts from 0.
         b.update(hhRef(hid), {
-          'jar.count': increment(-jar.target),
+          'jar.count': each ? 0 : increment(-jar.target),
+          'jar.counts': {},
           'jar.round': increment(1),
           'jar.startedAt': serverTimestamp()
         });
