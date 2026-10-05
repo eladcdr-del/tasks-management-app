@@ -21,7 +21,8 @@
 
 import { weekHorizon } from '$lib/domain/buckets';
 import { addDays, DEFAULT_TZ } from '$lib/domain/dates';
-import type { CategoryId, ISODate, Priority, RecurrenceFreq } from '$lib/domain/types';
+import type { RecurrenceRule } from '$lib/domain/recurrence';
+import type { CategoryId, ISODate, Priority } from '$lib/domain/types';
 import {
   collectDateHits,
   collectTimeHits,
@@ -109,7 +110,7 @@ export type ParseMatch =
   | (MatchBase & { kind: 'time'; field: 'dueTime'; value: string })
   | (MatchBase & { kind: 'priority'; field: 'priority'; value: Exclude<Priority, 'normal'> })
   | (MatchBase & { kind: 'category'; field: 'categoryId'; value: CategoryId })
-  | (MatchBase & { kind: 'recurrence'; field: 'recurrence'; value: { freq: RecurrenceFreq } });
+  | (MatchBase & { kind: 'recurrence'; field: 'recurrence'; value: RecurrenceRule });
 
 export interface ParseResult {
   title: string; // input minus consumed phrases, whitespace/punctuation tidied; never empty (falls back to raw)
@@ -121,7 +122,8 @@ export interface ParseResult {
   hardDeadline?: boolean;
   priority?: Priority;
   categoryId?: CategoryId;
-  recurrence?: { freq: RecurrenceFreq };
+  /** `{ freq, interval?, weekdays? }`: "כל שבועיים" → `{ freq: 'weekly', interval: 2 }`. */
+  recurrence?: RecurrenceRule;
   /** One chip per recognised phrase, sorted by position. */
   matches: ParseMatch[];
 }
@@ -360,10 +362,10 @@ function parseUnsafe(
   const hardDeadline =
     due !== undefined && (due.intro === 'hard' || hard !== undefined || category?.strong === true);
 
-  // scheduledFor: an explicit date, else the first day of "כל יום שלישי", else this week's plan for
-  // a weekly repeat with no day, else the day a lone time implies (decision (d): today if the time
-  // is still ahead, else tomorrow; a range is today)
-  const recurrenceDate = !date && recurrence?.iso ? recurrence.iso : undefined;
+  // scheduledFor: an explicit date, else the first day of "כל יום שלישי" / "כל שני וחמישי" / "כל
+  // יום" (today), else this week's plan for a weekly repeat with no day, else the day a lone time
+  // implies (decision (d): today if the time is still ahead, else tomorrow; a range is today)
+  let recurrenceDate = !date && recurrence?.iso ? recurrence.iso : undefined;
   const weeklyPlan =
     !date && !due && recurrence?.freq === 'weekly' && !recurrence.iso
       ? weekHorizon(today)
@@ -395,9 +397,20 @@ function parseUnsafe(
       .filter((c): c is Cand => c !== undefined)
       .map((c): Span => [c.start, c.end]);
     if (!dateOff && !namesUnparsedDay(text, consumed)) {
-      const [h, m] = clock.split(':').map(Number);
-      impliedDate = endClock || (h ?? 0) * 60 + (m ?? 0) > minutes ? today : addDays(today, 1);
+      impliedDate = endClock || clockMinutes(clock) > minutes ? today : addDays(today, 1);
     }
+  }
+  // "כל יום ב-8" said at 09:00: today's 08:00 has passed, so the series starts tomorrow (as a lone
+  // time would; a range stays today).
+  if (
+    recurrence?.freq === 'daily' &&
+    recurrenceDate === today &&
+    timeDay === recurrence &&
+    clock &&
+    !endClock &&
+    clockMinutes(clock) <= minutes
+  ) {
+    recurrenceDate = addDays(today, 1);
   }
   // A time with no day would be saved where nothing shows it: it stays in the title (no chip).
   const dueTime = clock && (timeDay || impliedDate) ? clock : undefined;
@@ -464,18 +477,21 @@ function parseUnsafe(
       label: categoryLabel(category.id)
     });
   }
-  if (recurrence?.freq) {
+  const rule = recurrence ? ruleOfCand(recurrence) : undefined;
+  if (recurrence && rule) {
     const alsoSets = recurrenceDate
       ? { scheduledFor: recurrenceDate }
       : weeklyPlan
         ? { scheduledFor: weeklyPlan, weekPlan: true as const }
         : undefined;
+    // "כל יום" starts today (or tomorrow): no date on its chip; a named day shows its first date
+    const shownDate = rule.freq === 'daily' ? undefined : recurrenceDate;
     matches.push({
       kind: 'recurrence',
       ...base('recurrence', recurrence),
       field: 'recurrence',
-      value: { freq: recurrence.freq },
-      label: recurrenceLabel(recurrence.freq, recurrenceDate, today, recurrence.dayPart),
+      value: rule,
+      label: recurrenceLabel(rule, shownDate, today, recurrence.dayPart),
       ...(alsoSets ? { alsoSets } : {})
     });
   }
@@ -490,6 +506,24 @@ function parseUnsafe(
   if (hardDeadline) result.hardDeadline = true;
   if (priority?.priority) result.priority = priority.priority;
   if (category) result.categoryId = category.id;
-  if (recurrence?.freq) result.recurrence = { freq: recurrence.freq };
+  if (rule) result.recurrence = { ...rule };
   return result;
+}
+
+/** 'HH:mm' → minutes after midnight. */
+function clockMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
+
+/** The canonical rule a recurrence candidate stands for: `{ freq, interval?, weekdays? }`. */
+function ruleOfCand(c: Cand): RecurrenceRule | undefined {
+  if (!c.freq) return undefined;
+  return {
+    freq: c.freq,
+    ...(c.interval !== undefined && c.interval > 1 ? { interval: c.interval } : {}),
+    ...(c.freq === 'weekly' && c.weekdays && c.weekdays.length > 1
+      ? { weekdays: [...c.weekdays] }
+      : {})
+  };
 }

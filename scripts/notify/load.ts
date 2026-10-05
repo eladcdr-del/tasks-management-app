@@ -13,6 +13,8 @@ import type {
   Member,
   MemberColor,
   NotifyPrefs,
+  Recurrence,
+  RecurrenceFreq,
   Task
 } from './types.ts';
 import { isValidISO } from './time.ts';
@@ -95,10 +97,36 @@ export function normalizeMember(uid: string, raw: DocumentData): Member {
   };
 }
 
+const FREQS: readonly RecurrenceFreq[] = ['daily', 'weekly', 'monthly', 'yearly'];
+const isWhole = (v: unknown, min: number, max: number): v is number =>
+  typeof v === 'number' && Number.isInteger(v) && v >= min && v <= max;
+
+/**
+ * The stored recurrence (the app's rule, read like its converter does): `freq` one of the four,
+ * `interval` only when a whole 2..99, `weekdays` only as valid days of a weekly rule (sorted,
+ * unique), `anchor` only when a date. Unknown or malformed parts read as missing; null for no rule.
+ * The notifier only carries it along today (nothing it sends depends on the rule).
+ */
+export function normalizeRecurrence(rec: Record<string, unknown>): Recurrence | null {
+  const freq = rec.freq;
+  if (typeof freq !== 'string' || !(FREQS as readonly string[]).includes(freq)) return null;
+  const days =
+    freq === 'weekly' && Array.isArray(rec.weekdays)
+      ? [...new Set(rec.weekdays.filter((d): d is number => isWhole(d, 0, 6)))].sort(
+          (a, b) => a - b
+        )
+      : [];
+  return {
+    freq: freq as RecurrenceFreq,
+    ...(isWhole(rec.interval, 2, 99) ? { interval: rec.interval } : {}),
+    ...(days.length > 0 ? { weekdays: days } : {}),
+    ...(isValidISO(rec.anchor) ? { anchor: rec.anchor } : {})
+  };
+}
+
 export function normalizeTask(id: string, raw: DocumentData): Task {
   const d = obj(toPlain(raw));
   const rec = obj(d.recurrence);
-  const freq = rec.freq;
   return {
     id,
     title: str(d.title),
@@ -118,10 +146,7 @@ export function normalizeTask(id: string, raw: DocumentData): Task {
     dueDate: isoOrNull(d.dueDate),
     dueTime: typeof d.dueTime === 'string' && /^\d{2}:\d{2}$/.test(d.dueTime) ? d.dueTime : null,
     hardDeadline: d.hardDeadline === true,
-    recurrence:
-      freq === 'weekly' || freq === 'monthly' || freq === 'yearly'
-        ? { freq, ...(isValidISO(rec.anchor) ? { anchor: rec.anchor } : {}) }
-        : null,
+    recurrence: normalizeRecurrence(rec),
     seriesId: strOrNull(d.seriesId),
     status: d.status === 'done' ? 'done' : 'open',
     snoozeCount: num(d.snoozeCount),

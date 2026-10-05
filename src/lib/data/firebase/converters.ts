@@ -5,8 +5,8 @@
 //    (offline, or in flight) already carries a value; `Task.pending` = metadata.hasPendingWrites.
 //    Objects are rebuilt field by field, so unknown stored keys are dropped.
 //  - Writes: the full documents the rules accept. "Now" fields are serverTimestamp(); the optional
-//    `recurrence.anchor` is omitted when undefined (never null/undefined); `id`, `uid`, `code`,
-//    `deviceId` and `pending` are never written.
+//    `recurrence.anchor` / `interval` / `weekdays` are omitted when undefined (never null/undefined;
+//    interval 1 is omitted too); `id`, `uid`, `code`, `deviceId` and `pending` are never written.
 
 import {
   serverTimestamp,
@@ -29,10 +29,12 @@ import type {
   NotifyPrefs,
   Photo,
   Priority,
+  Recurrence,
   RecurrenceFreq,
   Task,
   TreatJar
 } from '../../domain/types';
+import { intervalOf, normalizeRecurrence, weekdaysOf } from '../../domain/recurrence';
 
 export const READ_OPTIONS: SnapshotOptions = { serverTimestamps: 'estimate' };
 
@@ -193,18 +195,42 @@ export function memberDoc(m: MemberWrite): DocumentData {
 
 // ── tasks ─────────────────────────────────────────────────────────────────────
 
+/**
+ * The stored recurrence, read defensively: `interval` only when it is a whole number 2..99 and
+ * `weekdays` only as valid days of a weekly rule (sorted, unique); anything else reads as missing,
+ * i.e. its default (every 1 period, the anchor's weekday). A document written before interval and
+ * weekdays existed reads exactly as before.
+ */
 function recurrenceFrom(v: unknown): Task['recurrence'] {
   if (!v || typeof v !== 'object') return null;
   const r = v as Record<string, unknown>;
   if (typeof r.freq !== 'string') return null;
   const freq = r.freq as RecurrenceFreq;
-  return typeof r.anchor === 'string' ? { freq, anchor: r.anchor } : { freq };
+  const raw = { freq, interval: r.interval, weekdays: r.weekdays } as Recurrence;
+  const interval = intervalOf(raw);
+  const weekdays = weekdaysOf(raw);
+  return {
+    freq,
+    ...(interval > 1 ? { interval } : {}),
+    ...(weekdays ? { weekdays } : {}),
+    ...(typeof r.anchor === 'string' ? { anchor: r.anchor } : {})
+  };
 }
 
-/** The stored recurrence: `{freq}` or `{freq, anchor}`; never an `anchor: undefined` key. */
+/**
+ * The stored recurrence, canonical (normalizeRecurrence): `{freq}` plus `interval` only when it is
+ * not 1, `weekdays` only on a weekly rule that lists days, `anchor` only when set. Never a key with
+ * an `undefined` value. A plain rule is exactly `{freq}` / `{freq, anchor}`, as older clients write.
+ */
 export function recurrenceDoc(r: Task['recurrence']): DocumentData | null {
   if (r === null) return null;
-  return r.anchor === undefined ? { freq: r.freq } : { freq: r.freq, anchor: r.anchor };
+  const n = normalizeRecurrence(r);
+  return {
+    freq: n.freq,
+    ...(n.interval !== undefined ? { interval: n.interval } : {}),
+    ...(n.weekdays !== undefined ? { weekdays: [...n.weekdays] } : {}),
+    ...(n.anchor !== undefined ? { anchor: n.anchor } : {})
+  };
 }
 
 function completionFrom(v: unknown): Completion | null {

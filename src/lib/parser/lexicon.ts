@@ -527,8 +527,12 @@ export const SHIN_WORDS_NOT_CLAUSE = [
 
 // ───────────────────────────── recurrence ─────────────────────────────
 
-/** Unambiguous recurrence phrases, anywhere in the line. */
+/**
+ * Unambiguous recurrence phrases, anywhere in the line. (Daily phrases are DAILY_PHRASES: they need
+ * the vetoes of DAILY_VETO_NEXT.)
+ */
 export const RECURRENCE_PHRASES: Readonly<Record<RecurrenceFreq, readonly string[]>> = {
+  daily: [],
   weekly: ['כל שבוע', 'פעם בשבוע'],
   monthly: ['כל חודש', 'פעם בחודש'],
   yearly: ['כל שנה', 'פעם בשנה']
@@ -539,12 +543,65 @@ export const RECURRENCE_PHRASES: Readonly<Record<RecurrenceFreq, readonly string
  * yearly task), so they count only at the start of the line, after punctuation, or after "באופן".
  */
 export const RECURRENCE_ADJECTIVES: Readonly<Record<RecurrenceFreq, readonly string[]>> = {
+  daily: ['יומי', 'יומית'],
   weekly: ['שבועי', 'שבועית'],
   monthly: ['חודשי', 'חודשית'],
   yearly: ['שנתי', 'שנתית']
 };
 /** "באופן שבועי" (on a weekly basis). */
 export const ADVERB_LEAD = 'באופן';
+
+/** "כל יום", "כל יום ויום", "פעם ביום": every day (unless a DAILY_VETO_NEXT word follows). */
+export const DAILY_PHRASES = ['כל יום', 'כל יום ויום', 'פעם ביום'];
+/**
+ * "כל יום הולדת" (every birthday), "כל יום עבודה", "כל יום חול": "כל יום" + one of these names a
+ * kind of day, not every day. (A weekday name or letter after it is "כל יום שלישי": weekly.)
+ */
+export const DAILY_VETO_NEXT = [
+  'הולדת',
+  'נישואין',
+  'נישואים',
+  'חול',
+  'עבודה',
+  'לימודים',
+  'חג',
+  'טוב',
+  'כיפור',
+  'הכיפורים',
+  'העצמאות',
+  'הזיכרון',
+  'הזכרון',
+  'שישי'
+];
+/** "כל 3 ימים", "פעם ב-3 שבועות": the plural unit after a count (1-99, digits or NUMBER_WORDS). */
+export const INTERVAL_UNITS: Readonly<Record<string, RecurrenceFreq>> = {
+  ימים: 'daily',
+  שבועות: 'weekly',
+  חודשים: 'monthly',
+  שנים: 'yearly'
+};
+/** "כל יומיים", "פעם בשבועיים": the dual forms carry the count 2. */
+export const INTERVAL_DUALS: Readonly<Record<string, RecurrenceFreq>> = {
+  יומיים: 'daily',
+  שבועיים: 'weekly',
+  חודשיים: 'monthly',
+  שנתיים: 'yearly'
+};
+/** "פעם ב…" (once every …): "פעם בשבועיים", "פעם ב-3 חודשים". */
+export const ONCE_WORD = 'פעם';
+/** "בימי שני וחמישי", "בימים א' וד'": the lead of a list of weekdays (a weekly repeat). */
+export const DAYS_OF_WORDS = ['ימי', 'ימים'];
+/**
+ * "פעמיים בשבוע בימים א' וד'": a count that only restates the list of days after it, consumed with
+ * the list. Alone ("פעמיים בשבוע") it names no days, so it is no recurrence and stays in the title.
+ */
+export const TIMES_A_WEEK = [
+  'פעמיים בשבוע',
+  'שלוש פעמים בשבוע',
+  'שלושה פעמים בשבוע',
+  'ארבע פעמים בשבוע',
+  'חמש פעמים בשבוע'
+];
 
 // ───────────────────────────── title tidy ─────────────────────────────
 

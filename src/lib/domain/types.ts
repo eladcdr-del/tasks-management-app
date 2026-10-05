@@ -6,7 +6,9 @@ export type MemberColor = 'terracotta'|'sage'|'slate'|'plum'|'ochre'|'teal';
 export type AddressAs = 'f'|'m'|'n';     // Hebrew verb forms: לוקחת / לוקח / לוקח/ת
 export type Priority = 'normal'|'high'|'urgent';
 export type CategoryId = 'car'|'shopping'|'home'|'health'|'finance'|'returns'|'family'|'other';
-export type RecurrenceFreq = 'weekly'|'monthly'|'yearly';
+export type RecurrenceFreq = 'daily'|'weekly'|'monthly'|'yearly';
+/** interval: every N periods (whole 1..99, missing = 1). weekdays: 0 = Sunday … 6 = Saturday, sorted and unique, weekly only (missing = the anchor's weekday). anchor: the series base date (set on create/first completion; never shifted by snooze). See domain/recurrence.ts. */
+export interface Recurrence { freq: RecurrenceFreq; interval?: number; weekdays?: number[]; anchor?: ISODate }
 export type Bucket = 'overdue'|'today'|'week'|'later';
 
 export interface NotifyPrefs { requests: boolean; reminders: boolean; partnerDone: boolean; weekly: boolean }
@@ -31,7 +33,7 @@ export interface Task {
   scheduledFor: ISODate | null;           // soft plan (היום / השבוע / date)
   weekPlan: boolean;                      // true: scheduledFor is the Saturday ending the planned week ("השבוע" / "בשבוע הבא") and is shown as a week, not a day
   dueDate: ISODate | null; dueTime: string | null /* 'HH:mm' */; hardDeadline: boolean;
-  recurrence: { freq: RecurrenceFreq; anchor?: ISODate } | null; seriesId: string | null; // anchor = series base date (set on create/first completion; never shifted by snooze)
+  recurrence: Recurrence | null; seriesId: string | null; // anchor = series base date (set on create/first completion; never shifted by snooze)
   status: 'open'|'done';
   snoozeCount: number; lastSnoozedAt: Millis | null;
   completedAt: Millis | null; completedBy: string | null; completion: Completion | null;

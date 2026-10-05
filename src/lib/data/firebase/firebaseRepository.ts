@@ -76,7 +76,7 @@ import { sortTasks } from '../../domain/buckets';
 import { isoDateAt, isValidISO, todayISO } from '../../domain/dates';
 import { inviteCode, isInviteCode } from '../../domain/ids';
 import { applyCompletion, isFull } from '../../domain/jar';
-import { buildNextInstance, ensureAnchor } from '../../domain/recurrence';
+import { buildNextInstance, ensureAnchor, ruleOf, sameRule } from '../../domain/recurrence';
 import { pendingRequestOf } from '../../domain/requests';
 import { snoozePatch } from '../../domain/snooze';
 import type {
@@ -271,20 +271,17 @@ const ownDate = (t: Pick<Task, 'dueDate' | 'scheduledFor'>): ISODate | null =>
 
 /**
  * The recurrence after an edit (same composition of ensureAnchor as the demo adapter): an explicit
- * anchor in the patch wins; a change of the instance's own date or of the frequency is a re-plan,
- * so the anchor is re-derived; anything else keeps the series' anchor.
+ * anchor in the patch wins; a change of the instance's own date or of the rule (frequency, interval
+ * or days) is a re-plan, so the anchor is re-derived; anything else keeps the series' anchor.
  */
 function recurrenceAfterEdit(before: Task, patch: TaskPatch, merged: Task): Task['recurrence'] {
   const rec = merged.recurrence;
   if (rec === null) return null;
   if (patch.recurrence?.anchor !== undefined) return ensureAnchor(merged);
-  const replanned =
-    before.recurrence === null ||
-    before.recurrence.freq !== rec.freq ||
-    ownDate(before) !== ownDate(merged);
+  const replanned = !sameRule(before.recurrence, rec) || ownDate(before) !== ownDate(merged);
   return ensureAnchor({
     ...merged,
-    recurrence: replanned ? { freq: rec.freq } : before.recurrence
+    recurrence: replanned ? ruleOf(rec) : before.recurrence
   });
 }
 

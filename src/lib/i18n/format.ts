@@ -19,6 +19,7 @@ import {
   todayISO,
   weekday
 } from '../domain/dates';
+import { intervalOf, weekdaysOf, type RecurrenceRule } from '../domain/recurrence';
 import {
   snoozeOptions,
   type SnoozeBlockedReason,
@@ -482,12 +483,94 @@ export const PRIORITY_LABELS: Readonly<Record<Priority, string>> = {
   urgent: 'דחופה'
 };
 
-/** Recurrence names. */
+/**
+ * The bare frequency names (interval 1, no listed days).
+ * @deprecated Use `recurrenceText(task.recurrence)`, which also reads interval and weekdays.
+ */
 export const RECURRENCE_LABELS: Readonly<Record<RecurrenceFreq, string>> = {
+  daily: 'כל יום',
   weekly: 'כל שבוע',
   monthly: 'כל חודש',
   yearly: 'כל שנה'
 };
+
+// ── Recurrence ────────────────────────────────────────────────────────────────
+
+/** Day letters with a geresh, as in "ימים א׳–ה׳"; Saturday is just "שבת" (as in WEEKDAY_SHORT). */
+const WEEKDAY_LETTERS = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'שבת'];
+
+/** "יום ראשון" … "שבת": the full day name (accessible names of the weekday toggles). */
+export function weekdayFullName(day: number): string {
+  if (!Number.isInteger(day) || day < 0 || day > 6) return '';
+  return day === 6 ? 'שבת' : `יום ${at(WEEKDAY_NAMES, day)}`;
+}
+
+/** Hebrew "and" joins the last item: "א׳ וד׳", "א׳, ג׳ וה׳". */
+function joinAnd(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} ו${items.at(-1) as string}`;
+}
+
+/**
+ * Days as letters, in week order: "א׳ וד׳", "ב׳, ד׳ וה׳", "ו׳ ושבת". A run of three or more
+ * consecutive days is a range, as Israelis write opening hours: "א׳–ה׳".
+ */
+function weekdayList(days: readonly number[]): string {
+  const items: string[] = [];
+  for (let i = 0; i < days.length;) {
+    let j = i;
+    while (j + 1 < days.length && (days[j + 1] as number) === (days[j] as number) + 1) j++;
+    const first = at(WEEKDAY_LETTERS, days[i] as number);
+    const last = at(WEEKDAY_LETTERS, days[j] as number);
+    if (j - i >= 2) items.push(`${first}–${last}`);
+    else for (let k = i; k <= j; k++) items.push(at(WEEKDAY_LETTERS, days[k] as number));
+    i = j + 1;
+  }
+  return joinAnd(items);
+}
+
+/** "ביום ב׳" / "בשבת" (one day) or "בימים א׳ וד׳" (several). */
+function onDays(days: readonly number[]): string {
+  if (days.length === 1)
+    return days[0] === 6 ? 'בשבת' : `ביום ${at(WEEKDAY_LETTERS, days[0] as number)}`;
+  return `בימים ${weekdayList(days)}`;
+}
+
+/**
+ * A recurrence in plain Hebrew, for the card, the detail screen and the chips:
+ *   daily     כל יום · כל יומיים · כל 3 ימים
+ *   weekly    כל שבוע · כל שבועיים · כל 3 שבועות
+ *   weekdays  כל יום ב׳ · כל שבת · בימים א׳ וד׳ · בימים א׳–ה׳ · כל יום (all seven)
+ *             every N weeks: כל שבועיים ביום ב׳ · כל 3 שבועות בימים א׳ וד׳
+ *   monthly   כל חודש · כל חודשיים · כל 3 חודשים
+ *   yearly    כל שנה · כל שנתיים · כל 3 שנים
+ * Reads interval and weekdays the way the domain does (a bad interval is 1; weekdays only on a
+ * weekly rule). '' for null.
+ */
+export function recurrenceText(rule: RecurrenceRule | null | undefined): string {
+  if (!rule) return '';
+  const n = intervalOf(rule);
+  switch (rule.freq) {
+    case 'daily':
+      return n === 1 ? 'כל יום' : `כל ${pluralDays(n)}`;
+    case 'weekly': {
+      const days = weekdaysOf(rule);
+      const every = `כל ${pluralWeeks(n)}`;
+      if (!days) return every;
+      if (n > 1) return `${every} ${onDays(days)}`;
+      if (days.length === 7) return 'כל יום';
+      if (days.length === 1)
+        return days[0] === 6 ? 'כל שבת' : `כל יום ${at(WEEKDAY_LETTERS, days[0] as number)}`;
+      return onDays(days);
+    }
+    case 'monthly':
+      return `כל ${pluralMonths(n)}`;
+    case 'yearly':
+      return `כל ${pluralYears(n)}`;
+    default:
+      return '';
+  }
+}
 
 // ── Time of day ───────────────────────────────────────────────────────────────
 

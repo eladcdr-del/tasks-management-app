@@ -103,7 +103,7 @@ describe('create', () => {
     ['weekPlan as a number', { weekPlan: 1 }],
     ['weekPlan null', { weekPlan: null }],
     ['weekPlan true without a scheduledFor', { weekPlan: true, scheduledFor: null }],
-    ['recurrence with unknown freq "daily"', { recurrence: { freq: 'daily' } }],
+    ['recurrence with unknown freq "hourly"', { recurrence: { freq: 'hourly' } }],
     ['recurrence with an extra key', { recurrence: { freq: 'weekly', every: 2 } }],
     ['recurrence anchor null', { recurrence: { freq: 'weekly', anchor: null } }],
     ['recurrence bad anchor', { recurrence: { freq: 'yearly', anchor: '31-10-2026' } }],

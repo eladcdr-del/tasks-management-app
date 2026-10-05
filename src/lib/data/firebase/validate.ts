@@ -6,6 +6,7 @@
 import { RepoError } from '../repository';
 import { DEFAULT_CATEGORIES } from '../../domain/categories';
 import { isValidISO } from '../../domain/dates';
+import { recurrenceProblem } from '../../domain/recurrence';
 import type {
   AddressAs,
   Completion,
@@ -18,7 +19,6 @@ import { ERROR_DETAIL } from './errors';
 
 const PRIORITIES: ReadonlySet<string> = new Set(['normal', 'high', 'urgent']);
 const CATEGORY_IDS: ReadonlySet<string> = new Set(DEFAULT_CATEGORIES.map((c) => c.id));
-const FREQS: ReadonlySet<string> = new Set(['weekly', 'monthly', 'yearly']);
 const COLORS: ReadonlySet<string> = new Set([
   'terracotta',
   'sage',
@@ -68,12 +68,8 @@ export function assertValidTask(t: TaskFields): void {
   }
   if (typeof t.hardDeadline !== 'boolean') invalid('hardDeadline must be a boolean');
   if (t.recurrence !== null) {
-    if (typeof t.recurrence !== 'object' || !FREQS.has(t.recurrence.freq)) {
-      invalid('unknown recurrence');
-    }
-    if (t.recurrence.anchor !== undefined && !isValidISO(t.recurrence.anchor)) {
-      invalid('recurrence anchor is not a date');
-    }
+    const problem = recurrenceProblem(t.recurrence);
+    if (problem) invalid(problem);
   }
 }
 

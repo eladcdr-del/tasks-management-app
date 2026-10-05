@@ -28,7 +28,13 @@ import { DEFAULT_CATEGORIES } from '../../domain/categories';
 import { isoDateAt, isValidISO, todayISO } from '../../domain/dates';
 import { inviteCode, isInviteCode, randomId } from '../../domain/ids';
 import { applyCompletion, applyRedeem, applyReopen, isFull } from '../../domain/jar';
-import { buildNextInstance, ensureAnchor } from '../../domain/recurrence';
+import {
+  buildNextInstance,
+  ensureAnchor,
+  recurrenceProblem,
+  ruleOf,
+  sameRule
+} from '../../domain/recurrence';
 import { pendingRequestOf } from '../../domain/requests';
 import { snoozePatch } from '../../domain/snooze';
 import type {
@@ -166,7 +172,6 @@ const PUSH_PENDING: ReadonlySet<EventType> = new Set([
 ]);
 const PRIORITIES: ReadonlySet<string> = new Set(['normal', 'high', 'urgent']);
 const CATEGORY_IDS: ReadonlySet<string> = new Set(DEFAULT_CATEGORIES.map((c) => c.id));
-const FREQS: ReadonlySet<string> = new Set(['weekly', 'monthly', 'yearly']);
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const TASK_PATCH_KEYS = [
@@ -235,8 +240,8 @@ function assertValidTask(t: Task): void {
   if (t.dueTime !== null && !TIME_RE.test(t.dueTime)) fail('dueTime must be HH:mm');
   if (typeof t.hardDeadline !== 'boolean') fail('hardDeadline must be a boolean');
   if (t.recurrence !== null) {
-    if (!FREQS.has(t.recurrence.freq)) fail('unknown recurrence');
-    if (t.recurrence.anchor !== undefined && !isValidISO(t.recurrence.anchor)) fail('bad anchor');
+    const problem = recurrenceProblem(t.recurrence);
+    if (problem) fail(problem);
   }
 }
 
@@ -245,20 +250,17 @@ const ownDate = (t: Pick<Task, 'dueDate' | 'scheduledFor'>): ISODate | null =>
 
 /**
  * The recurrence after an edit (recurrence.ts, ensureAnchor): an explicit anchor in the patch wins;
- * a change of the instance's own date or of the frequency is a re-plan, so the old anchor is dropped
- * and re-derived; anything else keeps the series' anchor.
+ * a change of the instance's own date or of the rule (frequency, interval or days) is a re-plan, so
+ * the old anchor is dropped and re-derived; anything else keeps the series' anchor.
  */
 function recurrenceAfterEdit(before: Task, patch: TaskPatch, merged: Task): Task['recurrence'] {
   const rec = merged.recurrence;
   if (rec === null) return null;
   if (patch.recurrence?.anchor !== undefined) return ensureAnchor(merged);
-  const replanned =
-    before.recurrence === null ||
-    before.recurrence.freq !== rec.freq ||
-    ownDate(before) !== ownDate(merged);
+  const replanned = !sameRule(before.recurrence, rec) || ownDate(before) !== ownDate(merged);
   return ensureAnchor({
     ...merged,
-    recurrence: replanned ? { freq: rec.freq } : before.recurrence
+    recurrence: replanned ? ruleOf(rec) : before.recurrence
   });
 }
 

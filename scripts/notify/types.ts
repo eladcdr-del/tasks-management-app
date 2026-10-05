@@ -11,7 +11,14 @@ export type AddressAs = 'f' | 'm' | 'n'; // female / male / neutral Hebrew verb 
 export type Priority = 'normal' | 'high' | 'urgent';
 export type CategoryId =
   'car' | 'shopping' | 'home' | 'health' | 'finance' | 'returns' | 'family' | 'other';
-export type RecurrenceFreq = 'weekly' | 'monthly' | 'yearly';
+export type RecurrenceFreq = 'daily' | 'weekly' | 'monthly' | 'yearly';
+/** interval 1..99 (missing = 1); weekdays 0 = Sunday … 6, weekly only (missing = the anchor's). */
+export interface Recurrence {
+  freq: RecurrenceFreq;
+  interval?: number;
+  weekdays?: number[];
+  anchor?: ISODate;
+}
 
 export interface NotifyPrefs {
   requests: boolean;
@@ -81,7 +88,7 @@ export interface Task {
   dueDate: ISODate | null;
   dueTime: string | null; // 'HH:mm'
   hardDeadline: boolean;
-  recurrence: { freq: RecurrenceFreq; anchor?: ISODate } | null;
+  recurrence: Recurrence | null;
   seriesId: string | null;
   status: 'open' | 'done';
   snoozeCount: number;

@@ -26,13 +26,16 @@ import {
   pluralYears,
   PRIORITY_LABELS,
   RECURRENCE_LABELS,
+  recurrenceText,
   relativeDayLabel,
   SNOOZE_LABELS,
   snoozeBlockedText,
   snoozedLabel,
   validForLabel,
+  weekdayFullName,
   whenChip
 } from './format';
+import type { RecurrenceRule } from '../domain/recurrence';
 
 /** Intl wraps currency in bidi marks and a no-break space; compare on the visible text. */
 const visible = (s: string) => s.replace(/[\u200E\u200F]/g, '').replace(/\u00A0/g, ' ');
@@ -756,7 +759,87 @@ describe('deadlineLabel (the hard-deadline badge)', () => {
 describe('PRIORITY_LABELS / RECURRENCE_LABELS', () => {
   it('names every priority and recurrence in Hebrew', () => {
     expect(PRIORITY_LABELS).toEqual({ normal: 'רגילה', high: 'חשובה', urgent: 'דחופה' });
-    expect(RECURRENCE_LABELS).toEqual({ weekly: 'כל שבוע', monthly: 'כל חודש', yearly: 'כל שנה' });
+    expect(RECURRENCE_LABELS).toEqual({
+      daily: 'כל יום',
+      weekly: 'כל שבוע',
+      monthly: 'כל חודש',
+      yearly: 'כל שנה'
+    });
+  });
+});
+
+describe('recurrenceText', () => {
+  it('every N days, weeks, months, years, with the Hebrew dual', () => {
+    const cases: Array<[RecurrenceRule, string]> = [
+      [{ freq: 'daily' }, 'כל יום'],
+      [{ freq: 'daily', interval: 2 }, 'כל יומיים'],
+      [{ freq: 'daily', interval: 3 }, 'כל 3 ימים'],
+      [{ freq: 'daily', interval: 10 }, 'כל 10 ימים'],
+      [{ freq: 'weekly' }, 'כל שבוע'],
+      [{ freq: 'weekly', interval: 2 }, 'כל שבועיים'],
+      [{ freq: 'weekly', interval: 3 }, 'כל 3 שבועות'],
+      [{ freq: 'monthly' }, 'כל חודש'],
+      [{ freq: 'monthly', interval: 2 }, 'כל חודשיים'],
+      [{ freq: 'monthly', interval: 6 }, 'כל 6 חודשים'],
+      [{ freq: 'yearly' }, 'כל שנה'],
+      [{ freq: 'yearly', interval: 2 }, 'כל שנתיים'],
+      [{ freq: 'yearly', interval: 5 }, 'כל 5 שנים']
+    ];
+    for (const [rule, text] of cases) expect(recurrenceText(rule), JSON.stringify(rule)).toBe(text);
+  });
+
+  it('listed weekdays, every week', () => {
+    const weekly = (weekdays: number[]) => recurrenceText({ freq: 'weekly', weekdays });
+    expect(weekly([1])).toBe('כל יום ב׳');
+    expect(weekly([6])).toBe('כל שבת');
+    expect(weekly([0, 3])).toBe('בימים א׳ וד׳');
+    expect(weekly([1, 4])).toBe('בימים ב׳ וה׳');
+    expect(weekly([5, 6])).toBe('בימים ו׳ ושבת');
+    expect(weekly([0, 2, 4])).toBe('בימים א׳, ג׳ וה׳');
+    expect(weekly([0, 1, 2, 3, 4])).toBe('בימים א׳–ה׳');
+    expect(weekly([0, 1, 2, 4])).toBe('בימים א׳–ג׳ וה׳');
+    expect(weekly([0, 1, 2, 3, 4, 5, 6])).toBe('כל יום');
+  });
+
+  it('listed weekdays, every N weeks', () => {
+    expect(recurrenceText({ freq: 'weekly', interval: 2, weekdays: [1] })).toBe(
+      'כל שבועיים ביום ב׳'
+    );
+    expect(recurrenceText({ freq: 'weekly', interval: 2, weekdays: [6] })).toBe('כל שבועיים בשבת');
+    expect(recurrenceText({ freq: 'weekly', interval: 3, weekdays: [0, 3] })).toBe(
+      'כל 3 שבועות בימים א׳ וד׳'
+    );
+  });
+
+  it('reads stored data the way the domain does', () => {
+    // unsorted / repeated days, a redundant interval, days on a non-weekly rule, a bad interval
+    expect(recurrenceText({ freq: 'weekly', weekdays: [3, 0, 3], interval: 1 })).toBe(
+      'בימים א׳ וד׳'
+    );
+    expect(recurrenceText({ freq: 'monthly', weekdays: [1] })).toBe('כל חודש');
+    expect(recurrenceText({ freq: 'daily', interval: 0 })).toBe('כל יום');
+    expect(recurrenceText({ freq: 'weekly', weekdays: [] })).toBe('כל שבוע');
+  });
+
+  it("'' for no recurrence or an unknown frequency (a newer client's)", () => {
+    expect(recurrenceText(null)).toBe('');
+    expect(recurrenceText(undefined)).toBe('');
+    expect(recurrenceText({ freq: 'hourly' } as unknown as RecurrenceRule)).toBe('');
+  });
+});
+
+describe('weekdayFullName', () => {
+  it('names each day for screen readers', () => {
+    expect([0, 1, 2, 3, 4, 5, 6].map(weekdayFullName)).toEqual([
+      'יום ראשון',
+      'יום שני',
+      'יום שלישי',
+      'יום רביעי',
+      'יום חמישי',
+      'יום שישי',
+      'שבת'
+    ]);
+    expect(weekdayFullName(7)).toBe('');
   });
 });
 

@@ -769,8 +769,13 @@ describe('recurrence', () => {
     expect(fields(`להשקות עציצים ${word}`)).toEqual({ title: `להשקות עציצים ${word}` });
   });
 
-  it('does not read "every two weeks" as weekly', () => {
-    expect(fields('להשקות עציצים כל שבועיים')).toEqual({ title: 'להשקות עציצים כל שבועיים' });
+  it('reads "every two weeks" as every 2 weeks, not as weekly (this week planned)', () => {
+    expect(fields('להשקות עציצים כל שבועיים')).toEqual({
+      title: 'להשקות עציצים',
+      scheduledFor: '2026-10-10',
+      weekPlan: true,
+      recurrence: { freq: 'weekly', interval: 2 }
+    });
   });
 
   it('combines with a date', () => {
