@@ -7,8 +7,8 @@ The Firebase adapter (step 2.2) must write exactly these shapes. Anything else i
 ## 1. Conventions (apply to every collection)
 
 - **Exact key sets.** Every listed field is present on every write of a full document (use `null`,
-  never omit) and no other field exists. The single optional key is `tasks.recurrence.anchor`:
-  omit it when absent; it is never `null` or `undefined`.
+  never omit) and no other field exists. The only optional keys are inside `tasks.recurrence`:
+  `anchor`, `interval` and `weekdays`. Omit them when absent; they are never `null` or `undefined`.
 - **Ids are not stored.** `Task.id`, `ActivityEvent.id`, `Photo.id`, `EarnedTreat.id` are the doc id;
   `Member.uid` is the members doc id; `Invite.code` is the invites doc id; `DeviceToken.deviceId` is
   the devices doc id. Converters strip them on write and inject them from `snap.id` on read.
@@ -25,7 +25,8 @@ The Firebase adapter (step 2.2) must write exactly these shapes. Anything else i
   `.length` client-side is safe.
 - **Enums:** color `terracotta|sage|slate|plum|ochre|teal`; addressAs `f|m|n`; priority
   `normal|high|urgent`; categoryId `car|shopping|home|health|finance|returns|family|other`; status
-  `open|done`; freq `weekly|monthly|yearly`; event types are listed under `events` below.
+  `open|done`; freq `daily|weekly|monthly|yearly` (`daily` since the recurrence feature); event
+  types are listed under `events` below.
 
 ## 2. Documents
 
@@ -100,7 +101,7 @@ nobody can remove others.
 | dueDate       | `'YYYY-MM-DD'` \| null    |                                 |                                        |
 | dueTime       | `'HH:mm'` \| null         | 00:00..23:59                    |                                        |
 | hardDeadline  | bool                      |                                 |                                        |
-| recurrence    | `{freq, anchor?}` \| null | anchor `'YYYY-MM-DD'` or absent |                                        |
+| recurrence    | Recurrence, below \| null | rules: see **Recurrence** below |                                        |
 | seriesId      | string 1..60 \| null      |                                 |                                        |
 | status        | `'open'` \| `'done'`      | `'open'`                        |                                        |
 | snoozeCount   | int ≥ 0                   |                                 | use `increment(1)`                     |
@@ -121,6 +122,29 @@ with a date. Anything that changes `scheduledFor` to a day sets `weekPlan: false
 `weekPlan: false` too, otherwise the write is denied.
 `Completion = {note: 0..2000, cost: null | number 0..10,000,000, place: 0..120, contact: 0..120,
 photoIds: string[] ≤ 3 (each 1..128)}`. Date regex: `YYYY-(01..12)-(01..31)`.
+
+**Recurrence** = `{freq, interval?, weekdays?, anchor?}` (semantics in `src/lib/domain/recurrence.ts`):
+
+| key      | type           | constraints                                                                                             |
+| -------- | -------------- | ------------------------------------------------------------------------------------------------------- |
+| freq     | string         | `daily` \| `weekly` \| `monthly` \| `yearly` (required)                                                 |
+| interval | int            | 1..99, optional: every N periods; missing = 1                                                           |
+| weekdays | int[]          | `weekly` only, optional: 1..7 strictly ascending days 0..6 (0 = Sunday); missing = the anchor's weekday |
+| anchor   | `'YYYY-MM-DD'` | optional: the series base date (set on create or at the first completion; a snooze never moves it)      |
+
+Clients write it canonically (`recurrenceDoc`): `interval` only when it is not 1, `weekdays` only on
+a weekly rule that lists days, so a plain rule is still exactly `{freq}` / `{freq, anchor}`, the shape
+the pre-feature client writes and the rules keep accepting. Reads are defensive: a malformed
+`interval` / `weekdays` reads as missing. With `weekdays`, the series runs on the listed days of every
+`interval`-th week counted from the anchor's (Sunday-based) week. The next instance is the first
+series date strictly after max(own date, completion date) and after the anchor.
+
+Compatibility with a client still on the pre-feature version (until it updates): it reads only
+`freq` and `anchor`, so it shows no label for `daily` and treats `interval` / `weekdays` series as
+plain weekly/monthly/yearly; completing such a task there writes the next instance as
+`{freq, anchor}` (accepted by the rules) and the series continues without its interval/days.
+Completing a `daily` task on that version fails on the device (its code cannot compute a daily next
+date), with nothing written. Documents written before the feature need no migration.
 
 ### `households/{hid}/events/{eventId}`: read M · create M · update/delete never
 

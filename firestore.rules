@@ -214,9 +214,30 @@ service cloud.firestore {
       return r == null
         || (r is map
             && r.keys().hasAll(['freq'])
-            && r.keys().hasOnly(['freq', 'anchor'])
-            && r.freq in ['weekly', 'monthly', 'yearly']
-            && (!('anchor' in r) || isIsoDate(r.anchor)));
+            && r.keys().hasOnly(['freq', 'anchor', 'interval', 'weekdays'])
+            && r.freq in ['daily', 'weekly', 'monthly', 'yearly']
+            && (!('anchor' in r) || isIsoDate(r.anchor))
+            && isRecurrenceRuleExtras(r));
+    }
+
+    // Optional rule fields (recurrence feature; both absent = the pre-feature shape):
+    //   interval  an int 1..99 ("every N periods")
+    //   weekdays  weekly only: 1-7 strictly ascending ints 0..6 (sorted, unique; 0 = Sunday)
+    function isRecurrenceRuleExtras(r) {
+      return (!('interval' in r) || isInt(r.interval, 1, 99))
+        && (!('weekdays' in r) || (r.freq == 'weekly' && isWeekdayList(r.weekdays)));
+    }
+
+    function isWeekdayList(w) {
+      return w is list && w.size() >= 1 && w.size() <= 7
+        && weekdayAt(w, 0) && weekdayAt(w, 1) && weekdayAt(w, 2) && weekdayAt(w, 3)
+        && weekdayAt(w, 4) && weekdayAt(w, 5) && weekdayAt(w, 6);
+    }
+
+    // w[i] (when present) is an int in 0..6 and greater than w[i - 1].
+    function weekdayAt(w, i) {
+      return w.size() <= i
+        || (w[i] is int && w[i] >= 0 && w[i] <= 6 && (i == 0 || w[i] > w[i - 1]));
     }
 
     function isPhotoId(v) {
