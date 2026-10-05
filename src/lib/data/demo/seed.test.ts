@@ -4,6 +4,7 @@ import { bucketInfo, groupTasks, needsAttention } from '../../domain/buckets';
 import { DEFAULT_CATEGORIES } from '../../domain/categories';
 import { addDays, diffDays, isoDateAt, todayISO } from '../../domain/dates';
 import { buildNextInstance, nextTaskId } from '../../domain/recurrence';
+import { pendingRequestOf } from '../../domain/requests';
 import { searchDoneTasks } from '../../domain/search';
 import type { DemoState } from './store';
 import { isDemoState } from './store';
@@ -96,21 +97,26 @@ describe('createSeed: open tasks on 2026-10-04', () => {
     expect(done).toHaveLength(14);
   });
 
-  it('fills every Home bucket: attention 3, waiting 3, today 4, week 5, later 4', () => {
-    const g = groupTasks(open, TODAY, memberIds);
+  it('fills every Home bucket for מיכל: attention 3, requested 1, waiting 3, today 4, week 5, later 4', () => {
+    const g = groupTasks(open, TODAY, memberIds, MICHAL);
     expect({
       attention: g.attention.length,
+      requested: g.requested.length,
       waiting: g.waiting.length,
       today: g.today.length,
       week: g.week.length,
       later: g.later.length
-    }).toEqual({ attention: 3, waiting: 3, today: 4, week: 5, later: 4 });
+    }).toEqual({ attention: 3, requested: 1, waiting: 3, today: 4, week: 5, later: 4 });
+    // דני asked her: for him the parcel waits for someone to take it.
+    const asDani = groupTasks(open, TODAY, memberIds, DANI);
+    expect(asDani.requested).toEqual([]);
+    expect(asDani.waiting.map((t) => t.id)).toContain('seed-post');
     const overdue = open.filter((t) => bucketInfo(t, TODAY).bucket === 'overdue');
     expect(overdue.map((t) => t.title)).toEqual(['להחזיר ספרים לספרייה']);
     const urgent = open.filter((t) => t.priority === 'urgent');
     expect(urgent).toHaveLength(2);
     expect(urgent.every((t) => needsAttention(t, TODAY))).toBe(true);
-    expect(open.filter((t) => t.ownerId === null)).toHaveLength(3);
+    expect(open.filter((t) => t.ownerId === null)).toHaveLength(4);
   });
 
   it('includes the scenarios the UI must show', () => {
@@ -136,11 +142,17 @@ describe('createSeed: open tasks on 2026-10-04', () => {
     });
 
     expect(task('seed-car-test')).toMatchObject({ title: 'לתאם טסט לרכב', categoryId: 'car' });
+    // A request still waiting for מיכל's answer: nobody holds it yet.
     expect(task('seed-post')).toMatchObject({
-      ownerId: MICHAL,
+      ownerId: null,
+      requestedOf: MICHAL,
       requestedBy: DANI,
       createdBy: DANI
     });
+    expect(pendingRequestOf(task('seed-post'), memberIds)).toBe(MICHAL);
+    // An accepted one, done since.
+    expect(task('seed-pest-control')).toMatchObject({ ownerId: DANI, requestedBy: MICHAL });
+    expect(pendingRequestOf(task('seed-pest-control'))).toBeNull();
     expect(task('seed-dentist')).toMatchObject({ dueDate: TODAY, dueTime: '16:30' });
 
     // The one week plan: the Saturday ending this week, no day, still in the week bucket.
@@ -268,12 +280,16 @@ describe('createSeed: integrity', () => {
       'deleted',
       'jar_filled',
       'jar_redeemed',
-      'member_joined'
+      'member_joined',
+      'accepted',
+      'declined'
     ];
     for (const e of rec.events) {
       expect(types).toContain(e.type);
       expect(e.push).toBe(
-        ['requested', 'completed', 'jar_filled'].includes(e.type) ? 'sent' : 'none'
+        ['requested', 'accepted', 'declined', 'completed', 'jar_filled'].includes(e.type)
+          ? 'sent'
+          : 'none'
       );
     }
   });
@@ -281,7 +297,14 @@ describe('createSeed: integrity', () => {
   it('references only members and existing tasks', () => {
     const isMember = (uid: string | null) => uid === null || memberIds.includes(uid);
     for (const t of tasks) {
-      for (const uid of [t.ownerId, t.requestedBy, t.createdBy, t.updatedBy, t.completedBy]) {
+      for (const uid of [
+        t.ownerId,
+        t.requestedBy,
+        t.requestedOf ?? null,
+        t.createdBy,
+        t.updatedBy,
+        t.completedBy
+      ]) {
         expect(isMember(uid)).toBe(true);
       }
       expect(t.updatedAt).toBeGreaterThanOrEqual(t.createdAt);
@@ -306,11 +329,19 @@ describe('createSeed: integrity', () => {
     const of = (id: string, type: string) => evs.filter((e) => e.taskId === id && e.type === type);
     for (const t of tasks) {
       if (t.seriesId === null) expect(of(t.id, 'created')).toHaveLength(1);
-      if (t.requestedBy)
+      if (t.requestedBy) {
         expect(of(t.id, 'requested')[0]).toMatchObject({
           actorId: t.requestedBy,
-          targetId: t.ownerId
+          targetId: t.requestedOf ?? t.ownerId
         });
+        // Owned after a request: the owner accepted it.
+        if (t.ownerId)
+          expect(of(t.id, 'accepted')[0]).toMatchObject({
+            actorId: t.ownerId,
+            targetId: t.requestedBy
+          });
+        else expect(of(t.id, 'accepted')).toEqual([]);
+      }
       if (t.ownerId && t.ownerId !== t.createdBy && !t.requestedBy) {
         expect(of(t.id, 'taken')[0]?.actorId).toBe(t.ownerId);
       }

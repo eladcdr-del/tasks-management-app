@@ -142,9 +142,11 @@ const forUid = (sends: Send[], uid: string) => sends.filter((s) => s.uid === uid
 // ── requested ─────────────────────────────────────────────────────────────────────────────────────
 
 describe('requested', () => {
+  // דני asked מיכל; the request waits for her answer (nobody holds the task meanwhile).
   const parcel = task('t-parcel', {
     title: 'לאסוף חבילה מהדואר',
-    ownerId: 'u-michal',
+    ownerId: null,
+    requestedOf: 'u-michal',
     requestedBy: 'u-dani'
   });
   const req = ev('e1', 'requested', 'u-dani', SUN('08:50').getTime(), {
@@ -185,6 +187,12 @@ describe('requested', () => {
     expect(out.sends[0]?.title).toBe('נועם ביקש/ה ממך משימה');
   });
 
+  it('also for a request by the previous app version (ownerId = the asked member)', () => {
+    const legacy = { ...parcel, ownerId: 'u-michal', requestedOf: undefined };
+    const out = plan(input({ tasks: [legacy], events: [req] }));
+    expect(out.sends.map((x) => [x.uid, x.title])).toEqual([['u-michal', 'דני ביקש ממך משימה']]);
+  });
+
   it('falls back to the task title when the event has none', () => {
     const out = plan(input({ tasks: [parcel], events: [{ ...req, taskTitle: null }] }));
     expect(out.sends[0]?.body).toBe('לאסוף חבילה מהדואר');
@@ -203,7 +211,15 @@ describe('requested', () => {
     ['the target has no devices', { devicesByUid: { 'u-dani': [device('u-dani')] } }],
     ['the target is not a member any more', { members: [DANI] }],
     ['the task is done or deleted (not open)', { tasks: [] }],
-    ['the task was released or reassigned', { tasks: [{ ...parcel, ownerId: null }] }],
+    [
+      'the request was withdrawn or declined',
+      { tasks: [{ ...parcel, requestedOf: null, requestedBy: null }] }
+    ],
+    ['someone else took it', { tasks: [{ ...parcel, ownerId: 'u-dani', requestedOf: null }] }],
+    [
+      'it was asked of someone else since',
+      { members: [MICHAL, DANI, NOAM], tasks: [{ ...parcel, requestedOf: 'u-noam' }] }
+    ],
     [
       'the request is older than 7 days',
       { events: [{ ...req, createdAt: SUN('09:00').getTime() - 7 * DAY - 1 }] }
@@ -213,6 +229,125 @@ describe('requested', () => {
     expect(out.sends).toEqual([]);
     expect(out.eventMarks).toEqual([{ eventId: 'e1', push: 'skipped' }]);
   });
+});
+
+// ── accepted / declined (the asked member's answer, to the asker) ─────────────────────────────────
+
+describe('accepted / declined', () => {
+  // מיכל asked דני to pick up the parcel; he answers.
+  const yes = task('t-parcel', {
+    title: 'לאסוף חבילה מהדואר',
+    ownerId: 'u-dani',
+    requestedOf: null,
+    requestedBy: 'u-michal'
+  });
+  const no = { ...yes, ownerId: null, requestedBy: null };
+  const answer = (type: 'accepted' | 'declined', actor = 'u-dani', at = SUN('08:55')) =>
+    ev(`e-${type}`, type, actor, at.getTime(), {
+      taskId: 't-parcel',
+      taskTitle: 'לאסוף חבילה מהדואר',
+      targetId: 'u-michal'
+    });
+
+  it('accepted goes to the asker: who took it, in their form, and where it is now', () => {
+    const out = plan(input({ tasks: [yes], events: [answer('accepted')] }));
+    expect(out.sends).toEqual([
+      {
+        keys: ['ev:e-accepted:u-michal'],
+        uid: 'u-michal',
+        type: 'accepted',
+        title: 'דני לקח: לאסוף חבילה מהדואר',
+        body: 'המשימה שביקשת עכשיו אצלו',
+        url: `${APP}#/task/t-parcel`,
+        tag: 'ans:e-accepted',
+        eventIds: ['e-accepted']
+      }
+    ]);
+    expect(out.eventMarks).toEqual([{ eventId: 'e-accepted', push: 'sent' }]);
+  });
+
+  it('declined is gentle and suggests no one', () => {
+    const out = plan(input({ tasks: [no], events: [answer('declined')] }));
+    expect(out.sends).toEqual([
+      {
+        keys: ['ev:e-declined:u-michal'],
+        uid: 'u-michal',
+        type: 'declined',
+        title: 'דני לא יכול לקחת: לאסוף חבילה מהדואר',
+        body: 'המשימה מחכה שמישהו ייקח',
+        url: `${APP}#/task/t-parcel`,
+        tag: 'ans:e-declined',
+        eventIds: ['e-declined']
+      }
+    ]);
+  });
+
+  it('uses the female and neutral forms', () => {
+    const toDani = (t: Task, type: 'accepted' | 'declined', actor: string) => {
+      const e = { ...answer(type, actor), targetId: 'u-dani' };
+      const out = plan(input({ members: [MICHAL, DANI, NOAM], tasks: [t], events: [e] }));
+      return [out.sends[0]?.title, out.sends[0]?.body];
+    };
+    expect(toDani({ ...yes, ownerId: 'u-michal' }, 'accepted', 'u-michal')).toEqual([
+      'מיכל לקחה: לאסוף חבילה מהדואר',
+      'המשימה שביקשת עכשיו אצלה'
+    ]);
+    expect(toDani({ ...yes, ownerId: 'u-noam' }, 'accepted', 'u-noam')).toEqual([
+      'נועם לקח/ה: לאסוף חבילה מהדואר',
+      'המשימה שביקשת עכשיו אצלו/ה'
+    ]);
+    expect(toDani(no, 'declined', 'u-michal')[0]).toBe('מיכל לא יכולה לקחת: לאסוף חבילה מהדואר');
+    expect(toDani(no, 'declined', 'u-noam')[0]).toBe('נועם לא יכול/ה לקחת: לאסוף חבילה מהדואר');
+  });
+
+  it('waits out quiet hours like every event push', () => {
+    const out = plan(
+      input({
+        now: SUN('23:30'),
+        tasks: [yes],
+        events: [answer('accepted', 'u-dani', SUN('23:20'))]
+      })
+    );
+    expect(out).toEqual({ sends: [], eventMarks: [] });
+  });
+
+  it.each([
+    [
+      'accepted',
+      'the asker turned requests off',
+      { members: [member('u-michal', 'מיכל', 'f', { requests: false }), DANI] }
+    ],
+    ['accepted', 'the asker has no devices', { devicesByUid: { 'u-dani': [device('u-dani')] } }],
+    ['accepted', 'the asker left', { members: [DANI] }],
+    [
+      'accepted',
+      'it is no longer theirs (released or taken over)',
+      { tasks: [{ ...yes, ownerId: null }] }
+    ],
+    ['accepted', 'the task is done or deleted', { tasks: [] }],
+    ['declined', 'someone took it meanwhile', { tasks: [{ ...no, ownerId: 'u-michal' }] }],
+    ['declined', 'the task is done or deleted', { tasks: [] }],
+    [
+      'declined',
+      'it is older than 7 days',
+      { events: [answer('declined', 'u-dani', new Date(SUN('09:00').getTime() - 7 * DAY - 1))] }
+    ],
+    [
+      'declined',
+      'the asker is the actor',
+      { events: [{ ...answer('declined'), targetId: 'u-dani' }] }
+    ],
+    ['declined', 'there is no asker', { events: [{ ...answer('declined'), targetId: null }] }]
+  ] as ['accepted' | 'declined', string, Partial<PlanInput>][])(
+    '%s is skipped when %s',
+    (type, _label, over) => {
+      const t = type === 'accepted' ? yes : no;
+      const e = answer(type);
+      const out = plan(input({ tasks: [t], events: [e], ...over }));
+      expect(out.sends).toEqual([]);
+      expect(out.eventMarks).toEqual([{ eventId: (over.events?.[0] ?? e).id, push: 'skipped' }]);
+    }
+  );
 });
 
 // ── completed / jar_filled ────────────────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@
 // Writes (each goes straight to the repository; the snapshot then updates the reads)
 //   create(draft) → id | null      update(id, patch)      take(id) → TakeResult | null
 //   request(id, toUid)             release(id)            snooze(id, until)
+//   accept(id) → TakeResult | null decline(id)            cancelRequest(id)    (requests)
 //   complete(id, completion, photos?) → CompleteResult | null           reopen(id)
 //   remove(id, message?)           hidden at once, deleted after 5 s unless undoRemove(id)
 //
@@ -216,9 +217,24 @@ export class TasksStore implements ScopedStore {
     return this.#runAsync((repo, hid) => repo.takeTask(hid, id));
   }
 
-  /** Asks `toUid` to do it (ownerId = toUid, requestedBy = me). */
+  /** Asks `toUid` to do it: a proposal, nobody's until they accept (domain/requests.ts). */
   request(id: string, toUid: string): void {
     this.#run((repo, hid) => repo.requestTask(hid, id, toUid), undefined);
+  }
+
+  /** "אני לוקח/ת" on a request to me: mine, and the asker hears about it. Same answers as take. */
+  accept(id: string): Promise<TakeResult | null> {
+    return this.#runAsync((repo, hid) => repo.acceptRequest(hid, id));
+  }
+
+  /** "לא מתאים לי": the request is cleared and the task waits for anyone. */
+  decline(id: string): void {
+    this.#run((repo, hid) => repo.declineRequest(hid, id), undefined);
+  }
+
+  /** The asker withdraws a request that still waits for an answer. */
+  cancelRequest(id: string): void {
+    this.#run((repo, hid) => repo.cancelRequest(hid, id), undefined);
   }
 
   /** Back to "waiting for someone to take". */

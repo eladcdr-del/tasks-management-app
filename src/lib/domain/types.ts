@@ -25,7 +25,8 @@ export interface Task {
   id: string; title: string; notes: string;
   categoryId: CategoryId | null; priority: Priority;
   ownerId: string | null;                 // null = "waiting for someone to take"
-  requestedBy: string | null; requestedAt: Millis | null;   // set when someone asked the owner
+  requestedBy: string | null; requestedAt: Millis | null;   // who asked, and when (kept as history once accepted)
+  requestedOf?: string | null;            // the asked member while the request waits for an answer (ownerId null); missing = null (domain/requests.ts)
   createdBy: string; createdAt: Millis; updatedBy: string; updatedAt: Millis;
   scheduledFor: ISODate | null;           // soft plan (היום / השבוע / date)
   weekPlan: boolean;                      // true: scheduledFor is the Saturday ending the planned week ("השבוע" / "בשבוע הבא") and is shown as a week, not a day
@@ -38,11 +39,12 @@ export interface Task {
 }
 export type TaskDraft = Pick<Task,'title'> & Partial<Pick<Task,'notes'|'categoryId'|'priority'|'ownerId'|'scheduledFor'|'weekPlan'|'dueDate'|'dueTime'|'hardDeadline'|'recurrence'>>;
 export type TaskPatch = Partial<Pick<Task,'title'|'notes'|'categoryId'|'priority'|'scheduledFor'|'weekPlan'|'dueDate'|'dueTime'|'hardDeadline'|'recurrence'>>;
-export type EventType = 'created'|'taken'|'requested'|'released'|'completed'|'reopened'|'snoozed'|'edited'|'deleted'|'jar_filled'|'jar_redeemed'|'member_joined';
+export type EventType = 'created'|'taken'|'requested'|'released'|'completed'|'reopened'|'snoozed'|'edited'|'deleted'|'jar_filled'|'jar_redeemed'|'member_joined'
+  |'accepted'|'declined';                 // the asked member's answer to a request (targetId = the requester)
 export interface ActivityEvent {
   id: string; type: EventType; actorId: string; taskId: string | null; taskTitle: string | null;
   targetId: string | null; createdAt: Millis;
-  push: 'pending'|'none'|'sent'|'skipped';  // client writes 'pending' for requested|completed|jar_filled, else 'none'
+  push: 'pending'|'none'|'sent'|'skipped';  // client writes 'pending' for requested|accepted|declined|completed|jar_filled, else 'none'
 }
 export interface EarnedTreat { id: string /* String(round) */; treat: string; target: number; filledAt: Millis; redeemedAt: Millis | null }
 export interface Invite { code: string; householdId: string; householdName: string; inviterName: string; memberCount: number /* snapshot at creation: non-members cannot read the household */; createdBy: string; createdAt: Millis; expiresAt: Millis; revoked: boolean }

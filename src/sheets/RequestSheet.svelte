@@ -1,10 +1,13 @@
 <script lang="ts">
   // RequestSheet (step 3.2): "לבקש מ…". The household's other members in their stable order (by
   // joining, never by load) with no suggestion; the only candidate is preselected, which is not a
-  // suggestion but the only answer. Sends tasks.request(taskId, uid): ownerId = them, requestedBy = me.
+  // suggestion but the only answer. Sends tasks.request(taskId, uid): a proposal (requestedOf =
+  // them, requestedBy = me); nobody holds the task until they accept, which the note says. The
+  // member who holds it, and the one a request already waits for, cannot be picked.
   // Rendered by SheetHost; `onClose` pops the sheet's history entry.
   import Send from '@lucide/svelte/icons/send';
   import { Avatar, Button, ChoiceRow } from '$components/ui';
+  import { pendingRequestOf } from '$lib/domain/requests';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
   import { haptic } from '$lib/platform/haptics';
@@ -22,7 +25,9 @@
 
   const task = $derived(tasks.byId(taskId));
   const others = $derived(household.members.filter((m) => m.uid !== household.uid));
-  const candidates = $derived(others.filter((m) => m.uid !== task?.ownerId));
+  /** The member a request on this task already waits for. */
+  const askedOf = $derived(task ? pendingRequestOf(task, household.memberIds) : null);
+  const candidates = $derived(others.filter((m) => m.uid !== task?.ownerId && m.uid !== askedOf));
   let picked = $state<string | null>(null);
   const who = $derived(picked ?? (candidates.length === 1 ? (candidates[0]?.uid ?? null) : null));
 
@@ -52,13 +57,14 @@
     <div class="rows" role="radiogroup" aria-label={t.group}>
       {#each others as m (m.uid)}
         {@const owns = task.ownerId === m.uid}
+        {@const waits = askedOf === m.uid}
         <ChoiceRow
           name="request-to"
           value={m.uid}
           title={m.displayName}
-          subtitle={owns ? t.owns(m) : undefined}
+          subtitle={owns ? t.owns(m) : waits ? t.waitingFor(m) : undefined}
           userText
-          disabled={owns}
+          disabled={owns || waits}
           checked={who === m.uid}
           onselect={() => (picked = m.uid)}
         >
@@ -68,6 +74,7 @@
         </ChoiceRow>
       {/each}
     </div>
+    <p class="hint" data-request-note>{t.note}</p>
     <Button block size="lg" icon={Send} flipIcon disabled={!who} onclick={send}>{t.send}</Button>
   {/if}
 </div>
@@ -106,5 +113,12 @@
   .note {
     font: var(--font-callout);
     color: var(--ink-2);
+  }
+
+  .hint {
+    font: var(--font-caption);
+    font-weight: 400;
+    color: var(--ink-2);
+    text-wrap: pretty;
   }
 </style>

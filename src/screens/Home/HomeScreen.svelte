@@ -5,9 +5,12 @@
    *   pulse       attention / today / waiting numerals (tap → that list) + balance row
    *   jar strip   JarMini
    *   attention   "דורש תשומת לב" (only when non-empty)
-   *   requested   "ביקשו ממך": what someone else asked me, whatever the date tab (only when non-empty)
-   *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty). Kept while
-   *               alone too: an undated new task shows nowhere else on the default "today" tab
+   *   requested   "ביקשו ממך": requests waiting for my answer, whatever the date tab (only when
+   *               non-empty), each with "אני לוקח/ת" / "לא מתאים לי". Not mine until I accept
+   *   waiting     "מחכות שמישהו ייקח" with one-tap take / request (only when non-empty), including
+   *               requests waiting for someone else's answer (a quiet "ביקשת מדני · מחכה לתשובה" /
+   *               "מיכל ביקשה מדני" line). Kept while alone too: an undated new task shows nowhere
+   *               else on the default "today" tab
    *   plan        היום | השבוע | בהמשך + member filter, then the TaskCards (unowned ones muted)
    * Every list comes from tasks.groups (domain groupTasks); nothing is bucketed here.
    */
@@ -28,7 +31,8 @@
   import { EmptyHome } from '$components/illustrations';
   import JarMini from '$components/jar/JarMini.svelte';
   import TaskList from '$components/task/TaskList.svelte';
-  import { openRequest, takeTask } from '$components/task/actions';
+  import { acceptRequest, declineRequest, openRequest, takeTask } from '$components/task/actions';
+  import { isRequestFor } from '$lib/domain/buckets';
   import type { Task } from '$lib/domain/types';
   import { formatLongDate, greeting } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';
@@ -49,9 +53,14 @@
   const memberIds = $derived(new Set(household.members.map((m) => m.uid)));
   const groups = $derived(tasks.groups);
 
-  /** Unowned (or a former member's): highlighted in "waiting", quieter in the time lists. */
+  /**
+   * Unowned (or a former member's): highlighted in "waiting", quieter in the time lists. A request
+   * is unowned until it is accepted, also for the one it waits for.
+   */
   const isUnowned = (task: Task): boolean =>
     task.ownerId === null || (memberIds.size > 0 && !memberIds.has(task.ownerId));
+  /** A request waiting for my answer (it may sit in attention, with accept / decline). */
+  const askedMe = (task: Task): boolean => isRequestFor(task, household.uid, household.memberIds);
 
   // A filter on a member who left falls back to everyone.
   $effect(() => {
@@ -145,14 +154,34 @@
 </script>
 
 {#snippet unownedActions(task: Task)}
-  <Button size="sm" onclick={() => takeTask(task.id)} data-action="take"
-    >{he.taskCard.take(me ?? 'n')}</Button
-  >
-  {#if others.length > 0}
-    <Button size="sm" variant="secondary" onclick={() => openRequest(task.id)} data-action="request"
-      >{he.taskCard.request}</Button
+  {#if askedMe(task)}
+    {@render requestActions(task)}
+  {:else}
+    <Button size="sm" onclick={() => takeTask(task.id)} data-action="take"
+      >{he.taskCard.take(me ?? 'n')}</Button
     >
+    {#if others.length > 0}
+      <Button
+        size="sm"
+        variant="secondary"
+        onclick={() => openRequest(task.id)}
+        data-action="request">{he.taskCard.request}</Button
+      >
+    {/if}
   {/if}
+{/snippet}
+
+<!-- A request waiting for my answer: yes, or a gentle no. -->
+{#snippet requestActions(task: Task)}
+  <Button size="sm" onclick={() => acceptRequest(task.id)} data-action="accept"
+    >{he.taskCard.accept(me ?? 'n')}</Button
+  >
+  <Button
+    size="sm"
+    variant="secondary"
+    onclick={() => declineRequest(task.id)}
+    data-action="decline">{he.taskCard.decline}</Button
+  >
 {/snippet}
 
 <section class="home" aria-labelledby="home-title">
@@ -225,7 +254,11 @@
             title={t.sections.requested}
             count={groups.requested.length}
           />
-          <TaskList tasks={groups.requested} label={t.sections.requested} />
+          <TaskList
+            tasks={groups.requested}
+            label={t.sections.requested}
+            actions={requestActions}
+          />
         </section>
       {/if}
 

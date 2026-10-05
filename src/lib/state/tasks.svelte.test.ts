@@ -54,15 +54,17 @@ describe('TasksStore reads (seed, Sunday 2026-10-04 09:00)', () => {
     expect([g.attention, g.waiting, g.today, g.week, g.later].map((l) => l.length)).toEqual([
       3, 3, 4, 5, 4
     ]);
-    // דני asked מיכל to pick up the parcel: the signed-in viewer's request.
+    // דני asked מיכל to pick up the parcel: the signed-in viewer's request, not hers yet.
     expect(g.requested.map((t) => t.id)).toEqual(['seed-post']);
-    expect(store.countsByMember).toEqual({ [MICHAL]: 7, [DANI]: 6 });
+    expect(store.countsByMember).toEqual({ [MICHAL]: 6, [DANI]: 6 });
   });
 
-  it('"requested" follows the signed-in user', () => {
+  it('"requested" follows the signed-in user; for the asker it waits', () => {
     store.setUser(DANI);
     expect(store.groups.requested).toEqual([]);
     expect(store.pulse.requested).toBe(0);
+    expect(store.groups.waiting.map((t) => t.id)).toContain('seed-post');
+    expect(store.pulse.waiting).toBe(4);
     store.setUser(MICHAL);
     expect(store.pulse.requested).toBe(1);
   });
@@ -90,7 +92,7 @@ describe('TasksStore reads (seed, Sunday 2026-10-04 09:00)', () => {
     await setup({ memberIds: [MICHAL] });
     store.attach({ repo, householdId: HID });
     await flush();
-    expect(store.countsByMember).toEqual({ [MICHAL]: 7 });
+    expect(store.countsByMember).toEqual({ [MICHAL]: 6 });
     expect(store.pulse.waiting).toBeGreaterThan(3);
   });
 });
@@ -119,7 +121,32 @@ describe('TasksStore writes', () => {
     store.release(waiting.id);
     expect(store.byId(waiting.id)?.ownerId).toBeNull();
     store.request(waiting.id, DANI);
-    expect(store.byId(waiting.id)).toMatchObject({ ownerId: DANI, requestedBy: MICHAL });
+    expect(store.byId(waiting.id)).toMatchObject({
+      ownerId: null,
+      requestedOf: DANI,
+      requestedBy: MICHAL
+    });
+    store.cancelRequest(waiting.id);
+    expect(store.byId(waiting.id)).toMatchObject({ requestedOf: null, requestedBy: null });
+  });
+
+  it('accept / decline answer a request to me', async () => {
+    expect(store.groups.requested.map((t) => t.id)).toEqual(['seed-post']);
+    expect(await store.accept('seed-post')).toEqual({ ok: true });
+    expect(store.byId('seed-post')).toMatchObject({ ownerId: MICHAL, requestedBy: DANI });
+    expect(store.pulse.requested).toBe(0);
+    expect(store.countsByMember[MICHAL]).toBe(7);
+
+    repo.actAs(DANI);
+    store.setUser(DANI);
+    store.request('seed-bulbs', MICHAL);
+    repo.actAs(MICHAL);
+    store.setUser(MICHAL);
+    expect(store.pulse.requested).toBe(1);
+    store.decline('seed-bulbs');
+    expect(store.byId('seed-bulbs')).toMatchObject({ ownerId: null, requestedOf: null });
+    expect(store.pulse.requested).toBe(0);
+    expect(store.groups.waiting.map((t) => t.id)).toContain('seed-bulbs');
   });
 
   it('take of a task someone else owns reports who has it', async () => {

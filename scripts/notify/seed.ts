@@ -80,6 +80,8 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
       title: string;
       ownerId: string | null;
       requestedBy: string | null;
+      /** A request waiting for this member's answer (written only when set, like the app). */
+      requestedOf: string;
       createdAt: number;
       scheduledFor: string | null;
       weekPlan: boolean;
@@ -118,7 +120,8 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
       lastSnoozedAt: fields.snoozeCount ? ts(t0 - 3 * DAY) : null,
       completedAt: done ? ts(t0 - 20 * 60_000) : null,
       completedBy: done ? (fields.completedBy ?? michal) : null,
-      completion: done ? { note: '', cost: null, place: '', contact: '', photoIds: [] } : null
+      completion: done ? { note: '', cost: null, place: '', contact: '', photoIds: [] } : null,
+      ...(fields.requestedOf ? { requestedOf: fields.requestedOf } : {})
     });
   };
 
@@ -143,7 +146,13 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
     createdAt: t0 - 30 * DAY,
     scheduledFor: addDaysISO(today, 3)
   });
-  task('t-parcel', { title: 'לאסוף חבילה מהדואר', ownerId: michal, requestedBy: dani });
+  // דני asked מיכל; nobody holds it until she answers
+  task('t-parcel', {
+    title: 'לאסוף חבילה מהדואר',
+    ownerId: null,
+    requestedOf: michal,
+    requestedBy: dani
+  });
   // Done tasks (the completion events below point at them)
   task('t-trash', { title: 'להוריד את הזבל', ownerId: michal, status: 'done' });
   task('t-milk', { title: 'לקנות חלב', ownerId: michal, status: 'done' });

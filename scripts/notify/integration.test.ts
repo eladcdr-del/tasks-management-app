@@ -169,6 +169,59 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     expect(await sentKeys()).toEqual(FIRST_RUN_KEYS);
   });
 
+  it('answers to a request reach the asker once, in the answering member’s words', async () => {
+    await seedDemo(db, NOW);
+    const answer = (id: string, type: string, actorId: string, taskId: string, title: string) =>
+      db.doc(`households/${HID}/events/${id}`).set({
+        type,
+        actorId,
+        taskId,
+        taskTitle: title,
+        targetId: actorId === DEMO.michal ? DEMO.dani : DEMO.michal,
+        createdAt: Timestamp.fromMillis(NOW.getTime() - 2 * MIN),
+        push: 'pending'
+      });
+    // מיכל said yes to the parcel (דני asked); דני said no to the dentist (מיכל asked).
+    await db.doc(`households/${HID}/tasks/t-parcel`).update({
+      ownerId: DEMO.michal,
+      requestedOf: null
+    });
+    await db.doc(`households/${HID}/events/ev-req`).update({ push: 'sent' });
+    await answer('ev-yes', 'accepted', DEMO.michal, 't-parcel', 'לאסוף חבילה מהדואר');
+    await answer('ev-no', 'declined', DEMO.dani, 't-dentist', 'לקבוע תור לרופא שיניים');
+
+    const sender = new FakeSender();
+    const r1 = await run({ db, sender, now: NOW });
+    expect(r1.errors).toEqual([]);
+    const said = sender.calls.map((c) => [c.tokens, c.msg.title, c.msg.body, c.msg.url]);
+    expect(said).toContainEqual([
+      [tok.daniPhone.token],
+      'מיכל לקחה: לאסוף חבילה מהדואר',
+      'המשימה שביקשת עכשיו אצלה',
+      'https://eladcdr-del.github.io/tasks-management-app/#/task/t-parcel'
+    ]);
+    expect(said).toContainEqual([
+      [tok.michalOld.token, tok.michalPhone.token].sort(),
+      'דני לא יכול לקחת: לקבוע תור לרופא שיניים',
+      'המשימה מחכה שמישהו ייקח',
+      'https://eladcdr-del.github.io/tasks-management-app/#/task/t-dentist'
+    ]);
+    expect(await push('ev-yes')).toBe('sent');
+    expect(await push('ev-no')).toBe('sent');
+    expect(await sentKeys()).toEqual(
+      expect.arrayContaining(['ev:ev-yes:u-dani', 'ev:ev-no:u-michal'])
+    );
+
+    // a crash between push and mark: the next run re-plans them, and the keys keep them quiet
+    const n = sender.calls.length;
+    await db.doc(`households/${HID}/events/ev-yes`).update({ push: 'pending' });
+    await db.doc(`households/${HID}/events/ev-no`).update({ push: 'pending' });
+    await run({ db, sender, now: later(5) });
+    expect(sender.calls).toHaveLength(n);
+    expect(await push('ev-yes')).toBe('sent');
+    expect(await push('ev-no')).toBe('sent');
+  });
+
   it('a sparse schedule still delivers: a 14:25 first run catches up, later runs add only news', async () => {
     await seedDemo(db, NOW);
     const sender = new FakeSender();

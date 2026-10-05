@@ -27,6 +27,11 @@ export const taskDetail = {
   request: 'לבקש מ…',
   release: 'להחזיר לרשימה',
   takenBy: (a: Actor) => `${act(a, 'כבר לקחה', 'כבר לקח', 'כבר לקח/ה')} את המשימה`,
+  /** Under "מיכל ביקשה ממך": the request is mine to answer. */
+  awaitingMe: 'מחכה לתשובה שלך',
+  /** The asker withdraws a request that still waits. */
+  cancelRequest: 'ביטול הבקשה',
+  cancelled: 'הבקשה בוטלה',
 
   // fields
   details: 'פרטים',
@@ -72,6 +77,13 @@ export const taskDetail = {
     taken: (a: Actor) => act(a, 'לקחה', 'לקח', 'לקח/ה'),
     requested: (a: Actor, to: string) =>
       `${act(a, 'ביקשה', 'ביקש', 'ביקש/ה')} ${prefixed('מ', to)}`,
+    /** "דני לקח, לבקשת מיכל" */
+    accepted: (a: Actor, by: string) => `${act(a, 'לקחה', 'לקח', 'לקח/ה')}, לבקשת ${by}`,
+    /** "דני אמר שלא מתאים לו" (gentle; the actor's form). */
+    declined: (a: Actor) => act(a, 'אמרה שלא מתאים לה', 'אמר שלא מתאים לו', 'אמר/ה שלא מתאים לו/ה'),
+    /** The asker withdrew it: "מיכל ביטלה את הבקשה מדני". */
+    withdrew: (a: Actor, to: string) =>
+      `${act(a, 'ביטלה', 'ביטל', 'ביטל/ה')} את הבקשה ${prefixed('מ', to)}`,
     released: (a: Actor) => act(a, 'החזירה לרשימה', 'החזיר לרשימה', 'החזיר/ה לרשימה'),
     completed: (a: Actor) => act(a, 'סיימה', 'סיים', 'סיים/ה'),
     reopened: (a: Actor) => act(a, 'פתחה מחדש', 'פתח מחדש', 'פתח/ה מחדש'),

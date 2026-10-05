@@ -77,6 +77,7 @@ import { isoDateAt, isValidISO, todayISO } from '../../domain/dates';
 import { inviteCode, isInviteCode } from '../../domain/ids';
 import { applyCompletion, isFull } from '../../domain/jar';
 import { buildNextInstance, ensureAnchor } from '../../domain/recurrence';
+import { pendingRequestOf } from '../../domain/requests';
 import { snoozePatch } from '../../domain/snooze';
 import type {
   ActivityEvent,
@@ -861,11 +862,14 @@ export async function createFirebaseRepositoryImpl(
   }
 
   /**
-   * The open tasks of `hid` owned by `uid` (leaveHousehold). The same `status == 'open'` query as
-   * watchOpenTasks (no extra index), filtered here; from the server with my queued writes applied,
-   * or from the cache when the server cannot be reached in time.
+   * The open tasks of `hid` owned by `uid` or naming `uid` in requestedOf (leaveHousehold). The
+   * same `status == 'open'` query as watchOpenTasks (no extra index), filtered here; from the server
+   * with my queued writes applied, or from the cache when the server cannot be reached in time.
    */
-  async function myOpenTaskRefs(hid: string, uid: string): Promise<DocumentReference[]> {
+  async function myOpenTasks(
+    hid: string,
+    uid: string
+  ): Promise<{ ref: DocumentReference; task: Task }[]> {
     const q = query(tasksCol(hid), where('status', '==', 'open'));
     let snap: QuerySnapshot;
     try {
@@ -879,7 +883,9 @@ export async function createFirebaseRepositoryImpl(
       if (!isUnavailable(e)) throw toRepoError(e);
       snap = await getDocsFromCache(q);
     }
-    return snap.docs.filter((d) => d.get('ownerId') === uid).map((d) => d.ref);
+    return snap.docs
+      .filter((d) => d.get('ownerId') === uid || d.get('requestedOf') === uid)
+      .map((d) => ({ ref: d.ref, task: taskFromSnap(d) }));
   }
 
   async function removeDevicesOf(uid: string, hid: string): Promise<void> {
@@ -896,6 +902,136 @@ export async function createFirebaseRepositoryImpl(
     } catch (e) {
       console.warn('[firebase] could not remove this account’s device registrations', e);
     }
+  }
+
+  // ── take / requests (domain/requests.ts) ──────────────────────────────────
+
+  /**
+   * takeTask / acceptRequest. A transaction online; offline a batch from the cache (last write
+   * wins, see the header). Someone else's task stays theirs; a former member's counts as unowned. A
+   * request waiting for MY answer is accepted (requestedBy/At kept as history, an 'accepted' event
+   * tells the asker); any other waiting request is cleared by the take.
+   */
+  async function take(hid: string, id: string): Promise<TakeResult> {
+    try {
+      return await enqueue(async (): Promise<TakeResult> => {
+        const uid = requireUid();
+        const tRef = taskRef(hid, id);
+        const hRef = hhRef(hid);
+        /** null = take it; else the answer. A former member's task counts as unowned. */
+        const verdict = (task: Task, memberIds: string[] | null): TakeResult | null => {
+          if (task.ownerId === uid) return { ok: true };
+          if (task.ownerId !== null && (memberIds === null || memberIds.includes(task.ownerId))) {
+            return { ok: false, takenBy: task.ownerId };
+          }
+          return null;
+        };
+        /** The household is read when the answer depends on who is still a member. */
+        const needsMembers = (task: Task) =>
+          (task.ownerId !== null && task.ownerId !== uid) || (task.requestedOf ?? null) !== null;
+        const writeTake = (w: Writer, task: Task, memberIds: string[] | null) => {
+          const members = memberIds ?? undefined;
+          const asker = task.requestedBy;
+          const accepting =
+            pendingRequestOf(task, members) === uid &&
+            asker !== null &&
+            (memberIds === null || memberIds.includes(asker));
+          const hadRequestOf = (task.requestedOf ?? null) !== null;
+          if (accepting && asker !== null) {
+            w.update(tRef, { ownerId: uid, requestedOf: null, ...touch(uid) });
+            w.set(newEventRef(hid), eventDoc('accepted', uid, task, asker));
+            return;
+          }
+          w.update(tRef, {
+            ownerId: uid,
+            requestedBy: null,
+            requestedAt: null,
+            ...(hadRequestOf ? { requestedOf: null } : {}),
+            ...touch(uid)
+          });
+          w.set(newEventRef(hid), eventDoc('taken', uid, task));
+        };
+
+        if (await canTransact()) {
+          try {
+            const result = await runTransaction(db, async (tx): Promise<TakeResult> => {
+              const ts = await tx.get(tRef);
+              if (!ts.exists()) throw notFound(`task ${id}`);
+              const task = taskFromSnap(ts);
+              const memberIds = needsMembers(task)
+                ? householdFromSnap(await tx.get(hRef)).memberIds
+                : null;
+              const answer = verdict(task, memberIds);
+              if (answer) return answer;
+              writeTake(tx, task, memberIds);
+              return { ok: true };
+            });
+            await refreshFromServer([tRef]);
+            return result;
+          } catch (e) {
+            if (!isUnavailable(e)) throw e;
+            // The server could not be reached after all: take it offline-style below.
+          }
+        }
+
+        // Offline: decided from the local cache; LAST WRITE WINS (see the header).
+        const task = await mustReadTask(hid, id);
+        const memberIds = needsMembers(task)
+          ? ((await tryReadHousehold(hid))?.memberIds ?? null)
+          : null;
+        const answer = verdict(task, memberIds);
+        if (answer) return answer;
+        const b = newBatch();
+        writeTake(b, task, memberIds);
+        commitQueued(b);
+        return { ok: true };
+      });
+    } catch (e) {
+      throw toRepoError(e);
+    }
+  }
+
+  /**
+   * declineRequest ('asked') / cancelRequest ('asker'): the request is cleared and the task waits
+   * for anyone. Nothing waiting (for MY answer, when declining) is a no-op: a late tap after the
+   * request moved on. Cancelling needs the asker or the asked member (the rules' check).
+   */
+  function dropRequest(hid: string, id: string, as: 'asked' | 'asker'): void {
+    queued(async (uid) => {
+      const task = await mustReadTask(hid, id);
+      const memberIds = (await tryReadHousehold(hid))?.memberIds;
+      return dropBatch(hid, task, uid, memberIds, as);
+    });
+  }
+
+  /** The decline / cancel batch for `task`, or null when nothing waits (for my answer). */
+  function dropBatch(
+    hid: string,
+    task: Task,
+    uid: string,
+    memberIds: string[] | undefined,
+    as: 'asked' | 'asker'
+  ): TrackedBatch | null {
+    const to = pendingRequestOf(task, memberIds);
+    if (to === null || (as === 'asked' && to !== uid)) return null;
+    const asker = task.requestedBy;
+    if (uid !== to && uid !== asker) {
+      throw new RepoError('permission', 'only the asked member or the asker can cancel a request');
+    }
+    const b = newBatch();
+    b.update(taskRef(hid, task.id), {
+      requestedOf: null,
+      requestedBy: null,
+      requestedAt: null,
+      ...touch(uid)
+    });
+    // The asker hears a "no" (unless they left); a cancel is quiet.
+    if (as === 'asked' && asker !== null && (memberIds?.includes(asker) ?? true)) {
+      b.set(newEventRef(hid), eventDoc('declined', uid, task, asker));
+    } else {
+      b.set(newEventRef(hid), eventDoc('released', uid, task, to));
+    }
+    return b;
   }
 
   // ── the Repository ─────────────────────────────────────────────────────────
@@ -1109,12 +1245,20 @@ export async function createFirebaseRepositoryImpl(
           const uid = requireUid();
           const household = await mustReadHousehold(hid);
           const last = household.memberIds.every((m) => m === uid) || household.memberCount <= 1;
-          const mine = await myOpenTaskRefs(hid, uid);
+          const mine = await myOpenTasks(hid, uid);
           const b = newBatch();
-          // My open tasks go back to "waiting for someone to take". No events: the events rule
-          // needs the caller to still be a member after the batch (schema §3).
-          for (const ref of mine) {
-            b.update(ref, { ownerId: null, requestedBy: null, requestedAt: null, ...touch(uid) });
+          // My open tasks go back to "waiting for someone to take", and requests waiting for my
+          // answer are answered "no" the same way. No events: the events rule needs the caller to
+          // still be a member after the batch (schema §3).
+          for (const { ref, task } of mine) {
+            const owned = task.ownerId === uid;
+            const askedMe = pendingRequestOf(task) === uid;
+            b.update(ref, {
+              ...(owned ? { ownerId: null } : {}),
+              ...(owned || askedMe ? { requestedBy: null, requestedAt: null } : {}),
+              ...((task.requestedOf ?? null) !== null ? { requestedOf: null } : {}),
+              ...touch(uid)
+            });
           }
           b.delete(memberRef(hid, uid));
           b.update(hhRef(hid), {
@@ -1275,7 +1419,8 @@ export async function createFirebaseRepositoryImpl(
       }
       queued(async (uid) => {
         const ownerId = d.ownerId ?? null;
-        // Creating a task for ANOTHER member is a request (amendment [3.2]).
+        // Creating a task for ANOTHER member is a request (amendment [3.2]), and a request is a
+        // proposal: nobody holds the task until they accept (domain/requests.ts).
         const isRequest = ownerId !== null && ownerId !== uid;
         const dates = {
           scheduledFor: d.scheduledFor ?? null,
@@ -1287,7 +1432,7 @@ export async function createFirebaseRepositoryImpl(
           notes: d.notes ?? '',
           categoryId: d.categoryId ?? null,
           priority: d.priority ?? 'normal',
-          ownerId,
+          ownerId: isRequest ? null : ownerId,
           scheduledFor: dates.scheduledFor,
           // Always written (rules: exact key set); a week plan needs its Saturday in scheduledFor.
           weekPlan: d.weekPlan ?? false,
@@ -1300,7 +1445,7 @@ export async function createFirebaseRepositoryImpl(
         assertValidTask(content);
         const task = { id: ref.id, title: content.title };
         const b = newBatch();
-        b.set(ref, newTaskDoc(content, uid, isRequest));
+        b.set(ref, newTaskDoc(content, uid, isRequest, isRequest ? ownerId : null));
         b.set(newEventRef(hid), eventDoc('created', uid, task));
         if (isRequest) b.set(newEventRef(hid), eventDoc('requested', uid, task, ownerId));
         return b;
@@ -1333,65 +1478,8 @@ export async function createFirebaseRepositoryImpl(
       });
     },
 
-    async takeTask(hid: string, id: string): Promise<TakeResult> {
-      try {
-        return await enqueue(async (): Promise<TakeResult> => {
-          const uid = requireUid();
-          const tRef = taskRef(hid, id);
-          const hRef = hhRef(hid);
-          /** null = take it; else the answer. A former member's task counts as unowned. */
-          const verdict = (task: Task, memberIds: string[] | null): TakeResult | null => {
-            if (task.ownerId === uid) return { ok: true };
-            if (task.ownerId !== null && (memberIds === null || memberIds.includes(task.ownerId))) {
-              return { ok: false, takenBy: task.ownerId };
-            }
-            return null;
-          };
-          const writeTake = (w: Writer, task: Task) => {
-            w.update(tRef, { ownerId: uid, requestedBy: null, requestedAt: null, ...touch(uid) });
-            w.set(newEventRef(hid), eventDoc('taken', uid, task));
-          };
-
-          if (await canTransact()) {
-            try {
-              const result = await runTransaction(db, async (tx): Promise<TakeResult> => {
-                const ts = await tx.get(tRef);
-                if (!ts.exists()) throw notFound(`task ${id}`);
-                const task = taskFromSnap(ts);
-                const owner = task.ownerId;
-                const memberIds =
-                  owner !== null && owner !== uid
-                    ? householdFromSnap(await tx.get(hRef)).memberIds
-                    : null;
-                const answer = verdict(task, memberIds);
-                if (answer) return answer;
-                writeTake(tx, task);
-                return { ok: true };
-              });
-              await refreshFromServer([tRef]);
-              return result;
-            } catch (e) {
-              if (!isUnavailable(e)) throw e;
-              // The server could not be reached after all: take it offline-style below.
-            }
-          }
-
-          // Offline: decided from the local cache; LAST WRITE WINS (see the header).
-          const task = await mustReadTask(hid, id);
-          let memberIds: string[] | null = null;
-          if (task.ownerId !== null && task.ownerId !== uid) {
-            memberIds = (await tryReadHousehold(hid))?.memberIds ?? null;
-          }
-          const answer = verdict(task, memberIds);
-          if (answer) return answer;
-          const b = newBatch();
-          writeTake(b, task);
-          commitQueued(b);
-          return { ok: true };
-        });
-      } catch (e) {
-        throw toRepoError(e);
-      }
+    takeTask(hid: string, id: string): Promise<TakeResult> {
+      return take(hid, id);
     },
 
     requestTask(hid: string, id: string, toUid: string): void {
@@ -1407,12 +1495,15 @@ export async function createFirebaseRepositoryImpl(
             ownerId: uid,
             requestedBy: null,
             requestedAt: null,
+            ...((task.requestedOf ?? null) !== null ? { requestedOf: null } : {}),
             ...touch(uid)
           });
           b.set(newEventRef(hid), eventDoc('taken', uid, task));
         } else {
+          // A proposal: nobody holds it until they accept (domain/requests.ts).
           b.update(taskRef(hid, id), {
-            ownerId: toUid,
+            ownerId: null,
+            requestedOf: toUid,
             requestedBy: uid,
             requestedAt: serverTimestamp(),
             ...touch(uid)
@@ -1423,14 +1514,34 @@ export async function createFirebaseRepositoryImpl(
       });
     },
 
+    acceptRequest(hid: string, id: string): Promise<TakeResult> {
+      return take(hid, id);
+    },
+
+    declineRequest(hid: string, id: string): void {
+      dropRequest(hid, id, 'asked');
+    },
+
+    cancelRequest(hid: string, id: string): void {
+      dropRequest(hid, id, 'asker');
+    },
+
     releaseTask(hid: string, id: string): void {
       queued(async (uid) => {
         const task = await mustReadTask(hid, id);
+        // Nobody holds a request that waits: "back to the list" withdraws it (asker or asked).
+        if (task.ownerId === null && (task.requestedOf ?? null) !== null) {
+          const memberIds = (await tryReadHousehold(hid))?.memberIds;
+          if (pendingRequestOf(task, memberIds) !== null) {
+            return dropBatch(hid, task, uid, memberIds, 'asker');
+          }
+        }
         const b = newBatch();
         b.update(taskRef(hid, id), {
           ownerId: null,
           requestedBy: null,
           requestedAt: null,
+          ...((task.requestedOf ?? null) !== null ? { requestedOf: null } : {}),
           ...touch(uid)
         });
         b.set(newEventRef(hid), eventDoc('released', uid, task));

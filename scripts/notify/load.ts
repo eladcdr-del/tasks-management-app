@@ -108,6 +108,7 @@ export function normalizeTask(id: string, raw: DocumentData): Task {
     ownerId: strOrNull(d.ownerId),
     requestedBy: strOrNull(d.requestedBy),
     requestedAt: numOrNull(d.requestedAt),
+    requestedOf: strOrNull(d.requestedOf), // missing on older documents
     createdBy: str(d.createdBy),
     createdAt: num(d.createdAt),
     updatedBy: str(d.updatedBy),

@@ -3,12 +3,14 @@
 //
 // createSeed(now) is DETERMINISTIC for a given `now`: fixed ids, no randomness, and every date is
 // relative to today's date in Asia/Jerusalem. On the E2E date (Sunday 2026-10-04) the Home screen
-// shows: attention 3 (1 overdue + 2 urgent), today 4, waiting 3, week 5, later 4; 16 open, 14 done.
+// shows: attention 3 (1 overdue + 2 urgent), today 4, waiting 3, week 5, later 4; 16 open, 14 done;
+// and one request waiting for מיכל's answer (דני asked her to pick up the parcel), which דני sees as
+// a fourth waiting task.
 //
 // The history is internally consistent, so the seed doubles as a fixture for the domain rules:
-//  - every task has the events that explain its state (created, taken/requested, snoozed, completed);
-//    a task owned by someone other than its creator was either taken by the owner or requested by
-//    the creator;
+//  - every task has the events that explain its state (created, taken/requested/accepted, snoozed,
+//    completed); a task owned by someone other than its creator was either taken by the owner or
+//    requested by the creator and accepted;
 //  - the ארנונה series is anchored, and each instance is exactly what buildNextInstance produces;
 //  - jar.count equals the completions since the jar's round started, and each earned treat was
 //    filled by a real completion.
@@ -91,7 +93,13 @@ export function jerusalemInstant(iso: ISODate, hhmm: string): Millis {
 }
 
 /** Events the notifier would already have handled in a real household. */
-const PUSHED: ReadonlySet<EventType> = new Set(['requested', 'completed', 'jar_filled']);
+const PUSHED: ReadonlySet<EventType> = new Set([
+  'requested',
+  'accepted',
+  'declined',
+  'completed',
+  'jar_filled'
+]);
 
 type Uid = typeof MICHAL | typeof DANI;
 
@@ -116,8 +124,14 @@ interface Spec {
   ownerId: Uid | null;
   /** The owner took it from the list (only when the creator is someone else). */
   takenAt?: Millis;
-  /** The creator assigned it to the owner at creation, i.e. a request (requestedAt = createdAt). */
+  /**
+   * The creator asked the owner at creation (requestedAt = createdAt) and the owner accepted at
+   * `acceptedAt` (an 'accepted' event).
+   */
   requested?: boolean;
+  acceptedAt?: Millis;
+  /** The creator asked this member at creation and they have not answered yet (ownerId null). */
+  askedOf?: Uid;
   scheduledFor?: ISODate | null;
   /** A week plan: `scheduledFor` is the Saturday ending the planned week (needs a date, no snoozes). */
   weekPlan?: boolean;
@@ -176,6 +190,12 @@ class SeedBuilder {
     ) {
       throw new Error(`seed: ${s.id} is owned by someone else but was neither taken nor requested`);
     }
+    if (s.requested && s.acceptedAt === undefined) {
+      throw new Error(`seed: ${s.id} was requested, so the owner accepted it at some point`);
+    }
+    if (s.askedOf !== undefined && (s.ownerId !== null || s.askedOf === s.createdBy)) {
+      throw new Error(`seed: ${s.id} waits for an answer, so nobody holds it`);
+    }
     const snoozes = s.snoozes ?? [];
     if (s.weekPlan && (!s.scheduledFor || snoozes.length > 0)) {
       throw new Error(`seed: ${s.id} is a week plan, so it needs a scheduledFor and no snoozes`);
@@ -183,6 +203,7 @@ class SeedBuilder {
     const lastSnooze = snoozes.at(-1);
     const actions: [Millis, Uid][] = [[s.createdAt, s.createdBy]];
     if (s.takenAt !== undefined) actions.push([s.takenAt, s.ownerId!]);
+    if (s.acceptedAt !== undefined) actions.push([s.acceptedAt, s.ownerId!]);
     for (const [when] of snoozes) actions.push([when, s.ownerId ?? s.createdBy]);
     if (s.completed) actions.push([s.completed.at, s.completed.by]);
     const [updatedAt, updatedBy] = actions.reduce((a, b) => (b[0] >= a[0] ? b : a));
@@ -194,8 +215,10 @@ class SeedBuilder {
       categoryId: s.categoryId,
       priority: s.priority ?? 'normal',
       ownerId: s.ownerId,
-      requestedBy: s.requested ? s.createdBy : null,
-      requestedAt: s.requested ? s.createdAt : null,
+      requestedBy: s.requested || s.askedOf ? s.createdBy : null,
+      requestedAt: s.requested || s.askedOf ? s.createdAt : null,
+      // Only on a request that waits (a missing requestedOf reads as null, like older documents).
+      ...(s.askedOf ? { requestedOf: s.askedOf } : {}),
       createdBy: s.createdBy,
       createdAt: s.createdAt,
       updatedBy,
@@ -225,7 +248,12 @@ class SeedBuilder {
     this.tasks[task.id] = task;
 
     if (!s.auto) this.event('created', s.createdBy, task, s.createdAt);
-    if (s.requested) this.event('requested', s.createdBy, task, s.createdAt, s.ownerId);
+    if (s.requested || s.askedOf) {
+      this.event('requested', s.createdBy, task, s.createdAt, s.askedOf ?? s.ownerId);
+    }
+    if (s.acceptedAt !== undefined) {
+      this.event('accepted', s.ownerId!, task, s.acceptedAt, s.createdBy);
+    }
     if (s.takenAt !== undefined) this.event('taken', s.ownerId!, task, s.takenAt);
     for (const [when] of snoozes) this.event('snoozed', s.ownerId ?? s.createdBy, task, when);
     if (s.completed) this.event('completed', s.completed.by, task, s.completed.at);
@@ -360,8 +388,8 @@ export function createSeed(now: Date): DemoState {
     categoryId: 'other',
     createdBy: D,
     createdAt: b.at(-1, '19:15'),
-    ownerId: M,
-    requested: true, // דני ביקש ממיכל
+    ownerId: null,
+    askedOf: M, // דני ביקש ממיכל, and she has not answered yet
     scheduledFor: b.day(2)
   });
   b.task({
@@ -602,6 +630,7 @@ export function createSeed(now: Date): DemoState {
     createdAt: b.at(-30, '19:00'),
     ownerId: D,
     requested: true,
+    acceptedAt: b.at(-30, '20:40'),
     completed: {
       at: b.at(-26, '10:30'),
       by: D,

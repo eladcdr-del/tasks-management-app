@@ -2,8 +2,9 @@ import type { Locator, Page } from '@playwright/test';
 import { expect, openApp, shot, test } from './fixtures';
 
 // Home (step 3.2) on the demo seed at the fixed clock (Sunday 2026-10-04 09:00, signed in as מיכל):
-// attention 3 (1 overdue + 2 urgent), today 4, waiting 3, week 5, later 4; one request to מיכל
-// (דני asked her to pick up the parcel, planned for Tuesday).
+// attention 3 (1 overdue + 2 urgent), today 4, waiting 3, week 5, later 4; one request waiting for
+// מיכל's answer (דני asked her to pick up the parcel, planned for Tuesday): not hers until she
+// accepts.
 
 interface Hooks {
   actAs(uid: string): Promise<void>;
@@ -108,20 +109,28 @@ test('request a waiting task from the partner', async ({ page }) => {
   await expect(sheet).toBeVisible();
   // The only other member is the only choice; nothing is ranked or suggested beyond that.
   await expect(sheet.getByRole('radio', { name: 'דני' })).toBeChecked();
+  await expect(sheet.locator('[data-request-note]')).toHaveText(
+    'עד שיאשרו, המשימה מחכה שמישהו ייקח.'
+  );
   await sheet.getByRole('button', { name: 'שליחת הבקשה' }).click();
   await expect(sheet).toHaveCount(0);
   await snack(page).toContain('הבקשה נשלחה לדני');
-  await expect(pulse(page, 'waiting')).toHaveText('2');
+  // A proposal: until דני answers nobody holds it, so it still waits, with a quiet line.
+  await expect(pulse(page, 'waiting')).toHaveText('3');
+  const waiting = card(section(page, 'waiting'), 'seed-washer');
+  await expect(waiting).toHaveAttribute('data-owner', '');
+  await expect(waiting.locator('[data-request]')).toHaveText('ביקשת מדני · מחכה לתשובה');
 
   await page.getByRole('radio', { name: /בהמשך/ }).click();
-  const requested = card(section(page, 'plan'), 'seed-washer');
-  await expect(requested).toHaveAttribute('data-owner', 'dani');
-  await expect(requested).toContainText('ביקשת מדני');
+  await expect(card(section(page, 'plan'), 'seed-washer')).toHaveAttribute('data-muted', '');
 
   // On דני's side the undated request is right on Home, not buried under "בהמשך".
   await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('dani'));
   await page.getByRole('radio', { name: /היום/ }).click();
-  await expect(card(section(page, 'requested'), 'seed-washer')).toContainText('מיכל ביקשה ממך');
+  const asked = card(section(page, 'requested'), 'seed-washer');
+  await expect(asked).toContainText('מיכל ביקשה ממך');
+  await expect(asked.getByRole('button', { name: 'אני לוקח' })).toBeVisible();
+  await expect(asked.getByRole('button', { name: 'לא מתאים לי' })).toBeVisible();
   await expect(pulse(page, 'requested')).toHaveText('1');
 });
 
@@ -151,7 +160,12 @@ test('a request to me stands out whatever the tab, and counts in the pulse', asy
     })
   );
   await expect(pulse(page, 'attention')).toHaveText('4');
-  await expect(card(section(page, 'attention'), 'seed-post')).toBeVisible();
+  const urgent = card(section(page, 'attention'), 'seed-post');
+  await expect(urgent).toBeVisible();
+  // Still a request: in attention it keeps its answers, not "take / ask".
+  await expect(urgent.locator('[data-action]')).toHaveCount(2);
+  await expect(urgent.getByRole('button', { name: 'אני לוקחת' })).toBeVisible();
+  await expect(urgent.getByRole('button', { name: 'לא מתאים לי' })).toBeVisible();
   await expect(requested).toHaveCount(0);
   await expect(pulse(page, 'requested')).toHaveCount(0);
 });
@@ -263,8 +277,9 @@ test('bucket tabs and member filters', async ({ page }) => {
 
   await page.getByRole('radio', { name: /השבוע/ }).click();
   await page.getByRole('button', { name: 'שלי', exact: true }).click();
-  await expect(cards).toHaveCount(3);
-  for (const id of ['seed-post', 'seed-shirt', 'seed-wedding-gift']) {
+  // The parcel דני asked her about is not hers until she accepts.
+  await expect(cards).toHaveCount(2);
+  for (const id of ['seed-shirt', 'seed-wedding-gift']) {
     await expect(card(plan, id)).toBeVisible();
   }
   await page.getByRole('button', { name: /של דני/ }).click();

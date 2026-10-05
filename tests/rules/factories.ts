@@ -236,7 +236,7 @@ export function touched(uid: string): Doc {
   return { updatedBy: uid, updatedAt: serverTimestamp() };
 }
 
-const PUSH_TYPES = new Set(['requested', 'completed', 'jar_filled']);
+const PUSH_TYPES = new Set(['requested', 'accepted', 'declined', 'completed', 'jar_filled']);
 
 /** households/{hid}/events/{id}; `push` follows the type unless overridden. */
 export function eventDoc(uid: string, type = 'created', overrides: Doc = {}): Doc {
