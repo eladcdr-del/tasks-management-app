@@ -172,7 +172,7 @@ test('a snackbar never covers the FAB', async ({ page }) => {
     .toBeGreaterThanOrEqual(0);
 });
 
-test('alone in the household: no "waiting" wall, and no "ask for help" dead end', async ({
+test('alone in the household: new tasks stay in sight, and no "ask for help" dead end', async ({
   page
 }) => {
   await openApp(page);
@@ -184,11 +184,10 @@ test('alone in the household: no "waiting" wall, and no "ask for help" dead end'
     await h.actAs('michal');
   });
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('בוקר טוב, מיכל');
+  // Unowned tasks stay listed in "waiting": on the default "today" tab an undated one shows
+  // nowhere else.
   await expect(pulse(page, 'waiting')).not.toHaveText('0');
-  await expect(section(page, 'waiting')).toHaveCount(0);
-  const plan = section(page, 'plan');
-  await expect(plan.locator('[data-task-id]').first()).toBeVisible();
-  await expect(plan.locator('[data-muted]')).toHaveCount(0);
+  await expect(section(page, 'waiting').locator('[data-task-id]').first()).toBeVisible();
 
   // A hard deadline today: the blocked snooze sheet offers doing it, not asking nobody.
   await page.evaluate(() =>

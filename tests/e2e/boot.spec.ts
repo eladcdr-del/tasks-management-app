@@ -33,8 +33,11 @@ type HookWindow = Window & { __homecareTest: Hooks };
 function trackErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  // Ignored: favicon probes, and Google's sign-in script, which a signed-out device loads ahead of
+  // the first tap (init.ts) and which this sandbox's network may refuse.
   page.on('console', (m) => {
-    if (m.type() === 'error' && !/favicon\.ico/.test(m.location().url ?? '')) errors.push(m.text());
+    if (m.type() === 'error' && !/favicon\.ico|apis\.google\.com/.test(m.location().url ?? ''))
+      errors.push(m.text());
   });
   return errors;
 }
