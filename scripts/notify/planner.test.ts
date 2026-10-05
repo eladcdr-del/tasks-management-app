@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { ageStart, isStuck, plan, type PlanInput, type Send } from './planner.ts';
+import { activeWindows, ageStart, isStuck, plan, type PlanInput, type Send } from './planner.ts';
+import { isQuietHours } from './time.ts';
 import type { ActivityEvent, AddressAs, DeviceToken, Member, NotifyPrefs, Task } from './types.ts';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,15 @@ function device(uid: string, n = 1): DeviceToken {
   };
 }
 
+/** A jar that is full right now (a fill event in these tests is newer than its start). */
+const JAR_FULL = {
+  treat: 'ארוחה במסעדה',
+  target: 10,
+  count: 10,
+  round: 1,
+  startedAt: daysAgo(30)
+};
+
 function input(over: Partial<PlanInput> = {}): PlanInput {
   const members = over.members ?? [MICHAL, DANI];
   return {
@@ -115,7 +125,7 @@ function input(over: Partial<PlanInput> = {}): PlanInput {
       maxMembers: 6,
       createdBy: 'u-michal',
       createdAt: 0,
-      jar: { treat: 'ארוחה במסעדה', target: 10, count: 10, round: 1, startedAt: 0 },
+      jar: JAR_FULL,
       invite: null
     },
     members,
@@ -284,10 +294,10 @@ describe('completed', () => {
     expect(forUid(out.sends, 'u-dani').map((s) => s.title)).toEqual(['מיכל סיימה: א']);
   });
 
-  it('skips events older than 12 hours as stale (12h exactly is still fresh)', () => {
+  it('skips events older than 24 hours as stale (24h exactly is still fresh)', () => {
     const now = SUN('09:00');
-    const fresh = done('e1', 'u-michal', 'טרי', now.getTime() - 12 * HOUR);
-    const stale = done('e2', 'u-michal', 'ישן', now.getTime() - 12 * HOUR - 1);
+    const fresh = done('e1', 'u-michal', 'טרי', now.getTime() - 24 * HOUR);
+    const stale = done('e2', 'u-michal', 'ישן', now.getTime() - 24 * HOUR - 1);
     const out = plan(input({ now, events: [stale, fresh] }));
     expect(out.sends.map((s) => s.title)).toEqual(['מיכל סיימה: טרי']);
     expect(out.eventMarks).toEqual([
@@ -364,9 +374,9 @@ describe('jar_filled', () => {
     ]);
   });
 
-  it('is stale after 12 hours too', () => {
+  it('is stale after 24 hours too', () => {
     const out = plan(
-      input({ events: [{ ...jar, createdAt: SUN('09:00').getTime() - 13 * HOUR }] })
+      input({ events: [{ ...jar, createdAt: SUN('09:00').getTime() - 25 * HOUR }] })
     );
     expect(out.sends).toEqual([]);
     expect(out.eventMarks).toEqual([{ eventId: 'j1', push: 'skipped' }]);
@@ -446,7 +456,7 @@ describe('quiet hours (22:00–07:30)', () => {
 
 // ── due-day morning ───────────────────────────────────────────────────────────────────────────────
 
-describe('due-day morning (08:00–12:00)', () => {
+describe('due-day (08:00–22:00)', () => {
   const mine = task('t-arnona', { title: 'לשלם ארנונה', ownerId: 'u-michal', dueDate: TODAY });
   const open = task('t-dentist', {
     title: 'לקבוע תור לרופא שיניים',
@@ -458,8 +468,10 @@ describe('due-day morning (08:00–12:00)', () => {
     ['07:59', false],
     ['08:00', true],
     ['11:59', true],
-    ['12:00', false],
-    ['19:00', false]
+    ['12:00', true],
+    ['19:00', true],
+    ['21:59', true],
+    ['22:00', false]
   ])('window at %s → %s', (hhmm, expected) => {
     expect(ofType(plan(input({ now: SUN(hhmm), tasks: [mine] })).sends, 'due').length > 0).toBe(
       expected
@@ -621,7 +633,8 @@ describe('due-day morning: timed plans (no due date, a time, planned for today)'
   });
 
   it('is outside its window like any due reminder', () => {
-    expect(plan(input({ now: SUN('12:00'), tasks: [pickup] })).sends).toEqual([]);
+    expect(plan(input({ now: SUN('07:59'), tasks: [pickup] })).sends).toEqual([]);
+    expect(plan(input({ now: SUN('22:00'), tasks: [pickup] })).sends).toEqual([]);
   });
 });
 
@@ -696,7 +709,7 @@ describe('a task owned by a former member is treated as unassigned', () => {
 
 // ── day before a hard deadline ────────────────────────────────────────────────────────────────────
 
-describe('day-before hard deadline (18:00–21:30)', () => {
+describe('day-before hard deadline (18:00–22:00)', () => {
   const shirt = task('t-shirt', {
     title: 'להחזיר את החולצה לקניון',
     ownerId: 'u-dani',
@@ -707,8 +720,9 @@ describe('day-before hard deadline (18:00–21:30)', () => {
   it.each([
     ['17:59', false],
     ['18:00', true],
-    ['21:29', true],
-    ['21:30', false]
+    ['21:30', true],
+    ['21:59', true],
+    ['22:00', false]
   ])('window at %s → %s', (hhmm, expected) => {
     expect(plan(input({ now: SUN(hhmm), tasks: [shirt] })).sends.length > 0).toBe(expected);
   });
@@ -740,7 +754,7 @@ describe('day-before hard deadline (18:00–21:30)', () => {
         ]
       })
     );
-    expect(out.sends).toEqual([]);
+    expect(ofType(out.sends, 'eve')).toEqual([]);
   });
 
   it('fans out when unassigned and coalesces per recipient', () => {
@@ -767,7 +781,7 @@ describe('day-before hard deadline (18:00–21:30)', () => {
 
 // ── weekly nudge ──────────────────────────────────────────────────────────────────────────────────
 
-describe('weekly nudge (Sunday 10:00–13:00)', () => {
+describe('weekly nudge (Sunday 10:00–22:00)', () => {
   const acDani = task('t-ac', {
     title: 'לברר על מזגן חדש',
     ownerId: 'u-dani',
@@ -786,7 +800,9 @@ describe('weekly nudge (Sunday 10:00–13:00)', () => {
     ['Sunday 09:59', SUN('09:59'), false],
     ['Sunday 10:00', SUN('10:00'), true],
     ['Sunday 12:59', SUN('12:59'), true],
-    ['Sunday 13:00', SUN('13:00'), false],
+    ['Sunday 13:00', SUN('13:00'), true],
+    ['Sunday 21:59', SUN('21:59'), true],
+    ['Sunday 22:00', SUN('22:00'), false],
     ['Monday 10:30', MON('10:30'), false]
   ])('window at %s → %s', (_label, now, expected) => {
     expect(ofType(plan(input({ now, tasks: [acDani] })).sends, 'weekly').length > 0).toBe(expected);
@@ -842,6 +858,116 @@ describe('weekly nudge (Sunday 10:00–13:00)', () => {
     expect(off.sends).toEqual([]);
     const none = plan(input({ now: SUN('10:30'), tasks: [task('fresh', { ownerId: 'u-dani' })] }));
     expect(none.sends).toEqual([]);
+  });
+});
+
+// ── catch-up: GitHub's schedule can leave hours between runs ─────────────────────────────────────
+
+describe('catch-up after a run-less stretch', () => {
+  const arnona = task('t-arnona', { title: 'לשלם ארנונה', ownerId: 'u-michal', dueDate: TODAY });
+  const shirt = task('t-shirt', {
+    title: 'להחזיר את החולצה לקניון',
+    ownerId: 'u-dani',
+    dueDate: TOMORROW,
+    hardDeadline: true
+  });
+  const ac = task('t-ac', { title: 'לברר על מזגן חדש', ownerId: 'u-dani', createdAt: daysAgo(50) });
+  const all = [arnona, shirt, ac];
+  const keysAt = (now: Date, tasks = all) =>
+    plan(input({ now, tasks }))
+      .sends.map((s) => `${s.type} ${[...s.keys].sort().join(',')}`)
+      .sort();
+
+  it('a real sparse Sunday (runs at 07:49, 14:25, 18:13, 21:24) still delivers every reminder', () => {
+    expect(keysAt(SUN('07:49'))).toEqual([]);
+    const afternoon = keysAt(SUN('14:25'));
+    expect(afternoon).toEqual([`due due:t-arnona:${TODAY}:u-michal`, 'weekly wk:2026-W40:u-dani']);
+    const evening = keysAt(SUN('18:13'));
+    expect(evening).toEqual([...afternoon, `eve eve:t-shirt:${TOMORROW}:u-dani`].sort());
+    // later runs re-plan the very same keys, so the sent/{key} dedupe lets each out only once
+    expect(keysAt(SUN('21:24'))).toEqual(evening);
+  });
+
+  it('the evening cutoff is 22:00, where quiet hours begin; the next morning nothing is owed', () => {
+    expect(keysAt(SUN('21:59'))).toHaveLength(3);
+    expect(keysAt(SUN('22:00'))).toEqual([]);
+    expect(keysAt(MON('07:30'))).toEqual([]); // arnona was due yesterday, shirt is due today (no eve)
+    expect(keysAt(MON('07:59'))).toEqual([]);
+  });
+
+  it('after 12:00 only tasks that existed by noon are caught up; in the morning new ones join', () => {
+    const at = (hhmm: string) => SUN(hhmm).getTime();
+    const morning = task('t-morning', {
+      ownerId: 'u-michal',
+      dueDate: TODAY,
+      createdAt: at('09:00')
+    });
+    const noonish = task('t-1159', { ownerId: 'u-michal', dueDate: TODAY, createdAt: at('11:59') });
+    const afternoon = task('t-pm', { ownerId: 'u-michal', dueDate: TODAY, createdAt: at('12:00') });
+    const timedPm = task('t-plan-pm', {
+      ownerId: 'u-michal',
+      scheduledFor: TODAY,
+      dueTime: '20:00',
+      createdAt: at('15:00')
+    });
+    const tasks = [arnona, morning, noonish, afternoon, timedPm];
+    expect(keysAt(SUN('11:00'), [arnona, morning])).toEqual([
+      `due due:t-arnona:${TODAY}:u-michal,due:t-morning:${TODAY}:u-michal`
+    ]);
+    expect(keysAt(SUN('16:00'), tasks)).toEqual([
+      `due due:t-1159:${TODAY}:u-michal,due:t-arnona:${TODAY}:u-michal,due:t-morning:${TODAY}:u-michal`
+    ]);
+    // a task added in the afternoon alone sets off no push
+    expect(keysAt(SUN('16:00'), [afternoon, timedPm])).toEqual([]);
+  });
+
+  it('keeps the noon rule on the wall clock across the fall-back DST change (Sun 25 Oct, UTC+2)', () => {
+    const day = '2026-10-25';
+    const ist = (hhmm: string) => new Date(`${day}T${hhmm}:00+02:00`);
+    const due = (id: string, createdAt: number) =>
+      task(id, { ownerId: 'u-michal', dueDate: day, createdAt });
+    // 09:30Z is 11:30 local after the change (it would be 12:30 in summer time)
+    const tasks = [due('t-old', daysAgo(2)), due('t-1130', Date.parse(`${day}T09:30:00Z`))];
+    const late = due('t-1200', Date.parse(`${day}T10:00:00Z`)); // 12:00 local
+    const keys = (now: Date) =>
+      ofType(plan(input({ now, tasks: [...tasks, late] })).sends, 'due').map((s) => s.keys);
+    expect(keys(ist('07:59'))).toEqual([]);
+    expect(keys(ist('08:00'))).toHaveLength(1);
+    expect(keys(ist('21:59'))).toEqual([
+      [`due:t-1130:${day}:u-michal`, `due:t-old:${day}:u-michal`]
+    ]);
+    expect(keys(ist('22:00'))).toEqual([]);
+    // the same Sunday's weekly nudge is caught up until 21:59 local too
+    const weekly = (now: Date) =>
+      ofType(plan(input({ now, tasks: [ac] })).sends, 'weekly').map((s) => s.keys);
+    expect(weekly(ist('21:59'))).toEqual([['wk:2026-W43:u-dani']]);
+    expect(weekly(ist('22:00'))).toEqual([]);
+  });
+
+  it('opens on the local wall clock after the spring-forward change too (Fri 27 Mar, UTC+3)', () => {
+    const day = '2026-03-27';
+    const t = task('t-x', { ownerId: 'u-dani', dueDate: day, createdAt: daysAgo(200) });
+    const sends = (iso: string) => plan(input({ now: new Date(iso), tasks: [t] })).sends.length;
+    expect(sends('2026-03-27T04:59:00Z')).toBe(0); // 07:59 IDT
+    expect(sends('2026-03-27T05:00:00Z')).toBe(1); // 08:00 IDT (06:00 the day before, UTC+2)
+    expect(sends('2026-03-27T18:59:00Z')).toBe(1); // 21:59 IDT
+    expect(sends('2026-03-27T19:00:00Z')).toBe(0); // 22:00 IDT
+  });
+
+  it('no reminder window ever reaches into quiet hours', () => {
+    for (let m = 0; m < 24 * 60; m++) {
+      for (const weekday of [0, 1]) {
+        const parts = {
+          iso: TODAY,
+          hour: Math.floor(m / 60),
+          minute: m % 60,
+          weekday,
+          isoWeek: ''
+        };
+        const w = activeWindows(parts);
+        if (isQuietHours(parts)) expect([w.due, w.eve, w.weekly]).toEqual([false, false, false]);
+      }
+    }
   });
 });
 

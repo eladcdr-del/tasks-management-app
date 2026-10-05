@@ -94,6 +94,15 @@ export function inWindow(
   return a <= b ? t >= a && t < b : t >= a || t < b;
 }
 
+/**
+ * True when `instant` is before `hhmm` on the calendar day `iso` in Asia/Jerusalem (any earlier day
+ * counts). Compared on the wall clock, so a DST change cannot move it.
+ */
+export function isBeforeLocal(instant: Date | number, iso: string, hhmm: string): boolean {
+  const p = localParts(instant);
+  return p.iso < iso || (p.iso === iso && p.hour * 60 + p.minute < minutesOf(hhmm));
+}
+
 export const QUIET_FROM = '22:00';
 export const QUIET_TO = '07:30';
 

@@ -16,7 +16,8 @@ For each household (all of them, listed with admin rights):
 1. **Load** the pending events (`events` where `push == 'pending'`). Members, their devices
    (`users/{uid}/devices`) and open tasks (`tasks` where `status == 'open'`) are read only when
    something can actually go out now. That means pending events outside quiet hours, or an open
-   reminder window. Outside those times a run costs about 2 reads per household.
+   reminder window (08:00–22:00). Outside those times a run costs about 2 reads per household; in
+   them about (open tasks + 6), so 288 runs a day stay well inside Spark's 50k reads a day.
 2. **Plan** with `planner.ts`, a pure function of `(now, household data)`:
    `plan(...) → { sends, eventMarks }`. It does no I/O and never reads the clock, so it is fully
    tested with a fake clock.
@@ -48,14 +49,21 @@ keeps the same `tag`, so the phone replaces the earlier notification instead of 
 The run sends nothing during quiet hours (22:00–07:30). Events stay pending, unmarked, and go out
 at 07:30.
 
+The reminder windows run until 22:00 so a reminder goes out on the **first run at or after its
+window opens**, however late that run is: every run in the window plans it again, and its keys let
+it out only once. GitHub's schedule can leave hours between runs (see Caveats), so a narrow window
+could be missed for the whole day. A due-day summary takes in new tasks only until 12:00. After
+that it only catches up on tasks that existed by noon, so a task added in the afternoon (often by
+the person it is for) does not set off a push.
+
 | Type         | When                                 | To                                                                                                                                                           | Copy                                                                    | Key                                          |
 | ------------ | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- | -------------------------------------------- |
 | `requested`  | any time outside quiet hours         | `targetId`, if not the actor and `notify.requests` is on. Skipped if the task is no longer open and assigned to them, or the request is more than 7 days old | "דני ביקש ממך משימה" / "מיכל ביקשה…" / "…ביקש/ה…", body: the task title | `ev:{eventId}:{uid}`                         |
-| `completed`  | outside quiet hours, event ≤ 12h old | every **other** member with `partnerDone` on. The same actor's completions in one run are combined. Skipped if the task is open again (undone)               | "מיכל סיימה: {title}" · "דני סיים 3 משימות" (body lists up to 3 titles) | `ev:{eventId}:{uid}` for each event          |
+| `completed`  | outside quiet hours, event ≤ 24h old | every **other** member with `partnerDone` on. The same actor's completions in one run are combined. Skipped if the task is open again (undone)               | "מיכל סיימה: {title}" · "דני סיים 3 משימות" (body lists up to 3 titles) | `ev:{eventId}:{uid}` for each event          |
 | `jar_filled` | like `completed`                     | like `completed`                                                                                                                                             | "הצנצנת התמלאה!" + "הגיע הזמן ל: {treat}" (from `household.jar.treat`)  | `ev:{eventId}:{uid}`                         |
-| `due`        | 08:00–12:00                          | the owner, or every member if unassigned, with `reminders` on. One summary per recipient                                                                     | "להיום: {title}" · "3 משימות להיום"                                     | `due:{taskId}:{dueDate}:{uid}` for each task |
-| `eve`        | 18:00–21:30                          | `hardDeadline` tasks due tomorrow. Recipients and summaries as for `due`                                                                                     | "מחר אחרון: {title}" · "מחר אחרון: 2 משימות"                            | `eve:{taskId}:{dueDate}:{uid}` for each task |
-| `weekly`     | Sunday 10:00–13:00                   | each member with `weekly` on who has ≥ 1 stuck task they own, or that nobody owns                                                                            | "יש 2 משימות שמחכות כבר זמן מה" (body: up to 3 titles)                  | `wk:{YYYY-Www}:{uid}`                        |
+| `due`        | 08:00–22:00 (tasks join until 12:00) | the owner, or every member if unassigned, with `reminders` on. One summary per recipient                                                                     | "להיום: {title}" · "3 משימות להיום"                                     | `due:{taskId}:{dueDate}:{uid}` for each task |
+| `eve`        | 18:00–22:00                          | `hardDeadline` tasks due tomorrow. Recipients and summaries as for `due`                                                                                     | "מחר אחרון: {title}" · "מחר אחרון: 2 משימות"                            | `eve:{taskId}:{dueDate}:{uid}` for each task |
+| `weekly`     | Sunday 10:00–22:00                   | each member with `weekly` on who has ≥ 1 stuck task they own, or that nobody owns                                                                            | "יש 2 משימות שמחכות כבר זמן מה" (body: up to 3 titles)                  | `wk:{YYYY-Www}:{uid}`                        |
 
 - **Stuck** means open AND actionable (`min(dueDate, scheduledFor)` is empty or ≤ today) AND
   (≥ 21 calendar days since `ageStart`, OR `snoozeCount` ≥ 3). `ageStart` is the creation day for

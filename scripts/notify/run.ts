@@ -235,7 +235,8 @@ async function runHousehold(
   const windows = activeWindows(parts);
 
   // Cheap first read: pending events. Members, devices and tasks are read only when something can
-  // actually go out now (keeps the 288 runs/day well inside the Spark read quota).
+  // actually go out now: pending events outside quiet hours, or 08:00-22:00 for the reminders. At
+  // 288 runs/day that is about 168 x (open tasks + 6) reads, well inside the Spark quota (50k/day).
   const events = await loadPendingEvents(db, hid);
   const eventsActionable = windows.events && events.length > 0;
   if (!eventsActionable && !anyReminderWindow(windows)) {
