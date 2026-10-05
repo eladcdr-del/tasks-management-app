@@ -113,7 +113,34 @@ test('delete the jar from its edit sheet: a clear confirmation, then no jar, wit
 
 test('Home shows no jar strip once the jar is deleted', async ({ page }) => {
   await openApp(page);
-  await expect(page.locator('[data-jar-mini]')).toBeVisible();
+  const mini = page.locator('[data-jar-mini]');
+  await expect(mini).toBeVisible();
+
+  // Deleted while Home shows: the strip folds away; the undo folds it back in.
+  const full = Math.round((await mini.boundingBox())!.height);
+  await page.evaluate(() =>
+    (
+      window as unknown as { __homecareTest: { state: { household: { deleteJar(): void } } } }
+    ).__homecareTest.state.household.deleteJar()
+  );
+  const heights = await page.evaluate(
+    () =>
+      new Promise<number[]>((resolve) => {
+        const out: number[] = [];
+        const step = () => {
+          const el = document.querySelector('[data-jar-mini]');
+          if (!el || out.length > 120) return resolve(out);
+          out.push(Math.round(el.getBoundingClientRect().height));
+          requestAnimationFrame(step);
+        };
+        step();
+      })
+  );
+  expect(heights.some((h) => h > 1 && h < full - 1)).toBe(true);
+  await expect(mini).toHaveCount(0);
+  await snackbar(page).getByRole('button', { name: 'ביטול' }).click();
+  await expect(mini).toContainText('ארוחה במסעדה · 7 מתוך 10');
+
   await page.getByRole('link', { name: 'הצנצנת' }).first().click();
   await page.getByRole('button', { name: 'עריכת הצנצנת' }).click();
   await sheet(page).getByRole('button', { name: 'מחיקת הצנצנת' }).click();
