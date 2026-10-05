@@ -22,6 +22,7 @@
 //   accept(id) → TakeResult | null decline(id)            cancelRequest(id)    (requests)
 //   complete(id, completion, photos?) → CompleteResult | null           reopen(id)
 //   remove(id, message?)           hidden at once, deleted after 5 s unless undoRemove(id)
+//   createMany(drafts) → ids       quick add's list mode: one create per draft, in order
 //
 // Actions never reject: failures are shown as a snackbar (ui.pushError) and resolve to null.
 
@@ -206,6 +207,20 @@ export class TasksStore implements ScopedStore {
   /** Adds a task (owned by another member = a request, Blueprint amendment). Returns its id. */
   create(draft: TaskDraft): string | null {
     return this.#run((repo, hid) => repo.createTask(hid, draft), null);
+  }
+
+  /**
+   * Adds several tasks in a row (quick add's list mode), each exactly like `create`: queued
+   * offline, one "created" event each (no push). Returns the ids that were created, in order; a
+   * draft that fails is skipped (its error shows once in the snackbar).
+   */
+  createMany(drafts: readonly TaskDraft[]): string[] {
+    const ids: string[] = [];
+    for (const draft of drafts) {
+      const id = this.create(draft);
+      if (id !== null) ids.push(id);
+    }
+    return ids;
   }
 
   update(id: string, patch: TaskPatch): void {

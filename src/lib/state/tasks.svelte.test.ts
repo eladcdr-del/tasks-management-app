@@ -113,6 +113,38 @@ describe('TasksStore writes', () => {
     expect(store.byId(id!)?.title).toBe('לקנות נורות LED');
   });
 
+  it('createMany adds every draft in order, unowned, with one "created" event each and no push', () => {
+    const before = store.open.length;
+    const titles = Array.from({ length: 15 }, (_, i) => `משימה מהרשימה ${i + 1}`);
+    const ids = store.createMany(titles.map((title) => ({ title })));
+    expect(ids).toHaveLength(15);
+    expect(new Set(ids).size).toBe(15);
+    expect(store.open).toHaveLength(before + 15);
+    expect(ids.map((id) => store.byId(id)?.title)).toEqual(titles);
+    expect(ids.every((id) => store.byId(id)?.ownerId === null)).toBe(true);
+    // All of them wait for someone to take them (never assigned for anyone).
+    const waiting = new Set(store.groups.waiting.map((t) => t.id));
+    expect(ids.every((id) => waiting.has(id))).toBe(true);
+    const events = store.recentEvents.filter((e) => e.taskId !== null && ids.includes(e.taskId));
+    expect(events).toHaveLength(15);
+    expect(events.every((e) => e.type === 'created' && e.push === 'none')).toBe(true);
+    expect(store.createMany([])).toEqual([]);
+  });
+
+  it('createMany skips a draft that fails and keeps going (one snackbar)', () => {
+    const real = repo.createTask.bind(repo);
+    let n = 0;
+    vi.spyOn(repo, 'createTask').mockImplementation((hid, d) => {
+      if (++n === 2) throw new Error('boom');
+      return real(hid, d);
+    });
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const ids = store.createMany([{ title: 'אחת' }, { title: 'שתיים' }, { title: 'שלוש' }]);
+    expect(ids.map((id) => store.byId(id)?.title)).toEqual(['אחת', 'שלוש']);
+    expect(ui.queue).toHaveLength(1);
+    err.mockRestore();
+  });
+
   it('take / release / request move ownership', async () => {
     const waiting = store.groups.waiting[0]!;
     expect(await store.take(waiting.id)).toEqual({ ok: true });
@@ -215,9 +247,10 @@ describe('TasksStore writes', () => {
     store.detach();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(store.create({ title: 'x' })).toBeNull();
+    expect(store.createMany([{ title: 'x' }])).toEqual([]);
     expect(await store.take('x')).toBeNull();
     store.remove('x');
-    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledTimes(3);
     warn.mockRestore();
   });
 });
