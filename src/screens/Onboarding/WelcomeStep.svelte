@@ -107,7 +107,7 @@
 
   .privacy {
     font: var(--font-caption);
-    color: var(--ink-3);
+    color: var(--ink-2);
     text-align: center;
   }
 </style>

@@ -90,7 +90,7 @@ test('an invite link brings a second member in; a revoked link explains itself',
   await signIn(dad, `u-dad-${run}`, 'דני לוי');
   await expect(dad).toHaveURL(new RegExp(`#/join/${code}$`));
   await expect(
-    dad.getByRole('heading', { level: 1, name: 'הזמנה ממיכל להצטרף ל׳הבית שלנו׳' })
+    dad.getByRole('heading', { level: 1, name: 'הזמנה ממיכל להצטרף ל״הבית שלנו״' })
   ).toBeVisible();
   await expect(dad.getByLabel('איך קוראים לך?')).toHaveValue('דני');
   await dad.getByRole('radio', { name: /^אתה/ }).check({ force: true });

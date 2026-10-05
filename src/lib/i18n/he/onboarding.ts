@@ -13,7 +13,7 @@ export const onboarding = {
     title: 'הבית, מסודר ביחד',
     valueProp: 'רשימה אחת משותפת לכל מה שצריך לעשות בבית: רואים מה פתוח, מי לוקח, ומה כבר נעשה.',
     signIn: 'כניסה עם Google',
-    privacy: 'הנתונים נשמרים רק בפרויקט ה-Firebase של המשפחה.',
+    privacy: 'הרשימה פרטית: רק בני הבית שלכם רואים אותה.',
     errorTitle: 'ההתחברות לא הצליחה'
   },
   profile: {
@@ -49,7 +49,7 @@ export const onboarding = {
     title: 'התקנה למסך הבית',
     body: 'עם אייקון במסך הבית, HomeCare נפתחת כמו כל אפליקציה: במסך מלא, בלי כתובת ובלי לחפש.',
     install: 'התקנה',
-    installed: 'האפליקציה מותקנת. אפשר לפתוח אותה מהמסך הבית.',
+    installed: 'האפליקציה מותקנת. אפשר לפתוח אותה ממסך הבית.',
     manualTitle: 'ככה מתקינים בכרום באנדרואיד:',
     manualSteps: [
       'פותחים את התפריט ⋮ בפינת המסך',
@@ -62,7 +62,7 @@ export const onboarding = {
   join: {
     title: 'הצטרפות לבית',
     loading: 'בודקים את ההזמנה…',
-    invitedBy: (inviter: string, house: string) => `הזמנה ${from(inviter)} להצטרף ל׳${house}׳`,
+    invitedBy: (inviter: string, house: string) => `הזמנה ${from(inviter)} להצטרף ל״${house}״`,
     pitch: 'אחרי ההצטרפות תראו את אותה רשימה, ותוכלו לקחת משימות ולבקש עזרה.',
     aboutYou: 'כמה פרטים עליך',
     join: 'הצטרפות',

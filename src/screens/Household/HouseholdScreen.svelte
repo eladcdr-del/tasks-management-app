@@ -4,7 +4,7 @@
   //     opens an inline editor (name, address-as, colour)
   //   - household name (inline edit)
   //   - the invite card (InviteCard.svelte)
-  //   - leave the household (Dialog confirm)
+  //   - leave the household (its own card; Dialog confirm)
   // The gear in the header opens #/settings.
   import Settings from '@lucide/svelte/icons/settings';
   import Pencil from '@lucide/svelte/icons/pencil';
@@ -201,6 +201,12 @@
             onclick={editName}
           />
         {/if}
+      </Card>
+    </section>
+
+    <!-- Leaving sits on its own, away from the house name it has nothing to do with. -->
+    <section class="section" aria-label={t.leave}>
+      <Card padding="none">
         <ListRow title={t.leave} icon={DoorOpen} flipIcon danger onclick={() => (leaving = true)} />
       </Card>
     </section>
