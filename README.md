@@ -16,7 +16,7 @@ An app for managing household tasks together, built for mom and dad (Hebrew, RTL
 - **Things that get postponed actually move.** Each task shows its age ("פתוחה 3 שבועות") and how often it was snoozed. Plans are grouped into today, this week and later, and a gentle weekly nudge covers stuck tasks.
 - **No more "you forgot".** History records who did what. When completing a task you can add a note, cost, place, contact and photos.
 - **House memory.** Search past tasks: "מתי החלפנו מצבר ובאיזה מוסך?"
-- **Shared treat jar.** A team goal: by default everyone closes their own share of tasks ("כל אחד תורם"), or the classic total by anyone ("ביחד"). When the jar is full, you treat yourselves together.
+- **Shared treat jar.** A team goal: by default everyone closes their own share of tasks ("כל אחד תורם"), or the classic total by anyone ("ביחד"). When the jar is full, you treat yourselves together. A jar can be deleted (the treats you earned stay) and a new one started any time; an earned treat can be removed from the history. Both come with an undo.
 - **Phone notifications:**
   - when someone asks you to do something
   - on the due date
