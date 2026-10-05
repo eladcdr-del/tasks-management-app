@@ -13,6 +13,7 @@ import {
   toISO,
   weekday
 } from '$lib/domain/dates';
+import { firstPlanDate, MAX_INTERVAL } from '$lib/domain/recurrence';
 import type { ISODate, Priority, RecurrenceFreq } from '$lib/domain/types';
 import {
   ADVERB_LEAD,
@@ -23,12 +24,15 @@ import {
   BETWEEN_WORD,
   CONDITION_WORD,
   CONTRAST_WORDS,
+  DAILY_PHRASES,
+  DAILY_VETO_NEXT,
   DATE_DAY_PARTS,
   DATE_WORD,
   DAY_LIKE_WORDS,
   DAY_MODIFIERS,
   DAY_NAME_VETO_NEXT,
   DAY_PARTS,
+  DAYS_OF_WORDS,
   DUAL_UNITS,
   DURATION_WORDS,
   EVE_WORD,
@@ -40,6 +44,8 @@ import {
   IN_WORD,
   INTENSIFIERS_AFTER,
   INTENSIFIERS_BEFORE,
+  INTERVAL_DUALS,
+  INTERVAL_UNITS,
   LAMED_DAY_NAMES,
   LAMED_DAY_VETO_BEFORE,
   MAX_BARE_DATE_DAYS_AHEAD,
@@ -54,6 +60,7 @@ import {
   OF_MONTH_WORDS,
   OF_WORD,
   OFFSET_UNITS,
+  ONCE_WORD,
   ONE_WORDS,
   PAST_GRACE_DAYS,
   PERIOD_MODIFIERS,
@@ -75,6 +82,7 @@ import {
   STREET_WORDS,
   THIS_WEEK_PHRASE,
   TIME_CUES,
+  TIMES_A_WEEK,
   UNIT_WORDS,
   UNTIL_WORD,
   WEEKDAYS,
@@ -148,6 +156,10 @@ export interface Cand {
   endClock?: ClockParts;
   priority?: Exclude<Priority, 'normal'>;
   freq?: RecurrenceFreq;
+  /** recurrence only: every N periods ("כל שבועיים"), when not 1. */
+  interval?: number;
+  /** recurrence only: two or more listed weekdays ("כל שני וחמישי"), sorted. */
+  weekdays?: number[];
 }
 
 export interface Ctx {
@@ -1108,21 +1120,123 @@ export function priorityCandidates(text: string): Cand[] {
 
 // ───────────────────────────── recurrence ─────────────────────────────
 
-const freqs = Object.keys(RECURRENCE_PHRASES) as RecurrenceFreq[];
+const freqs = (Object.keys(RECURRENCE_PHRASES) as RecurrenceFreq[]).filter(
+  (f) => RECURRENCE_PHRASES[f].length > 0 // an empty alternation would match the empty string
+);
 const RECURRENCE_PHRASE_RES = freqs.map((freq) => ({
   freq,
   re: rxg(`${PFX}(?:${alt(RECURRENCE_PHRASES[freq])})${AFTER}`)
 }));
-const RECURRENCE_ADJECTIVE_RES = freqs.map((freq) => ({
-  freq,
-  re: rxg(`${PFX}(?:(${lit(ADVERB_LEAD)})\\s+)?(?:${alt(RECURRENCE_ADJECTIVES[freq])})${AFTER}`)
-}));
+const RECURRENCE_ADJECTIVE_RES = (Object.keys(RECURRENCE_ADJECTIVES) as RecurrenceFreq[]).map(
+  (freq) => ({
+    freq,
+    re: rxg(`${PFX}(?:(${lit(ADVERB_LEAD)})\\s+)?(?:${alt(RECURRENCE_ADJECTIVES[freq])})${AFTER}`)
+  })
+);
+/**
+ * A weekday letter in a recurrence ("כל יום ה'", "בימים א' וד'"): with a geresh, or alone and NOT
+ * before a number. Stricter than WD_LETTER: "כל יום ב-17:00" is every day at 17:00, not Mondays.
+ */
+const REC_LETTER = `[${LETTERS}](?:${GERESH_CLASS}|(?![${LD}])(?!\\s?\\d))`;
 /** "כל יום שלישי", "בכל שבת": weekly from the next such day. Not "כל שני וחמישי" (two days). */
 const RE_EVERY_DAY = rxg(
-  `${ATTACHED}${lit(EVERY_WORD)}\\s+(?:(יום\\s+(?:${DAY_NAME_ALT}|${WD_LETTER}))|(${DAY_NAME_ALT}))${AFTER}` +
+  `${ATTACHED}${lit(EVERY_WORD)}\\s+(?:(יום\\s+(?:${DAY_NAME_ALT}|${REC_LETTER}))|(${DAY_NAME_ALT}))${AFTER}` +
     `(?!\\s+ו(?:יום\\s+|ב)?(?:${DAY_NAME_ALT})${AFTER})` +
     `(?!\\s+(?:${alt(DAY_NAME_VETO_NEXT)})${AFTER})` // "כל יום ראשון לחודש" is monthly, on the 1st
 );
+
+/** "כל יום", "פעם ביום", but not "כל יום שלישי" / "כל יום ה'" / "כל יום הולדת". */
+const RE_DAILY = rxg(
+  `${PFX}(?:${alt(DAILY_PHRASES)})${AFTER}` +
+    `(?!\\s+(?:(?:${DAY_NAME_ALT})${AFTER}|${REC_LETTER}|(?:${alt(DAILY_VETO_NEXT)})${AFTER}))`
+);
+
+/** A count 1-99: digits or a spelled-out number ("שלושה"). */
+const COUNT = `(\\d{1,2}|${alt(Object.keys(NUMBER_WORDS))})`;
+/** "כל 3 ימים", "כל שלושה שבועות", "כל יומיים", "פעם בשבועיים", "פעם ב-3 חודשים". */
+const RE_INTERVAL = rxg(
+  `${PFX}(?:${lit(EVERY_WORD)}\\s+|${lit(ONCE_WORD)}\\s+ב\\s?)` +
+    `(?:${COUNT}\\s+(${alt(Object.keys(INTERVAL_UNITS))})|(${alt(Object.keys(INTERVAL_DUALS))}))${AFTER}`
+);
+
+/** One day in a list: "שני", "יום שני", "ה'", "יום ה'". Group 1: the name; group 2: the letter. */
+const LIST_DAY = `(?:יום\\s+)?(?:(${DAY_NAME_ALT})${AFTER}|([${LETTERS}])(?:${GERESH_CLASS}|(?![${LD}])(?!\\s?\\d)))`;
+const LIST_DAY_NC = LIST_DAY.replace(/\((?!\?)/g, '(?:');
+/** Between days: a comma (and maybe ו), or ו attached or after a hyphen ("ו-חמישי"), even "וב". */
+const LIST_SEP = `(?:\\s*,\\s*(?:ו\\s?)?|\\s+ו(?:ב\\s?)?\\s?)`;
+const DAY_AT = new RegExp(LIST_DAY, 'uy');
+const SEP_AT = new RegExp(LIST_SEP, 'uy');
+/** "כל שבוע" / "כל שבועיים" / "כל 3 שבועות" right before a "בימי …" list: its interval. */
+const WEEKS_LEAD = `(?:${PFX}${lit(EVERY_WORD)}\\s+(?:(שבוע|שבועיים)|${COUNT}\\s+שבועות)\\s*,?\\s+)`;
+const TIMES_LEAD = `(?:(?:${alt(TIMES_A_WEEK)})\\s*,?\\s+)`;
+/** "כל שני וחמישי", "כל יום א' וה'", "כל ראשון, שלישי וחמישי": two or more days after "כל". */
+const RE_EVERY_DAYS = rxg(
+  `${ATTACHED}${lit(EVERY_WORD)}\\s+(${LIST_DAY_NC}(?:${LIST_SEP}${LIST_DAY_NC})+)`
+);
+/**
+ * "בימי שני וחמישי", "בימים א' וד'", "בימי שלישי" (one day is fine here: "on Tuesdays"), with an
+ * optional interval lead ("כל שבועיים בימי שני") or count lead ("פעמיים בשבוע בימים א' וד'").
+ */
+const RE_DAYS_OF = rxg(
+  `${WEEKS_LEAD}?${TIMES_LEAD}?${ATTACHED}(?:${lit(EVERY_WORD)}\\s+)?(?:${alt(DAYS_OF_WORDS)})\\s+` +
+    `(${LIST_DAY_NC}(?:${LIST_SEP}${LIST_DAY_NC})*)`
+);
+/** After a list of days: "לחודש" / "לציון", or a partitive "מהם" ("כל שני ושלישי מהם"). */
+const RE_LIST_VETO_NEXT = rx1(`^\\s+(?:${alt(DAY_NAME_VETO_NEXT)}|מה\\p{L}*)${AFTER}`);
+
+/** The weekday indices of a list matched by LIST_DAY (LIST_SEP LIST_DAY)*, in order; null if off. */
+function listDays(list: string): number[] | null {
+  const days: number[] = [];
+  let p = 0;
+  while (p < list.length) {
+    if (days.length > 0) {
+      SEP_AT.lastIndex = p;
+      const sep = SEP_AT.exec(list);
+      if (!sep) return null;
+      p += sep[0].length;
+    }
+    DAY_AT.lastIndex = p;
+    const m = DAY_AT.exec(list);
+    if (!m) return null;
+    const index = m[1] ? DAY_BY_NAME.get(m[1]) : DAY_BY_LETTER.get(group(m, 2));
+    if (index === undefined) return null;
+    days.push(index);
+    p += m[0].length;
+  }
+  return days;
+}
+
+/** A count written as digits or as a word ("שלושה"), or NaN. */
+const countOf = (word: string): number =>
+  /^\d+$/.test(word) ? Number(word) : (NUMBER_WORDS[word] ?? Number.NaN);
+const okInterval = (n: number): boolean => Number.isInteger(n) && n >= 1 && n <= MAX_INTERVAL;
+
+/**
+ * A weekly candidate for a list of `days`: one day is a plain weekly repeat from the next such day
+ * (as "כל יום שלישי"); several are a weekly rule with those days, from the first one after today.
+ */
+function daysCand(
+  h: Pick<Cand, 'start' | 'end' | 'dayPart'>,
+  days: readonly number[],
+  interval: number,
+  today: ISODate
+): Cand {
+  const unique = [...new Set(days)].sort((a, b) => a - b);
+  const every = interval > 1 ? { interval } : {};
+  if (unique.length === 1) {
+    const iso = nextWeekday(today, unique[0] as number);
+    return { ...h, kind: 'recurrence', freq: 'weekly', ...every, iso };
+  }
+  const rule = { freq: 'weekly' as const, weekdays: unique };
+  return {
+    ...h,
+    kind: 'recurrence',
+    freq: 'weekly',
+    ...every,
+    weekdays: unique,
+    iso: firstPlanDate(rule, today) ?? undefined
+  };
+}
 
 export function recurrenceCandidates(ctx: Ctx, phraseStarts: ReadonlySet<number>): Cand[] {
   const { text, today } = ctx;
@@ -1135,7 +1249,13 @@ export function recurrenceCandidates(ctx: Ctx, phraseStarts: ReadonlySet<number>
     for (const h of scan(re, text)) {
       // "מנוי שנתי" is an annual subscription; "שנתי: לחדש ביטוח" and "…, שבועי" are recurrences
       if (!group(h.m, 1) && !separatedBefore(ctx, h.start)) continue;
-      out.push({ kind: 'recurrence', start: h.start, end: h.end, freq });
+      out.push({
+        kind: 'recurrence',
+        start: h.start,
+        end: h.end,
+        freq,
+        ...(freq === 'daily' ? { iso: today } : {})
+      });
     }
   }
   for (const hit of scan(RE_EVERY_DAY, text)) {
@@ -1145,6 +1265,38 @@ export function recurrenceCandidates(ctx: Ctx, phraseStarts: ReadonlySet<number>
     if (index === undefined) continue;
     if (bare && h.end === hit.end && !followerOk(ctx, hit.end, phraseStarts)) continue;
     out.push({ ...h, kind: 'recurrence', freq: 'weekly', iso: nextWeekday(today, index) });
+  }
+  // every day: planned today (quickAdd moves it to tomorrow when its time of day has passed)
+  for (const hit of scan(RE_DAILY, text)) {
+    const h = withDayPart(text, { start: hit.start, end: hit.end } as Cand);
+    out.push({ ...h, kind: 'recurrence', freq: 'daily', iso: today });
+  }
+  for (const hit of scan(RE_INTERVAL, text)) {
+    const dual = group(hit.m, 3);
+    const freq = dual ? INTERVAL_DUALS[dual] : INTERVAL_UNITS[group(hit.m, 2)];
+    const interval = dual ? 2 : countOf(group(hit.m, 1));
+    if (!freq || !okInterval(interval)) continue;
+    const every = interval > 1 ? { interval } : {};
+    if (freq === 'daily') {
+      const h = withDayPart(text, { start: hit.start, end: hit.end } as Cand);
+      out.push({ ...h, kind: 'recurrence', freq, ...every, iso: today });
+    } else out.push({ kind: 'recurrence', start: hit.start, end: hit.end, freq, ...every });
+  }
+  for (const hit of scan(RE_EVERY_DAYS, text)) {
+    const days = listDays(group(hit.m, 1));
+    if (!days || days.length < 2 || RE_LIST_VETO_NEXT.test(text.slice(hit.end))) continue;
+    const h = withDayPart(text, { start: hit.start, end: hit.end } as Cand);
+    out.push(daysCand(h, days, 1, today));
+  }
+  for (const hit of scan(RE_DAYS_OF, text)) {
+    const days = listDays(group(hit.m, 3));
+    if (!days || RE_LIST_VETO_NEXT.test(text.slice(hit.end))) continue;
+    const weeks = group(hit.m, 1) || group(hit.m, 2);
+    const interval =
+      weeks === '' || weeks === 'שבוע' ? 1 : weeks === 'שבועיים' ? 2 : countOf(weeks);
+    if (!okInterval(interval)) continue;
+    const h = withDayPart(text, { start: hit.start, end: hit.end } as Cand);
+    out.push(daysCand(h, days, interval, today));
   }
   return out;
 }

@@ -545,10 +545,21 @@ describe('M6: colloquial forms', () => {
     });
   });
 
-  it('"כל שני וחמישי" (two days, or the idiom "all the time") is left alone', () => {
-    expect(fields('לבדוק כל שני וחמישי')).toEqual({ title: 'לבדוק כל שני וחמישי' });
-    expect(fields('חוג כל יום שני וחמישי')).toEqual({ title: 'חוג כל יום שני וחמישי' });
+  it('"כל שני וחמישי" is every Monday and Thursday (recurrence feature), from the next one', () => {
+    const monThu = { freq: 'weekly', weekdays: [1, 4] };
+    expect(fields('לבדוק כל שני וחמישי')).toEqual({
+      title: 'לבדוק',
+      scheduledFor: '2026-10-05',
+      recurrence: monThu
+    });
+    expect(fields('חוג כל יום שני וחמישי')).toEqual({
+      title: 'חוג',
+      scheduledFor: '2026-10-05',
+      recurrence: monThu
+    });
+    // a partitive after the days ("every third of the participants") is no day at all
     expect(fields('לבדוק כל שלישי מהמשתתפים').recurrence).toBeUndefined();
+    expect(fields('לבדוק כל שני ושלישי מהם')).toEqual({ title: 'לבדוק כל שני ושלישי מהם' });
   });
 
   it('"הערב" is today', () => {

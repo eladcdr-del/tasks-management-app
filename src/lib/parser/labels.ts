@@ -1,10 +1,12 @@
 // Hebrew chip labels for parsed phrases: "מחר · יום ב׳ 5/10", "מחר בבוקר · יום ב׳ 5/10",
-// "עד יום ה׳ 8/10", "השבוע · עד שבת 10/10", "17:30", "08:00–12:00", "דחוף", "רכב", "כל שבוע".
+// "עד יום ה׳ 8/10", "השבוע · עד שבת 10/10", "17:30", "08:00–12:00", "דחוף", "רכב", "כל שבוע",
+// "כל יומיים", "בימים ב׳ וה׳ · יום ב׳ 5/10".
 
 import { getCategory } from '$lib/domain/categories';
 import { diffDays, weekday } from '$lib/domain/dates';
+import type { RecurrenceRule } from '$lib/domain/recurrence';
 import type { CategoryId, ISODate, Priority, RecurrenceFreq } from '$lib/domain/types';
-import { formatTime, relativeDayLabel } from '$lib/i18n/format';
+import { formatTime, recurrenceText, relativeDayLabel } from '$lib/i18n/format';
 import type { DayPart } from './lexicon';
 
 /** "יום ה׳" with a Hebrew geresh (U+05F3); Saturday is just "שבת" (as in i18n/format chips). */
@@ -71,21 +73,19 @@ export const priorityLabel = (p: Exclude<Priority, 'normal'>): string => PRIORIT
 
 export const categoryLabel = (id: CategoryId): string => getCategory(id).label;
 
-const RECURRENCE_LABELS: Record<RecurrenceFreq, string> = {
-  weekly: 'כל שבוע',
-  monthly: 'כל חודש',
-  yearly: 'כל שנה'
-};
-
-/** "כל שבוע", or "כל שבוע · יום ג׳ 6/10 (בבוקר)" when the phrase also fixed the first date. */
+/**
+ * The rule in words (recurrenceText: "כל שבוע", "כל יומיים", "בימים א׳ וד׳"), plus the first date
+ * when the phrase also fixed it: "כל שבוע · יום ג׳ 6/10", "בימים ב׳ וה׳ · יום ב׳ 5/10 בבוקר".
+ * Without a date, a part of day follows the rule: "כל יום בבוקר".
+ */
 export function recurrenceLabel(
-  freq: RecurrenceFreq,
+  rule: RecurrenceFreq | RecurrenceRule,
   firstDate: ISODate | undefined,
   today: ISODate,
   dayPart?: DayPart
 ): string {
-  const base = RECURRENCE_LABELS[freq];
-  if (firstDate === undefined) return base;
+  const base = recurrenceText(typeof rule === 'string' ? { freq: rule } : rule);
   const part = dayPart ? ` ${DAY_PART_LABELS[dayPart]}` : '';
+  if (firstDate === undefined) return `${base}${part}`;
   return `${base} · ${plainDay(firstDate, today)}${part}`;
 }
