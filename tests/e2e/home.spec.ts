@@ -156,6 +156,22 @@ test('a request to me stands out whatever the tab, and counts in the pulse', asy
   await expect(pulse(page, 'requested')).toHaveCount(0);
 });
 
+test('a snackbar never covers the FAB', async ({ page }) => {
+  await openApp(page);
+  await card(section(page, 'waiting'), 'seed-bulbs')
+    .getByRole('button', { name: 'אני לוקחת' })
+    .click();
+  const bar = page.locator('[data-snackbar-host] .snackbar');
+  await expect(bar).toContainText('המשימה אצלך');
+  const fab = page.locator('[data-fab]');
+  await expect
+    .poll(async () => {
+      const [b, f] = [await bar.boundingBox(), await fab.boundingBox()];
+      return b && f ? f.y - (b.y + b.height) : -1;
+    })
+    .toBeGreaterThanOrEqual(0);
+});
+
 test('alone in the household: no "waiting" wall, and no "ask for help" dead end', async ({
   page
 }) => {

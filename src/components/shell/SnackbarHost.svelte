@@ -2,7 +2,9 @@
   // owner: step 3.1. The one live region for Snackbars ("בוצע · ביטול", 5 s, with action/undo).
   // The queue lives in ui.svelte.ts (2.4); the Snackbar primitive runs the timer and calls
   // onDismiss, which removes that snackbar from the queue. `{#key id}` restarts the timer per
-  // message. Sits above the bottom nav when there is one, else above the safe area.
+  // message. Sits above the bottom nav when there is one, else above the safe area; and above the
+  // FAB while it shows (Home, Memory) and a screen's fixed action bar (task detail: בוצע / דחייה),
+  // so the main buttons never hide behind a message.
   import { Snackbar } from '$components/ui';
   import { he } from '$lib/i18n/he';
   import { ui } from '$lib/state/ui.svelte';
@@ -48,6 +50,16 @@
 
   .host.above-nav {
     inset-block-end: calc(var(--nav-h) + var(--safe-bottom) + var(--s3));
+  }
+
+  /* FabHost (not hidden): the 56px FAB sits --s4 above the nav. */
+  :global(body:has([data-fab-host]:not([inert]))) .host.above-nav {
+    inset-block-end: calc(var(--nav-h) + var(--safe-bottom) + var(--s4) + 56px + var(--s3));
+  }
+
+  /* A fixed bottom action bar ([data-action-bar]): a 52px button, --s3 padding and a 1px rule. */
+  :global(body:has([data-action-bar])) .host {
+    inset-block-end: calc(var(--safe-bottom) + 52px + 2 * var(--s3) + 1px + var(--s3));
   }
 
   .slot {

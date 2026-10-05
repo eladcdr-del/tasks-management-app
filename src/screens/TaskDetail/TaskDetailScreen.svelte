@@ -323,7 +323,8 @@
       </div>
     </div>
 
-    <footer class="action-bar">
+    <!-- data-action-bar: SnackbarHost lifts messages above this bar. -->
+    <footer class="action-bar" data-action-bar>
       {#if isDone}
         <Button size="lg" block variant="secondary" icon={RotateCcw} onclick={reopen}>{t.reopen}</Button>
       {:else}
