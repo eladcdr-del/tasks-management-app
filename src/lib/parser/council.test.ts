@@ -691,6 +691,39 @@ describe('launch audit CON-3: a date inside a name, a quotation or a ש-clause i
   it('a quoted "עד" phrase is still a deadline', () => {
     expect(fields('לשלם "עד מחר"')).toMatchObject({ title: 'לשלם', dueDate: '2026-10-05' });
   });
+
+  it.each([
+    [
+      'להחזיר את המכנסיים שקנינו לזארה עד יום חמישי',
+      'להחזיר את המכנסיים שקנינו לזארה',
+      '2026-10-08'
+    ],
+    ['לשלם את הדוח שקיבלנו עד 20/10', 'לשלם את הדוח שקיבלנו', '2026-10-20'],
+    ['למלא את הטופס שהגננת שלחה עד יום ראשון', 'למלא את הטופס שהגננת שלחה', '2026-10-11'],
+    ['לקנות את הספר שהמורה ביקשה עד יום חמישי', 'לקנות את הספר שהמורה ביקשה', '2026-10-08'],
+    ['לשלם את החשבון שהגיע עד סוף החודש', 'לשלם את החשבון שהגיע', '2026-10-31'],
+    ['לבדוק שהמזגן עובד לפני שבת', 'לבדוק שהמזגן עובד', '2026-10-09']
+  ])('%s: "עד" / "לפני" after a ש-clause is still the deadline', (input, title, iso) => {
+    expect(fields(input)).toMatchObject({ title, dueDate: iso });
+  });
+
+  it('the deadline after a ש-clause keeps its time', () => {
+    expect(fields('להחזיר את המכנסיים שקנינו לזארה עד יום חמישי ב-17:00')).toMatchObject({
+      title: 'להחזיר את המכנסיים שקנינו לזארה',
+      dueDate: '2026-10-08',
+      dueTime: '17:00'
+    });
+  });
+
+  it.each(['להתקשר לחשמלאי שהמליצו עליו מחר ב-10', 'לקנות את התרופה שהרופא רשם מחר ב-11'])(
+    '%s: "מחר" left inside the clause invents no "today" for the time',
+    (input) => {
+      const r = fields(input);
+      expect(r.title).toBe(input);
+      expect(r.scheduledFor).toBeUndefined();
+      expect(r.dueTime).toBeUndefined();
+    }
+  );
 });
 
 describe('launch audit CON-8: a plan, a deadline and one time', () => {

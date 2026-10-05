@@ -1,12 +1,10 @@
 // Firebase initialization (owner step 2.2): app, Firestore with a persistent offline cache, Auth
-// (Google's sign-in resolver only while nobody is signed in, see initAuth), and the emulators in
-// test/E2E mode. Called only
+// (no sign-in resolver at start-up, see initAuth), and the emulators in test/E2E mode. Called only
 // from createFirebaseRepositoryImpl; no top-level side effects.
 
 import { deleteApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   browserLocalPersistence,
-  browserPopupRedirectResolver,
   connectAuthEmulator,
   getAuth,
   indexedDBLocalPersistence,
@@ -23,7 +21,6 @@ import {
   type Firestore,
   type FirestoreLocalCache
 } from 'firebase/firestore';
-import { hasSignedInHint } from './auth';
 import type { FirebaseRepoOptions, FirebaseWebConfig } from './index';
 
 export interface FirebaseHandles {
@@ -60,20 +57,17 @@ function chooseCache(): { cache: FirestoreLocalCache; kind: FirebaseHandles['cac
 }
 
 /**
- * Auth, with Google's popup/redirect resolver only while nobody is signed in on this device.
- * With the resolver, mobile browsers make the launch wait for Google's sign-in script
+ * Auth WITHOUT a popup/redirect resolver. getAuth() would install browserPopupRedirectResolver, and
+ * on mobile browsers the SDK then makes every launch wait for Google's sign-in script
  * (apis.google.com) and iframe before reporting the stored user: on a weak connection a signed-in
- * member would stare at the splash, so a signed-in device (auth.ts hint) starts without it and the
- * resolver is passed only where it is needed (auth.ts: the sign-in itself, a redirect this tab
- * started). On the welcome screen the same warm-up is what lets the first tap open Google's popup
- * at once (it opens only after the script loads). Never with the emulators: they sign in with a
- * test credential. The stored user lives in IndexedDB (localStorage as the fallback).
+ * member would stare at the splash. The resolver is passed only where it is needed instead
+ * (auth.ts: the sign-in itself, and a redirect this tab started). The stored user lives in
+ * IndexedDB (localStorage as the fallback), as with getAuth().
  */
-function initAuth(app: FirebaseApp, warmSignIn: boolean): Auth {
+function initAuth(app: FirebaseApp): Auth {
   try {
     return initializeAuth(app, {
-      persistence: [indexedDBLocalPersistence, browserLocalPersistence],
-      ...(warmSignIn ? { popupRedirectResolver: browserPopupRedirectResolver } : {})
+      persistence: [indexedDBLocalPersistence, browserLocalPersistence]
     });
   } catch {
     // Already initialized for this app (HMR, tests): reuse it.
@@ -101,8 +95,8 @@ export function initFirebase(cfg: FirebaseWebConfig, opts: FirebaseRepoOptions):
     fresh = false;
   }
 
+  const auth = initAuth(app);
   const emu = opts.emulator ?? null;
-  const auth = initAuth(app, !emu && !hasSignedInHint());
   if (emu) {
     if (fresh) {
       try {

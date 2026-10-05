@@ -291,7 +291,12 @@ test('empty states: a calm Today, and an all-clear home', async ({ page }) => {
   // Nothing above it and nothing this week: calm, and pointed at "בהמשך" (not an empty week tab).
   await page.evaluate(() => {
     const s = (window as unknown as HookWindow).__homecareTest.state.tasks;
-    for (const t of [...s.groups.attention, ...s.groups.requested, ...s.groups.week])
+    for (const t of [
+      ...s.groups.attention,
+      ...s.groups.requested,
+      ...s.groups.waiting,
+      ...s.groups.week
+    ])
       s.remove(t.id);
   });
   await expect(page.getByText('הכל סגור להיום. אפשר לנשום.')).toBeVisible();
@@ -306,4 +311,23 @@ test('empty states: a calm Today, and an all-clear home', async ({ page }) => {
   await expect(page.locator('[data-section="plan"]')).toHaveCount(0);
   await page.waitForTimeout(400);
   await shot(page, 'home-empty');
+});
+
+test('a task added where the current tab does not show it brings its tab into view', async ({
+  page
+}) => {
+  await openApp(page);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('בוקר טוב, מיכל');
+  await page.locator('[data-fab]').click();
+  const sheet = page.getByTestId('quick-add');
+  await sheet.getByLabel('מה צריך לעשות?').fill('לסדר את המחסן');
+  await sheet.locator('[data-picker="owner"]').click();
+  await sheet.locator('[data-owner="me"]').click();
+  await sheet.getByRole('button', { name: 'הוספה' }).click();
+  await expect(sheet.getByRole('status')).toContainText('נוסף ✓');
+  await page.goBack();
+  await expect(sheet).toHaveCount(0);
+  // Undated and mine: not in "waiting", not on "היום". Home switched to "בהמשך", where it is.
+  const plan = section(page, 'plan');
+  await expect(plan.getByText('לסדר את המחסן')).toBeVisible();
 });

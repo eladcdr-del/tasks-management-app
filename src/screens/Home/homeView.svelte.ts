@@ -4,7 +4,13 @@ export type HomeBucket = 'today' | 'week' | 'later';
 /** 'all', 'mine', or a member uid. */
 export type HomeFilter = string;
 
-export const homeView = $state<{ bucket: HomeBucket; filter: HomeFilter }>({
+export const homeView = $state<{
+  bucket: HomeBucket;
+  filter: HomeFilter;
+  /** The task quick add created last; Home brings it into sight once the sheet closes. */
+  lastAdded: string | null;
+}>({
   bucket: 'today',
-  filter: 'all'
+  filter: 'all',
+  lastAdded: null
 });

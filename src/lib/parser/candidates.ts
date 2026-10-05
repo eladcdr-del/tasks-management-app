@@ -690,7 +690,9 @@ export function dateCandidates(
     const rest = text.slice(hit.end);
     if (RE_EVERY_BEFORE.test(before)) continue; // "כל השבוע", "כל יום שני וחמישי"
     if (RE_OF_BEFORE.test(before)) continue; // "החוג של יום שלישי"
-    if (clauses.some(([s, e]) => hit.start >= s && hit.start < e)) continue; // "שהזמנו ביום ראשון"
+    const intro = introBefore(text, hit.start);
+    // "שהזמנו ביום ראשון" is no date, but "שקנינו עד יום חמישי" / "שעובד לפני שבת" is a deadline
+    if (!intro && clauses.some(([s, e]) => hit.start >= s && hit.start < e)) continue;
     if (hit.period && RE_MODIFIER_BEFORE.test(before)) continue; // "סדר היום", "באמצע השבוע"
     if (hit.monthTail && RE_NUMBER_BEFORE.test(before)) continue;
     if (hit.weekday && (RE_EVE_BEFORE.test(before) || RE_VETO_NEXT.test(rest))) continue;
@@ -708,7 +710,6 @@ export function dateCandidates(
       if (h === hit && !followerOk(ctx, hit.end, phraseStarts)) continue;
     }
 
-    const intro = introBefore(text, hit.start);
     if (!intro && quoted(text, hit.start, h.end)) continue; // 'לקנות ספר "מחר בבוקר"'
     if (hit.needs === 'intro' && !intro) continue;
     if (hit.needs === 'notLater' && intro?.kind !== 'notLater') continue;
@@ -775,13 +776,16 @@ export function dateCandidates(
 
 const RE_DAY_WORD = anywhereRe([
   ...DAY_LIKE_WORDS,
+  // "מחר" left in the title (inside a ש-clause, a quotation, after של): never imply today
+  ...Object.keys(RELATIVE_DAYS).filter((w) => (RELATIVE_DAYS[w] ?? 0) > 0),
   ...DAY_ENTRIES.map(([n]) => n),
   ...MONTHS.flatMap((mo) => mo.names)
 ]);
 
 /**
- * True when the text outside the `consumed` spans names a day, a holiday or a month ("ארוחת שישי",
- * "ארוחת חג", "באוקטובר"): a lone time then implies no date (council M4).
+ * True when the text outside the `consumed` spans names a day, a holiday, a month or a later
+ * relative day ("ארוחת שישי", "ארוחת חג", "באוקטובר", "שהמליצו עליו מחר"): a lone time then implies
+ * no date (council M4).
  */
 export function namesUnparsedDay(text: string, consumed: readonly Span[]): boolean {
   let rest = text;

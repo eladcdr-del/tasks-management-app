@@ -3,11 +3,10 @@
 // Flow (Android Chrome, installed, display-mode standalone):
 //   1. signInWithPopup, called synchronously from the user's tap (no await before it), so Chrome
 //      opens the Google account chooser (a Custom Tab in standalone mode) instead of blocking it.
-//      The SDK opens the popup only once Google's script and iframe are loaded, and Chrome blocks
-//      a popup opened more than ~5 s after the tap. So a device nobody is signed in on starts Auth
-//      WITH the resolver (init.ts), which loads them while the welcome screen is shown; a signed-in
-//      device starts without it, so its launches never wait for Google (the resolver is passed
-//      here, and loads on the first tap if needed).
+//      Auth starts WITHOUT a popup/redirect resolver (init.ts), so launches never wait for Google's
+//      script; the resolver is passed here. The SDK opens the popup only once Google's script and
+//      iframes module are loaded, so the welcome screen loads them in the background
+//      (platform/googleSignIn.ts) and the first tap opens the popup at once.
 //   2. If the popup cannot work here (auth/popup-blocked, auth/operation-not-supported-in-this-
 //      environment, or auth/cancelled-popup-request while standalone):
 //      - authDomain is another host than the page (the GitHub Pages deploy: *.firebaseapp.com vs
@@ -84,32 +83,8 @@ export function toAuthUser(u: User): AuthUser {
   };
 }
 
-/** localStorage: someone is signed in on this device (init.ts then starts Auth without warming
- *  Google's sign-in script, so the launch does not wait for it). */
-export const SIGNED_IN_HINT_KEY = 'homecare.signedIn';
-
-export function hasSignedInHint(): boolean {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(SIGNED_IN_HINT_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-export function rememberSignedIn(on: boolean): void {
-  try {
-    if (on) localStorage.setItem(SIGNED_IN_HINT_KEY, '1');
-    else localStorage.removeItem(SIGNED_IN_HINT_KEY);
-  } catch {
-    // Storage blocked: every launch then warms the sign-in script, as getAuth() would.
-  }
-}
-
 export function watchAuth(auth: Auth, cb: (u: AuthUser | null) => void): Unsubscribe {
-  return onAuthStateChanged(auth, (u) => {
-    rememberSignedIn(u !== null);
-    cb(u ? toAuthUser(u) : null);
-  });
+  return onAuthStateChanged(auth, (u) => cb(u ? toAuthUser(u) : null));
 }
 
 /** Installed PWA (Android/desktop `display-mode: standalone`, or iOS home-screen web app). */

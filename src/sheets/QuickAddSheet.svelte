@@ -33,6 +33,7 @@
   import { household } from '$lib/state/household.svelte';
   import { clock } from '$lib/state/clock.svelte';
   import { haptic } from '$lib/platform/haptics';
+  import { homeView } from '../screens/Home/homeView.svelte';
 
   interface Props {
     onClose: () => void;
@@ -191,6 +192,7 @@
     }
     const id = tasks.create($state.snapshot(draft) as TaskDraft);
     if (id === null) return;
+    homeView.lastAdded = id;
     haptic('select');
     flash = title;
     clearTimeout(flashTimer);

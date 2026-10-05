@@ -5,8 +5,9 @@
   // After a successful sign-in the boot gate takes over (no household → onboarding, member → Home,
   // a pending invite → #/join/:code); a first-timer without a pending invite goes to the profile
   // step first. Errors show inline (Banner); a closed popup stays quiet.
-  // Auth starts without Google's sign-in script (init.ts), so the first tap loads it: in Firebase
-  // mode the page preconnects to Google and the auth domain to make that tap quicker.
+  // Auth starts without Google's sign-in script (init.ts), so launches never wait for it. In
+  // Firebase mode this screen preconnects to Google and the auth domain and loads the script in the
+  // background (platform/googleSignIn.ts), so the first tap opens Google's popup at once.
   import MailOpen from '@lucide/svelte/icons/mail-open';
   import { AppMark } from '$components/illustrations';
   import { Banner, Button } from '$components/ui';
@@ -14,6 +15,7 @@
   import { RepoError } from '$lib/data/repository';
   import { isCancelled, repoErrorMessage } from '$lib/data/firebase/errors';
   import { router } from '$lib/router/router.svelte';
+  import { warmGoogleSignIn } from '$lib/platform/googleSignIn';
   import { peekPendingInvite, session } from '$lib/state/session.svelte';
   import { firebaseConfig } from '../../../firebase-config';
   import OnboardingFrame from './OnboardingFrame.svelte';
@@ -27,6 +29,10 @@
       : [];
   let busy = $state(false);
   let error = $state<string | null>(null);
+
+  $effect(() => {
+    if (session.mode === 'firebase') warmGoogleSignIn();
+  });
 
   async function signIn() {
     if (busy) return;

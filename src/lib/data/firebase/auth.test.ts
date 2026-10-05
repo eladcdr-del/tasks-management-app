@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 // Google sign-in (auth.ts) against a mocked Auth SDK: the popup/redirect resolver is passed
-// explicitly (Auth starts with one only while nobody is signed in, see init.ts), a blocked popup
-// never falls back to a redirect whose result would be lost (authDomain on another host), a
-// redirect result is read only when this tab started one, and reported when it came back empty,
-// and the signed-in hint that init.ts reads follows the auth state.
+// explicitly (Auth itself starts without one, see init.ts), a blocked popup never falls back to a
+// redirect whose result would be lost (authDomain on another host), and a redirect result is read
+// only when this tab started one, and reported when it came back empty.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Auth } from 'firebase/auth';
 import { RepoError } from '../repository';
@@ -12,8 +11,7 @@ import { ERROR_DETAIL } from './errors';
 const sdk = vi.hoisted(() => ({
   signInWithPopup: vi.fn(),
   signInWithRedirect: vi.fn(),
-  getRedirectResult: vi.fn(),
-  onAuthStateChanged: vi.fn()
+  getRedirectResult: vi.fn()
 }));
 
 vi.mock('firebase/auth', async (importOriginal) => {
@@ -22,16 +20,8 @@ vi.mock('firebase/auth', async (importOriginal) => {
 });
 
 const { browserPopupRedirectResolver } = await import('firebase/auth');
-const {
-  consumeRedirectResult,
-  hasSignedInHint,
-  REDIRECT_MARK_KEY,
-  rememberSignedIn,
-  redirectReturnsHere,
-  SIGNED_IN_HINT_KEY,
-  signInWithGoogle,
-  watchAuth
-} = await import('./auth');
+const { consumeRedirectResult, REDIRECT_MARK_KEY, redirectReturnsHere, signInWithGoogle } =
+  await import('./auth');
 
 /** The parts of Auth that auth.ts reads. */
 function fakeAuth(authDomain: string, currentUser: unknown = null): Auth {
@@ -134,41 +124,5 @@ describe('consumeRedirectResult', () => {
     expect(await consumeRedirectResult(fakeAuth(location.host))).toMatchObject({
       code: 'network'
     });
-  });
-});
-
-describe('signed-in hint (init.ts warms the sign-in script only without it)', () => {
-  afterEach(() => localStorage.clear());
-
-  it('is off on a fresh device and follows rememberSignedIn', () => {
-    expect(hasSignedInHint()).toBe(false);
-    rememberSignedIn(true);
-    expect(localStorage.getItem(SIGNED_IN_HINT_KEY)).toBe('1');
-    expect(hasSignedInHint()).toBe(true);
-    rememberSignedIn(false);
-    expect(hasSignedInHint()).toBe(false);
-  });
-
-  it('watchAuth sets it for a signed-in user and clears it on sign-out', () => {
-    let emit: (u: unknown) => void = () => {};
-    sdk.onAuthStateChanged.mockImplementation((_auth: unknown, cb: (u: unknown) => void) => {
-      emit = cb;
-      return () => {};
-    });
-    const seen: (string | null)[] = [];
-    watchAuth(fakeAuth(OTHER_HOST), (u) => seen.push(u?.uid ?? null));
-    emit({ uid: 'u1', displayName: 'מיכל', email: 'm@example.com', photoURL: null });
-    expect(hasSignedInHint()).toBe(true);
-    emit(null);
-    expect(hasSignedInHint()).toBe(false);
-    expect(seen).toEqual(['u1', null]);
-  });
-
-  it('reads as off when storage throws', () => {
-    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
-      throw new Error('blocked');
-    });
-    expect(hasSignedInHint()).toBe(false);
-    spy.mockRestore();
   });
 });

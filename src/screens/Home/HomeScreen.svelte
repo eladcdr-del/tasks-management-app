@@ -75,6 +75,24 @@
   });
   const list = $derived(filtered[homeView.bucket]);
 
+  // A task just added in quick add can land where the current view does not show it (an undated
+  // task with an owner, a request I sent, something for next week): once the sheet closes, switch
+  // to its tab, dropping a member filter that hides it. Waits until the task is in the lists.
+  $effect(() => {
+    const id = homeView.lastAdded;
+    if (id === null || router.sheet !== null) return;
+    const has = (list: Task[]) => list.some((task) => task.id === id);
+    if (has(groups.attention) || has(groups.requested) || has(groups.waiting)) {
+      homeView.lastAdded = null;
+      return;
+    }
+    const bucket = (['today', 'week', 'later'] as const).find((b) => has(groups[b]));
+    if (!bucket) return;
+    homeView.lastAdded = null;
+    if (!has(filtered[bucket])) homeView.filter = 'all';
+    homeView.bucket = bucket;
+  });
+
   const weekend = $derived(clock.wall.weekday >= 5);
   const bucketOptions = $derived<{ value: HomeBucket; label: string; count: number }[]>([
     { value: 'today', label: t.buckets.today, count: filtered.today.length },
@@ -95,7 +113,8 @@
     if (homeView.filter !== 'all') return t.empty.filtered;
     if (homeView.bucket !== 'today') return t.empty[homeView.bucket];
     const next = bucketOptions.find((o) => o.value !== 'today' && o.count > 0);
-    const calm = groups.attention.length === 0 && groups.requested.length === 0;
+    const calm =
+      groups.attention.length === 0 && groups.requested.length === 0 && groups.waiting.length === 0;
     return {
       title: calm ? t.empty.today.title : t.empty.today.rest,
       body: next ? t.empty.today.body(next.label) : undefined,
