@@ -257,11 +257,14 @@ test('delete leaves at once and can be undone within 5 seconds', async ({ page }
 });
 
 test('the owner block speaks to the viewer about a request', async ({ page }) => {
-  await openApp(page, '#/task/seed-post'); // דני asked מיכל
-  const line = page.getByTestId('owner-block').locator('[data-request-line]');
-  await expect(line).toHaveText('דני ביקש ממך');
+  await openApp(page, '#/task/seed-post'); // דני asked מיכל; she has not answered
+  const block = page.getByTestId('owner-block');
+  const line = block.locator('[data-request-line]');
+  await expect(block.locator('.owner-line')).toHaveText('דני ביקש ממך');
+  await expect(line).toHaveText('מחכה לתשובה שלך');
   await page.evaluate(() => (window as unknown as HookWindow).__homecareTest.actAs('dani'));
-  await expect(line).toHaveText('ביקשת ממיכל');
+  await expect(block.locator('.owner-line')).toHaveText('מחכה שמישהו ייקח');
+  await expect(line).toHaveText('ביקשת ממיכל · מחכה לתשובה');
 });
 
 /** Pixels from the bottom of the snackbar on screen to the top of `selector` (≥ 0: no overlap). */
