@@ -13,5 +13,7 @@ export const onboardingNotifications = {
   enable: 'הפעלה',
   later: 'אחר כך',
   continue: 'המשך',
-  laterHint: 'אפשר להפעיל בכל רגע מההגדרות'
+  laterHint: 'אפשר להפעיל בכל רגע מההגדרות',
+  /** "הפעלה" was allowed but this device could not be registered; the button becomes a retry. */
+  failed: 'לא הצלחנו להפעיל את ההתראות. כדאי לבדוק שיש אינטרנט ולנסות שוב.'
 } as const;

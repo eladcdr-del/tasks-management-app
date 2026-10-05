@@ -1,18 +1,20 @@
 <script lang="ts">
   // owner: step 5.1. #/onboarding/notifications, the last onboarding step: a warm explanation of
   // the four notification types, then "הפעלה" (permission prompt + device registration, see
-  // platform/push.ts) or "אחר כך". Both continue to Home (replace, so Back never returns here).
-  // Where push cannot be turned on from here (granted already, blocked, unsupported) a single
-  // "המשך" is offered instead; in the demo and before Firebase is configured the buttons stay, and
-  // "הפעלה" simply continues (Settings explains why).
+  // platform/push.ts) or "אחר כך". Both continue to Home (replace, so Back never returns here),
+  // except when the device could not be registered: then the step says so and "הפעלה" becomes
+  // "נסו שוב" ("אחר כך" still continues).
+  // Where push cannot be turned on from here (on already, blocked, unsupported) a single "המשך" is
+  // offered instead; in the demo and before Firebase is configured the buttons stay, and "הפעלה"
+  // simply continues (Settings explains why). Allowed but not registered here yet keeps "הפעלה".
   import BellRing from '@lucide/svelte/icons/bell-ring';
   import HandHeart from '@lucide/svelte/icons/hand-heart';
   import AlarmClock from '@lucide/svelte/icons/alarm-clock';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import CalendarHeart from '@lucide/svelte/icons/calendar-heart';
-  import { Button } from '$components/ui';
+  import { Banner, Button } from '$components/ui';
   import { he } from '$lib/i18n/he';
-  import { enablePush, pushSupport } from '$lib/platform/push';
+  import { enablePush, pushStatus } from '$lib/platform/push';
   import { router } from '$lib/router/router.svelte';
   import OnboardingFrame from './OnboardingFrame.svelte';
 
@@ -24,32 +26,37 @@
     weekly: CalendarHeart
   } as const;
 
-  const support = pushSupport();
-  const canAsk = support === 'default' || support === 'demo' || support === 'not-configured';
+  const support = pushStatus();
+  const canAsk =
+    support === 'default' ||
+    support === 'unregistered' ||
+    support === 'demo' ||
+    support === 'not-configured';
   const note =
     support === 'granted'
       ? he.notifications.status.granted
-      : support === 'denied'
-        ? he.notifications.status.denied
-        : support === 'unsupported'
-          ? he.notifications.status.unsupported
-          : support === 'demo'
-            ? he.notifications.status.demo
-            : null;
+      : support === 'unregistered'
+        ? he.notifications.status.unregistered
+        : support === 'denied'
+          ? he.notifications.status.denied
+          : support === 'unsupported'
+            ? he.notifications.status.unsupported
+            : support === 'demo'
+              ? he.notifications.status.demo
+              : null;
 
   let busy = $state(false);
+  let failed = $state(false);
 
   const done = () => router.navigate('#/', { replace: true });
 
   async function enable() {
     if (busy) return;
     busy = true;
-    try {
-      await enablePush();
-    } finally {
-      busy = false;
-      done();
-    }
+    const result = await enablePush().catch(() => 'error' as const);
+    busy = false;
+    failed = result === 'error';
+    if (!failed) done();
   }
 </script>
 
@@ -69,10 +76,13 @@
   </ul>
 
   {#if note}<p class="note" data-push-note={support}>{note}</p>{/if}
+  {#if failed}<div data-push-failed><Banner tone="warn" body={t.failed} /></div>{/if}
 
   {#snippet actions()}
     {#if canAsk}
-      <Button size="lg" block loading={busy} onclick={enable} data-enable>{t.enable}</Button>
+      <Button size="lg" block loading={busy} onclick={enable} data-enable
+        >{failed ? he.common.retry : t.enable}</Button
+      >
       <Button variant="ghost" size="lg" block onclick={done} data-later>{t.later}</Button>
       <p class="hint">{t.laterHint}</p>
     {:else}

@@ -10,6 +10,9 @@ import {
   enablePush,
   forgetPushRegistration,
   getDeviceId,
+  onPushRegistrationChange,
+  pushRegistered,
+  pushStatus,
   pushSupport,
   refreshPush,
   type PushDeps
@@ -111,6 +114,64 @@ describe('pushSupport', () => {
     expect(pushSupport(deps({ permission: 'default' }).d)).toBe('default');
     expect(pushSupport(deps({ permission: 'granted' }).d)).toBe('granted');
     expect(pushSupport(deps({ permission: 'denied' }).d)).toBe('denied');
+  });
+});
+
+describe('pushStatus', () => {
+  it('is granted only once this device is registered for the current household', () => {
+    const none = deps();
+    expect(pushRegistered(none.d)).toBe(false);
+    expect(pushStatus(none.d)).toBe('unregistered');
+
+    const here = deps();
+    here.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+    expect(pushRegistered(here.d)).toBe(true);
+    expect(pushStatus(here.d)).toBe('granted');
+
+    const elsewhere = deps();
+    elsewhere.storage.setItem(PUSH_REG_KEY, 'h0|tok-1|999000');
+    expect(pushStatus(elsewhere.d)).toBe('unregistered');
+
+    const noHousehold = deps({ householdId: null });
+    noHousehold.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+    expect(pushRegistered(noHousehold.d)).toBe(false);
+  });
+
+  it('passes every other state through', () => {
+    expect(pushStatus(deps({ permission: 'default' }).d)).toBe('default');
+    expect(pushStatus(deps({ permission: 'denied' }).d)).toBe('denied');
+    expect(pushStatus(deps({ mode: 'demo' }).d)).toBe('demo');
+    expect(pushStatus(deps({ win: null }).d)).toBe('unsupported');
+  });
+
+  it('turns granted after a successful enable, and notifies listeners of the change', async () => {
+    const { d, Notification } = deps({ permission: 'default' });
+    Notification.requestPermission.mockImplementation(async () => {
+      Notification.permission = 'granted';
+      return 'granted';
+    });
+    const changed = vi.fn();
+    const stop = onPushRegistrationChange(changed);
+    await enablePush(d);
+    expect(pushStatus(d)).toBe('granted');
+    expect(changed).toHaveBeenCalledTimes(1);
+    forgetPushRegistration(d.storage);
+    expect(changed).toHaveBeenCalledTimes(2);
+    stop();
+    forgetPushRegistration(d.storage);
+    expect(changed).toHaveBeenCalledTimes(2);
+  });
+
+  it('stays unregistered after a failed registration', async () => {
+    const { d, repo, Notification } = deps({ permission: 'default' });
+    Notification.requestPermission.mockImplementation(async () => {
+      Notification.permission = 'granted';
+      return 'granted';
+    });
+    repo.registerDevice.mockRejectedValue(new Error('offline'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(enablePush(d)).resolves.toBe('error');
+    expect(pushStatus(d)).toBe('unregistered');
   });
 });
 

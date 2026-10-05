@@ -1,6 +1,8 @@
 // owner: step 5.1. Web push on the client (Blueprint §9).
 //
 //   pushSupport()      'unsupported' | 'demo' | 'not-configured' | 'default' | 'granted' | 'denied'
+//   pushStatus()       the same, with 'unregistered' for a granted permission whose device
+//                      registration for this household has not succeeded (Settings)
 //   enablePush()       permission prompt → (lazy) Firebase messaging → getToken on our SW →
 //                      repo.registerDevice({ deviceId, householdId, token, userAgent })
 //   refreshPush()      app start / household ready with permission already granted: the same,
@@ -32,6 +34,8 @@ import type { ForegroundMessage } from '$lib/data/firebase/messaging';
 export type PushSupport =
   'unsupported' | 'demo' | 'not-configured' | 'default' | 'granted' | 'denied';
 
+export type PushStatus = PushSupport | 'unregistered';
+
 export type EnableResult = 'enabled' | 'denied' | 'default' | 'unavailable' | 'error';
 
 export const DEVICE_ID_KEY = 'homecare.deviceId';
@@ -58,6 +62,19 @@ export interface PushDeps {
   onForeground: (msg: ForegroundMessage) => void;
 }
 
+/** Stands in for blocked localStorage, so a session keeps one device id and knows it registered. */
+const memoryStorage: StorageLike = (() => {
+  const map = new Map<string, string>();
+  return {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k)
+  };
+})();
+
+const localStore = (win: PushDeps['win'] = typeof window === 'undefined' ? null : window) =>
+  safeLocalStorage(win) ?? memoryStorage;
+
 function defaultDeps(): PushDeps {
   const win = typeof window === 'undefined' ? null : window;
   return {
@@ -67,7 +84,7 @@ function defaultDeps(): PushDeps {
     config: firebaseConfig,
     vapidKey: configVapidKey,
     win,
-    storage: safeLocalStorage(win),
+    storage: localStore(win),
     loadMessaging: () => import('$lib/data/firebase/messaging'),
     swReady: () => navigator.serviceWorker.ready,
     now: () => Date.now(),
@@ -97,8 +114,8 @@ export function pushSupport(deps: Partial<PushDeps> = {}): PushSupport {
   return perm === 'granted' ? 'granted' : perm === 'denied' ? 'denied' : 'default';
 }
 
-/** This install's device id (a UUID kept in localStorage; a fresh one if storage is blocked). */
-export function getDeviceId(storage: StorageLike | null = safeLocalStorage()): string {
+/** This install's device id (a UUID kept in localStorage; per session if storage is blocked). */
+export function getDeviceId(storage: StorageLike | null = localStore()): string {
   try {
     const existing = storage?.getItem(DEVICE_ID_KEY);
     if (existing) return existing;
@@ -132,6 +149,8 @@ function readReg(storage: StorageLike | null): { hid: string; token: string; at:
   }
 }
 
+const regListeners = new Set<() => void>();
+
 function writeReg(storage: StorageLike | null, value: string | null): void {
   try {
     if (value === null) storage?.removeItem(PUSH_REG_KEY);
@@ -139,6 +158,28 @@ function writeReg(storage: StorageLike | null, value: string | null): void {
   } catch {
     // ignore
   }
+  for (const cb of regListeners) cb();
+}
+
+/** Calls `cb` whenever this device's registration record changes. Returns an unsubscribe. */
+export function onPushRegistrationChange(cb: () => void): () => void {
+  regListeners.add(cb);
+  return () => {
+    regListeners.delete(cb);
+  };
+}
+
+/** Whether this device has registered for the current household (a token the notifier can use). */
+export function pushRegistered(deps: Partial<PushDeps> = {}): boolean {
+  const d = withDefaults(deps);
+  return d.householdId !== null && readReg(d.storage)?.hid === d.householdId;
+}
+
+/** pushSupport(), except that 'granted' needs this device registered for the household too. */
+export function pushStatus(deps: Partial<PushDeps> = {}): PushStatus {
+  const d = withDefaults(deps);
+  const support = pushSupport(d);
+  return support === 'granted' && !pushRegistered(d) ? 'unregistered' : support;
 }
 
 let foregroundFor: FirebaseApp | null = null;
@@ -210,7 +251,7 @@ export async function refreshPush(deps: Partial<PushDeps> = {}): Promise<void> {
 }
 
 /** The household was left (its device docs are deleted by the repository): register anew later. */
-export function forgetPushRegistration(storage: StorageLike | null = safeLocalStorage()): void {
+export function forgetPushRegistration(storage: StorageLike | null = localStore()): void {
   writeReg(storage, null);
 }
 

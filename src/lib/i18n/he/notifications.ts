@@ -4,10 +4,13 @@
 export const notifications = {
   title: 'התראות',
   enable: 'הפעלת התראות',
-  /** Status line per pushSupport() state. */
+  /** The button when permission is granted but this device is not registered yet. */
+  reconnect: 'הפעלה מחדש',
+  /** Status line per pushStatus() state. */
   status: {
     granted: 'ההתראות פעילות במכשיר הזה',
     default: 'ההתראות עוד לא הופעלו במכשיר הזה',
+    unregistered: 'ההתראות עוד לא מגיעות למכשיר הזה',
     denied: 'הדפדפן חוסם התראות מהאפליקציה',
     unsupported: 'הדפדפן הזה לא תומך בהתראות. כדאי לפתוח את האפליקציה בכרום',
     notConfigured: 'ההתראות יעבדו אחרי שיחברו את האפליקציה ל-Firebase',
