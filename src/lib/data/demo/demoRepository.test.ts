@@ -128,20 +128,28 @@ describe('demo repository: the seeded household', () => {
     expect((await repo.previewInvite(inv.code)).memberCount).toBe(2); // a snapshot, not live
   });
 
-  it('runs the whole jar story: three more completions fill it, redeeming starts round 4', async () => {
+  it('runs the whole jar story: each one closes their part, the last fills it, round 4 starts', async () => {
     const repo = await make();
-    const ids = ['seed-dentist', 'seed-bulbs', 'seed-shirt'];
-    const results = [];
-    for (const id of ids)
-      results.push(
-        await repo.completeTask(HID, id, { note: '', cost: null, place: '', contact: '' }, [])
-      );
+    const done = { note: '', cost: null, place: '', contact: '' };
+    // מיכל (4 of 5) closes her part; then דני (3 of 5) closes two: the second fills the jar.
+    const results = [await repo.completeTask(HID, 'seed-dentist', done, [])];
+    expect((await household(repo)).jar).toMatchObject({ count: 8, counts: { [MICHAL]: 5 } });
+    repo.actAs(DANI);
+    for (const id of ['seed-bulbs', 'seed-shirt'])
+      results.push(await repo.completeTask(HID, id, done, []));
     expect(results.map((r) => r.jarFilled)).toEqual([false, false, true]);
-    expect((await household(repo)).jar).toMatchObject({ count: 10, round: 3 });
+    expect((await household(repo)).jar).toMatchObject({
+      count: 10,
+      counts: { [MICHAL]: 5, [DANI]: 5 },
+      round: 3
+    });
     repo.redeemJar(HID);
     expect((await household(repo)).jar).toMatchObject({
       count: 0,
+      counts: {},
       round: 4,
+      mode: 'each',
+      share: 5,
       treat: 'ארוחה במסעדה'
     });
     const treats = await current<EarnedTreat[]>((cb) => repo.watchTreats(HID, cb));
@@ -149,6 +157,9 @@ describe('demo repository: the seeded household', () => {
       id: '3',
       treat: 'ארוחה במסעדה',
       target: 10,
+      mode: 'each',
+      share: 5,
+      counts: { [MICHAL]: 5, [DANI]: 5 },
       redeemedAt: NOW,
       filledAt: NOW
     });

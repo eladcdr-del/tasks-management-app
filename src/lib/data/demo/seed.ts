@@ -1,5 +1,6 @@
 // The demo household (Blueprint §5 "Seed"): "הבית שלנו" with מיכל and דני, a lived-in mix of open
-// and documented done tasks, a treat jar at 7/10 and two earned treats.
+// and documented done tasks, a treat jar where everyone does their part ("כל אחד תורם", 5 each:
+// מיכל 4, דני 3, so 7 of 10) and two earned treats that remember who took part.
 //
 // createSeed(now) is DETERMINISTIC for a given `now`: fixed ids, no randomness, and every date is
 // relative to today's date in Asia/Jerusalem. On the E2E date (Sunday 2026-10-04) the Home screen
@@ -12,8 +13,9 @@
 //    completed); a task owned by someone other than its creator was either taken by the owner or
 //    requested by the creator and accepted;
 //  - the ארנונה series is anchored, and each instance is exactly what buildNextInstance produces;
-//  - jar.count equals the completions since the jar's round started, and each earned treat was
-//    filled by a real completion.
+//  - jar.counts are the completions of each member since the jar's round started (jar.count =
+//    Σ min(counts, share)), and each earned treat was filled by a real completion and records the
+//    completions of its round.
 
 import { weekHorizon } from '../../domain/buckets';
 import {
@@ -24,6 +26,7 @@ import {
   parseISO,
   todayISO
 } from '../../domain/dates';
+import { eachTarget } from '../../domain/jar';
 import { nextTaskId } from '../../domain/recurrence';
 import type {
   ActivityEvent,
@@ -685,6 +688,18 @@ export function createSeed(now: Date): DemoState {
   const daniJoinedAt = b.at(-159, '20:30');
   b.event('member_joined', D, null, daniJoinedAt);
 
+  /** Completions per member in (from, to]: a round's tallies. */
+  const talliesIn = (from: Millis, to: Millis): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const t of Object.values(b.tasks)) {
+      if (t.status !== 'done' || t.completedBy === null || t.completedAt === null) continue;
+      if (t.completedAt <= from || t.completedAt > to) continue;
+      out[t.completedBy] = (out[t.completedBy] ?? 0) + 1;
+    }
+    return out;
+  };
+  const SHARE = 5;
+  const counts = talliesIn(round2Redeemed, Number.POSITIVE_INFINITY);
   const household: Household = {
     id: DEMO_HOUSEHOLD_ID,
     name: 'הבית שלנו',
@@ -693,7 +708,16 @@ export function createSeed(now: Date): DemoState {
     maxMembers: 6,
     createdBy: M,
     createdAt,
-    jar: { treat: 'ארוחה במסעדה', target: 10, count: 7, round: 3, startedAt: round2Redeemed },
+    jar: {
+      treat: 'ארוחה במסעדה',
+      mode: 'each',
+      share: SHARE,
+      target: eachTarget(SHARE, 2),
+      count: Object.values(counts).reduce((sum, n) => sum + Math.min(n, SHARE), 0),
+      counts,
+      round: 3,
+      startedAt: round2Redeemed
+    },
     invite: null
   };
   const members: Record<string, Member> = {
@@ -737,14 +761,16 @@ export function createSeed(now: Date): DemoState {
       treat: 'גלידה בנמל',
       target: 5,
       filledAt: round1Filled,
-      redeemedAt: round1Redeemed
+      redeemedAt: round1Redeemed // earned before goal modes: no record of who took part
     },
     '2': {
       id: '2',
       treat: 'סרט בקולנוע',
       target: 5,
       filledAt: round2Filled,
-      redeemedAt: round2Redeemed
+      redeemedAt: round2Redeemed,
+      mode: 'together',
+      counts: talliesIn(round1Redeemed, round2Redeemed)
     }
   };
   const photo: Photo = {
