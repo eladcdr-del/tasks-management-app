@@ -195,7 +195,8 @@ test('?as=dani acts as דני (and is not repeated on reload)', async ({ page })
     () => (window as unknown as HookWindow).__homecareTest.state.session.user?.uid
   );
   expect(uid).toBe('dani');
-  await expectPulse(page, 3, 4, 3);
+  // The parcel he asked מיכל about waits for her answer: for him it waits for someone (4).
+  await expectPulse(page, 3, 4, 4);
 });
 
 test('gating: signed out → welcome; an invite opened signed out comes back after sign-in', async ({
