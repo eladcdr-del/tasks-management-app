@@ -434,9 +434,10 @@ describe('M3: no leftover words in the title', () => {
   });
 
   it('drops empty quote pairs and empty brackets left by a removed phrase', () => {
-    expect(fields('לשלם "מחר"').title).toBe('לשלם');
+    // (a quoted date alone, 'לשלם "מחר"', is a name or a quotation since the launch audit CON-3)
+    expect(fields('לשלם "עד מחר"').title).toBe('לשלם');
     expect(fields('לשלם [מחר]').title).toBe('לשלם');
-    expect(fields('לשלם ״מחר״').title).toBe('לשלם');
+    expect(fields('לשלם ״עד מחר״').title).toBe('לשלם');
     expect(fields('לקנות "חלב" ()').title).toBe('לקנות "חלב" ()'); // nothing removed: untouched
   });
 });

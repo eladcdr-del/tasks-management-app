@@ -155,6 +155,18 @@ export const DAY_NAME_VETO_NEXT = ['לציון', 'לחודש'];
 export const BARE_DAY_VETO_NEXT = ['לפני'];
 /** "ערב שבת", "בערב יום שישי": the EVE of that day, which is ambiguous; never read as the day. */
 export const EVE_WORD = 'ערב';
+/** "החוג של יום שלישי", "הרשימה של מחר": a date after "של" describes a noun, it is no date. */
+export const OF_WORD = 'של';
+/**
+ * A date inside a ש-clause says when THAT happened or happens, not when to do the task ("החבילה
+ * שהזמנו ביום ראשון", "הסיר שהיא נתנה בשבת"), so it is no date. Many nouns and adjectives start
+ * with ש (שולחן, שמלה, שגרתי), so only these words open such a clause: ש + ה… ("שהזמנו", "שהיא",
+ * "שהאסיפה"), ש + one of these pronouns, or ש + a "we" past verb ("שקנינו"). The clause runs to the
+ * next punctuation mark or a "ו + infinitive" ("ולהתקשר"), which goes back to the task itself.
+ */
+export const SHIN_CLAUSE_PRONOUNS = ['אני', 'אנחנו', 'אתה', 'את', 'אתם', 'אתן'];
+/** "החוג שלנו": a possessive, not a ש-clause. */
+export const SHIN_POSSESSIVES = ['שלנו'];
 /** "במוצ"ש", "במוצאי שבת" → Saturday evening (tonight, when said on Saturday). */
 export const SATURDAY_NIGHT_PHRASES = ['מוצ"ש', 'מוצאי שבת', 'מוצאי השבת'];
 /**

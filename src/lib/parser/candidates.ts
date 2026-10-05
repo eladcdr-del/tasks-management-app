@@ -52,6 +52,7 @@ import {
   NUMBER_CONTEXT_WORDS,
   NUMBER_WORDS,
   OF_MONTH_WORDS,
+  OF_WORD,
   OFFSET_UNITS,
   ONE_WORDS,
   PAST_GRACE_DAYS,
@@ -67,6 +68,8 @@ import {
   RANGE_WORD,
   SATURDAY_NIGHT_PHRASES,
   SCORE_WORDS,
+  SHIN_CLAUSE_PRONOUNS,
+  SHIN_POSSESSIVES,
   SHIN_WORDS_NOT_CLAUSE,
   STARTING_WORD,
   STREET_WORDS,
@@ -601,6 +604,36 @@ const RE_LAMED_VETO_BEFORE = lastWordRe(LAMED_DAY_VETO_BEFORE);
 /** "בראשון להתקשר": a leading weekday right before an infinitive. */
 const RE_INFINITIVE_NEXT = rx1(`^\\s+ל\\p{L}{3,}${AFTER}`);
 
+/** "החוג של יום שלישי": the date describes a noun (launch audit CON-3). Not "לבשל", "למשל". */
+const RE_OF_BEFORE = rx1(`(?:^|\\s)ו?${lit(OF_WORD)}\\s+$`);
+/** Quote marks; a geresh or gershayim inside a word ("אחה״צ") never touches a date phrase. */
+const QUOTE_RE = /["'\u{5F3}\u{5F4}\u{201C}\u{201D}\u{201E}\u{2018}\u{2019}]/u;
+
+/**
+ * "להחזיר את ספר 'היום שאחרי'", 'לקנות ספר "מחר בבוקר"': a date phrase that touches an opening or a
+ * closing quote is part of a name or a quotation, not a date (launch audit CON-3).
+ */
+function quoted(text: string, start: number, end: number): boolean {
+  const opens = QUOTE_RE.test(text.charAt(start - 1)) && /^[\s([{]?$/u.test(text.charAt(start - 2));
+  const closes = QUOTE_RE.test(text.charAt(end)) && /^[\s)\]}.,;:!?]?$/u.test(text.charAt(end + 1));
+  return opens || closes;
+}
+
+const RE_CLAUSE_OPENER = rxg(`ו?ש(?:ה\\p{L}+|${alt(SHIN_CLAUSE_PRONOUNS)}|\\p{L}+נו)(?![${LD}])`);
+const NOT_OPENERS = new Set([...SHIN_WORDS_NOT_CLAUSE, ...SHIN_POSSESSIVES]);
+const RE_CLAUSE_END = /[,;:!?]|\.(?=\s|$)|\sול\p{L}{3,}/u;
+
+/** The spans of the ש-clauses in `text` (SHIN_CLAUSE_PRONOUNS): a date inside one is no date. */
+function shinClauses(text: string): Span[] {
+  const out: Span[] = [];
+  for (const h of scan(RE_CLAUSE_OPENER, text)) {
+    if (NOT_OPENERS.has(h.m[0].replace(/^ו/, ''))) continue;
+    const end = RE_CLAUSE_END.exec(text.slice(h.end));
+    out.push([h.start, end ? h.end + end.index : text.length]);
+  }
+  return out;
+}
+
 /** C1: may this dd/mm hit be a date? `introduced`: by its own prefix, "תאריך", or an introducer. */
 function numericOk(ctx: Ctx, h: DateHit, info: NumericInfo, introduced: boolean): boolean {
   const { text } = ctx;
@@ -651,10 +684,13 @@ export function dateCandidates(
   const out: Cand[] = [];
   const longestAt = new Map<number, number>();
   for (const h of hits) longestAt.set(h.start, Math.max(longestAt.get(h.start) ?? 0, h.end));
+  const clauses = shinClauses(text);
   for (const hit of hits) {
     const before = lookback(text, hit.start);
     const rest = text.slice(hit.end);
     if (RE_EVERY_BEFORE.test(before)) continue; // "כל השבוע", "כל יום שני וחמישי"
+    if (RE_OF_BEFORE.test(before)) continue; // "החוג של יום שלישי"
+    if (clauses.some(([s, e]) => hit.start >= s && hit.start < e)) continue; // "שהזמנו ביום ראשון"
     if (hit.period && RE_MODIFIER_BEFORE.test(before)) continue; // "סדר היום", "באמצע השבוע"
     if (hit.monthTail && RE_NUMBER_BEFORE.test(before)) continue;
     if (hit.weekday && (RE_EVE_BEFORE.test(before) || RE_VETO_NEXT.test(rest))) continue;
@@ -673,6 +709,7 @@ export function dateCandidates(
     }
 
     const intro = introBefore(text, hit.start);
+    if (!intro && quoted(text, hit.start, h.end)) continue; // 'לקנות ספר "מחר בבוקר"'
     if (hit.needs === 'intro' && !intro) continue;
     if (hit.needs === 'notLater' && intro?.kind !== 'notLater') continue;
     if (hit.numeric && !numericOk(ctx, hit, hit.numeric, hit.numeric.prefixed || intro !== null)) {
