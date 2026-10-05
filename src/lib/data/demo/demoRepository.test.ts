@@ -196,7 +196,12 @@ describe('demo repository: actAs', () => {
 
     const id = repo.createTask(HID, { title: 'לקנות מתנה לאמא', ownerId: MICHAL });
     const t = (await openTasks(repo)).find((x) => x.id === id)!;
-    expect(t).toMatchObject({ createdBy: DANI, ownerId: MICHAL, requestedBy: DANI });
+    expect(t).toMatchObject({
+      createdBy: DANI,
+      ownerId: null,
+      requestedOf: MICHAL,
+      requestedBy: DANI
+    });
 
     repo.actAs(MICHAL);
     expect(await repo.takeTask(HID, 'seed-plumber')).toEqual({ ok: false, takenBy: DANI });

@@ -9,8 +9,8 @@
 //    them before the call returns; a failure (not signed in, not a member, invalid data, missing
 //    task) is reported asynchronously through onWriteError, exactly where Firestore would report a
 //    rejected write. Promise-returning methods reject instead.
-//  - Every task mutation writes its ActivityEvent; push is 'pending' for requested, completed and
-//    jar_filled, 'none' otherwise. Mutations with no matching event type (household, member,
+//  - Every task mutation writes its ActivityEvent; push is 'pending' for requested, accepted,
+//    declined, completed and jar_filled, 'none' otherwise. Mutations with no matching event type (household, member,
 //    invite, jar settings, devices, leaving) write none.
 //  - Reads are scoped like the security rules: a watcher of a household I am not a member of emits
 //    nothing, and a write to it fails with RepoError('permission').
@@ -29,6 +29,7 @@ import { isoDateAt, isValidISO, todayISO } from '../../domain/dates';
 import { inviteCode, isInviteCode, randomId } from '../../domain/ids';
 import { applyCompletion, applyRedeem, applyReopen, isFull } from '../../domain/jar';
 import { buildNextInstance, ensureAnchor } from '../../domain/recurrence';
+import { pendingRequestOf } from '../../domain/requests';
 import { snoozePatch } from '../../domain/snooze';
 import type {
   ActivityEvent,
@@ -156,7 +157,13 @@ const MAX_PHOTOS = 3;
 /** Events kept per household (oldest dropped first); plenty for history screens. */
 const MAX_EVENTS = 1000;
 
-const PUSH_PENDING: ReadonlySet<EventType> = new Set(['requested', 'completed', 'jar_filled']);
+const PUSH_PENDING: ReadonlySet<EventType> = new Set([
+  'requested',
+  'accepted',
+  'declined',
+  'completed',
+  'jar_filled'
+]);
 const PRIORITIES: ReadonlySet<string> = new Set(['normal', 'high', 'urgent']);
 const CATEGORY_IDS: ReadonlySet<string> = new Set(DEFAULT_CATEGORIES.map((c) => c.id));
 const FREQS: ReadonlySet<string> = new Set(['weekly', 'monthly', 'yearly']);
@@ -433,6 +440,70 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
     return { ...invite };
   }
 
+  /**
+   * takeTask / acceptRequest. Someone else's task stays theirs; a former member's counts as
+   * unowned. A request waiting for MY answer is accepted (the request stays as history, and the
+   * asker hears about it); any other waiting request is simply cleared by the take.
+   */
+  async function take(hid: string, id: string): Promise<TakeResult> {
+    return store.mutate((st): TakeResult => {
+      const uid = requireUser(st);
+      const rec = memberHousehold(st, hid, uid);
+      const task = getTask(rec, id);
+      const members = rec.household.memberIds;
+      const owner = task.ownerId;
+      if (owner === uid) return { ok: true };
+      if (owner !== null && members.includes(owner)) return { ok: false, takenBy: owner };
+      const t = now();
+      const asker = task.requestedBy;
+      const accepting =
+        pendingRequestOf(task, members) === uid && asker !== null && members.includes(asker);
+      task.ownerId = uid;
+      task.requestedOf = null;
+      if (!accepting) {
+        task.requestedBy = null;
+        task.requestedAt = null;
+      }
+      touch(task, uid, t);
+      if (accepting) pushEvent(rec, 'accepted', uid, task, t, asker);
+      else pushEvent(rec, 'taken', uid, task, t);
+      return { ok: true };
+    });
+  }
+
+  /**
+   * declineRequest ('asked') / cancelRequest ('asker'): the request is cleared and the task waits
+   * for anyone. Nothing waiting (for MY answer, when declining) is a no-op: a late tap after the
+   * request moved on. Cancelling needs the asker or the asked member (the rules' check).
+   */
+  function dropRequest(hid: string, id: string, as: 'asked' | 'asker'): void {
+    queued((st, uid) => {
+      const rec = memberHousehold(st, hid, uid);
+      const task = getTask(rec, id);
+      const members = rec.household.memberIds;
+      const to = pendingRequestOf(task, members);
+      if (to === null || (as === 'asked' && to !== uid)) return;
+      const asker = task.requestedBy;
+      if (uid !== to && uid !== asker) {
+        throw new RepoError(
+          'permission',
+          'only the asked member or the asker can cancel a request'
+        );
+      }
+      const t = now();
+      task.requestedOf = null;
+      task.requestedBy = null;
+      task.requestedAt = null;
+      touch(task, uid, t);
+      // The asker hears a "no" (unless they left); a cancel is quiet.
+      if (as === 'asked' && asker !== null && members.includes(asker)) {
+        pushEvent(rec, 'declined', uid, task, t, asker);
+      } else {
+        pushEvent(rec, 'released', uid, task, t, to);
+      }
+    });
+  }
+
   // ── window integration: save before the page goes away ─────────────────────
 
   const onPageHide = () => void store.flush();
@@ -553,12 +624,20 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const h = rec.household;
         // My open tasks go back to "waiting for someone to take". No events: the leaver is no
         // longer a member once the batch commits, so the rules would reject them.
+        // Requests waiting for my answer are answered "no" the same way (and a stale requestedOf
+        // naming me is cleared).
         const t = now();
         for (const task of Object.values(rec.tasks)) {
-          if (task.status !== 'open' || task.ownerId !== uid) continue;
-          task.ownerId = null;
-          task.requestedBy = null;
-          task.requestedAt = null;
+          if (task.status !== 'open') continue;
+          const mine = task.ownerId === uid;
+          const askedMe = pendingRequestOf(task) === uid;
+          if (!mine && !askedMe && task.requestedOf !== uid) continue;
+          if (mine) task.ownerId = null;
+          if (mine || askedMe) {
+            task.requestedBy = null;
+            task.requestedAt = null;
+          }
+          task.requestedOf = null;
           touch(task, uid, t);
         }
         delete rec.members[uid];
@@ -657,7 +736,8 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         if (ownerId !== null && !rec.household.memberIds.includes(ownerId)) {
           throw new RepoError('permission', 'the owner is not a member of this household');
         }
-        // Amendment [3.2]: creating a task for ANOTHER member is a request.
+        // Amendment [3.2]: creating a task for ANOTHER member is a request, and a request is a
+        // proposal: nobody holds the task until they accept (domain/requests.ts).
         const isRequest = ownerId !== null && ownerId !== uid;
         const t = now();
         const dates = {
@@ -672,9 +752,10 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
           notes: d.notes ?? '',
           categoryId: d.categoryId ?? null,
           priority: d.priority ?? 'normal',
-          ownerId,
+          ownerId: isRequest ? null : ownerId,
           requestedBy: isRequest ? uid : null,
           requestedAt: isRequest ? t : null,
+          requestedOf: isRequest ? ownerId : null,
           createdBy: uid,
           createdAt: t,
           updatedBy: uid,
@@ -717,24 +798,8 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
       });
     },
 
-    async takeTask(hid: string, id: string): Promise<TakeResult> {
-      return store.mutate((st): TakeResult => {
-        const uid = requireUser(st);
-        const rec = memberHousehold(st, hid, uid);
-        const task = getTask(rec, id);
-        const owner = task.ownerId;
-        if (owner === uid) return { ok: true };
-        // Someone else's task stays theirs; a former member's counts as unowned ("waiting").
-        if (owner !== null && rec.household.memberIds.includes(owner))
-          return { ok: false, takenBy: owner };
-        const t = now();
-        task.ownerId = uid;
-        task.requestedBy = null;
-        task.requestedAt = null;
-        touch(task, uid, t);
-        pushEvent(rec, 'taken', uid, task, t);
-        return { ok: true };
-      });
+    takeTask(hid: string, id: string): Promise<TakeResult> {
+      return take(hid, id);
     },
 
     requestTask(hid: string, id: string, toUid: string): void {
@@ -745,19 +810,35 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
           throw new RepoError('permission', 'can only ask a member of this household');
         }
         const t = now();
-        task.ownerId = toUid;
         touch(task, uid, t);
         if (toUid === uid) {
           // Asking myself is taking it: no "ביקש/ה ממך" label on my own task.
+          task.ownerId = uid;
+          task.requestedOf = null;
           task.requestedBy = null;
           task.requestedAt = null;
           pushEvent(rec, 'taken', uid, task, t);
         } else {
+          // A proposal: nobody holds it until they accept (domain/requests.ts).
+          task.ownerId = null;
+          task.requestedOf = toUid;
           task.requestedBy = uid;
           task.requestedAt = t;
           pushEvent(rec, 'requested', uid, task, t, toUid);
         }
       });
+    },
+
+    acceptRequest(hid: string, id: string): Promise<TakeResult> {
+      return take(hid, id);
+    },
+
+    declineRequest(hid: string, id: string): void {
+      dropRequest(hid, id, 'asked');
+    },
+
+    cancelRequest(hid: string, id: string): void {
+      dropRequest(hid, id, 'asker');
     },
 
     releaseTask(hid: string, id: string): void {
@@ -766,6 +847,7 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const task = getTask(rec, id);
         const t = now();
         task.ownerId = null;
+        task.requestedOf = null;
         task.requestedBy = null;
         task.requestedAt = null;
         touch(task, uid, t);

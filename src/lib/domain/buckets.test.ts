@@ -474,29 +474,62 @@ describe('groupTasks', () => {
     });
   });
 
-  describe('requested: asked of the viewer by someone else', () => {
-    // u1 is the viewer; u2 asked.
+  describe('requested: asked of the viewer, waiting for their answer', () => {
+    // u1 is the viewer; u2 asked. A request that waits for an answer is nobody's yet.
     const asked = (over: Partial<Task> = {}) =>
-      task({ ownerId: 'u1', requestedBy: 'u2', requestedAt: 5_000, ...over });
+      task({ ownerId: null, requestedOf: 'u1', requestedBy: 'u2', requestedAt: 5_000, ...over });
     const undated = asked();
     const dueToday = asked({ dueDate: TODAY });
     const nextWeek = asked({ scheduledFor: '2026-10-14' });
-    const iAskedU2 = task({ ownerId: 'u2', requestedBy: 'u1', requestedAt: 5_000 });
+    const iAskedU2 = task({
+      ownerId: null,
+      requestedOf: 'u2',
+      requestedBy: 'u1',
+      requestedAt: 5_000
+    });
+    const accepted = task({ ownerId: 'u1', requestedBy: 'u2', requestedAt: 5_000 });
     const tookIt = task({ ownerId: 'u1' });
-    const g = groupTasks([undated, dueToday, nextWeek, iAskedU2, tookIt], TODAY, MEMBERS, 'u1');
+    const g = groupTasks(
+      [undated, dueToday, nextWeek, iAskedU2, accepted, tookIt],
+      TODAY,
+      MEMBERS,
+      'u1'
+    );
 
-    it('lists every open request to me, whatever its date, and nothing else', () => {
+    it('lists every open request waiting for my answer, whatever its date, and nothing else', () => {
       expect(ids(g.requested)).toEqual([dueToday.id, nextWeek.id, undated.id]);
     });
 
     it('keeps each request in its time bucket too (a request due today counts for today)', () => {
       expect(ids(g.today)).toEqual([dueToday.id]);
-      expect(ids(g.later)).toEqual([nextWeek.id, undated.id, iAskedU2.id, tookIt.id]);
+      expect(ids(g.later)).toEqual([nextWeek.id, undated.id, iAskedU2.id, accepted.id, tookIt.id]);
     });
 
-    it('depends on the viewer: none for the requester, none while the viewer is unknown', () => {
-      expect(groupTasks([undated], TODAY, MEMBERS, 'u2').requested).toEqual([]);
+    it("a request I sent is nobody's yet: it is in my waiting list and in nobody's count", () => {
+      expect(ids(g.waiting)).toEqual([iAskedU2.id]);
+      expect(openCountsByMember([iAskedU2], MEMBERS)).toEqual({ u1: 0, u2: 0 });
+    });
+
+    it('an accepted request (or one sent by the previous app version) is simply owned', () => {
+      expect(ids(g.requested)).not.toContain(accepted.id);
+      expect(ids(g.waiting)).not.toContain(accepted.id);
+      const legacy = task({ ownerId: 'u2', requestedBy: 'u1', requestedAt: 5_000 });
+      expect(groupTasks([legacy], TODAY, MEMBERS, 'u2').requested).toEqual([]);
+      expect(groupTasks([legacy], TODAY, MEMBERS, 'u1').waiting).toEqual([]);
+    });
+
+    it('depends on the viewer: waiting for the asker, nothing while the viewer is unknown', () => {
+      const asU2 = groupTasks([undated], TODAY, MEMBERS, 'u2');
+      expect(asU2.requested).toEqual([]);
+      expect(ids(asU2.waiting)).toEqual([undated.id]);
       expect(groupTasks([undated], TODAY, MEMBERS).requested).toEqual([]);
+    });
+
+    it('a request to a former member waits for anyone', () => {
+      const toGone = asked({ requestedOf: 'gone' });
+      const out = groupTasks([toGone], TODAY, MEMBERS, 'gone');
+      expect(out.requested).toEqual([]);
+      expect(ids(out.waiting)).toEqual([toGone.id]);
     });
 
     it('attention still wins: an overdue request is listed once, in attention', () => {
@@ -513,8 +546,10 @@ describe('groupTasks', () => {
         tomorrowUrgent.id
       ]);
       expect(pulseCounts([tomorrowUrgent], TODAY, MEMBERS, 'u1').attention).toBe(1);
-      // For the requester it is an ordinary urgent task planned for tomorrow.
-      expect(groupTasks([tomorrowUrgent], TODAY, MEMBERS, 'u2').attention).toEqual([]);
+      // For the requester it is an ordinary urgent task planned for tomorrow, waiting to be taken.
+      const asU2 = groupTasks([tomorrowUrgent], TODAY, MEMBERS, 'u2');
+      expect(asU2.attention).toEqual([]);
+      expect(ids(asU2.waiting)).toEqual([tomorrowUrgent.id]);
       // Snoozed after the request: back to needsAttention's rule (quiet until its day).
       const snoozed = { ...tomorrowUrgent, snoozeCount: 1, lastSnoozedAt: 6_000 };
       const out = groupTasks([snoozed], TODAY, MEMBERS, 'u1');
@@ -528,21 +563,28 @@ describe('groupTasks', () => {
 });
 
 describe('isRequestFor / urgentRequestFor', () => {
-  const asked = { ownerId: 'u1', requestedBy: 'u2' };
+  const asked = { ownerId: null, requestedOf: 'u1', requestedBy: 'u2' };
 
-  it('isRequestFor: I own it and someone else asked', () => {
+  it('isRequestFor: someone else asked me and nobody holds it yet', () => {
     expect(isRequestFor(asked, 'u1')).toBe(true);
     expect(isRequestFor(asked, 'u2')).toBe(false);
     expect(isRequestFor(asked, null)).toBe(false);
-    expect(isRequestFor({ ownerId: 'u1', requestedBy: null }, 'u1')).toBe(false);
-    expect(isRequestFor({ ownerId: 'u1', requestedBy: 'u1' }, 'u1')).toBe(false);
+    expect(isRequestFor({ ...asked, requestedBy: null }, 'u1')).toBe(false);
+    expect(isRequestFor({ ...asked, requestedBy: 'u1' }, 'u1')).toBe(false);
+    // Accepted, or a request sent by the previous app version: owned, not waiting.
+    expect(isRequestFor({ ownerId: 'u1', requestedBy: 'u2' }, 'u1')).toBe(false);
+    expect(isRequestFor({ ...asked, ownerId: 'u1' }, 'u1')).toBe(false);
+    // A request to a former member, once membership is known.
+    expect(isRequestFor(asked, 'u1', ['u2'])).toBe(false);
+    expect(isRequestFor(asked, 'u1', MEMBERS)).toBe(true);
   });
 
-  it('urgentRequestFor: urgent, asked of me, and not snoozed since the request', () => {
+  it('urgentRequestFor: urgent, waiting for my answer, and not snoozed since the request', () => {
     const base = { ...asked, priority: 'urgent' as const, requestedAt: 5_000, lastSnoozedAt: null };
     expect(urgentRequestFor(base, 'u1')).toBe(true);
     expect(urgentRequestFor({ ...base, priority: 'high' }, 'u1')).toBe(false);
     expect(urgentRequestFor(base, 'u2')).toBe(false);
+    expect(urgentRequestFor({ ...base, ownerId: 'u1', requestedOf: null }, 'u1')).toBe(false);
     // Snoozed before the request (by whoever held it then): still shouts for me.
     expect(urgentRequestFor({ ...base, lastSnoozedAt: 4_000 }, 'u1')).toBe(true);
     expect(urgentRequestFor({ ...base, lastSnoozedAt: 6_000 }, 'u1')).toBe(false);
@@ -571,10 +613,11 @@ describe('pulseCounts', () => {
     });
   });
 
-  it('counts the requests to the viewer (also in their time bucket)', () => {
+  it('counts the requests to the viewer (also in their time bucket); for the asker they wait', () => {
+    const req = { ownerId: null, requestedOf: 'u1', requestedBy: 'u2', requestedAt: 1 };
     const open = [
-      task({ ownerId: 'u1', requestedBy: 'u2', requestedAt: 1 }), // requested + later
-      task({ ownerId: 'u1', requestedBy: 'u2', requestedAt: 1, dueDate: TODAY }) // requested + today
+      task(req), // requested + later
+      task({ ...req, dueDate: TODAY }) // requested + today
     ];
     expect(pulseCounts(open, TODAY, MEMBERS, 'u1')).toEqual({
       attention: 0,
@@ -582,7 +625,12 @@ describe('pulseCounts', () => {
       waiting: 0,
       requested: 2
     });
-    expect(pulseCounts(open, TODAY, MEMBERS, 'u2').requested).toBe(0);
+    expect(pulseCounts(open, TODAY, MEMBERS, 'u2')).toEqual({
+      attention: 0,
+      today: 1,
+      waiting: 2,
+      requested: 0
+    });
   });
 
   it('is all zeros for an empty list', () => {

@@ -232,6 +232,7 @@ export function taskFromSnap(snap: Snap, writeTime?: number): Task {
     ownerId: strOrNull(d.ownerId),
     requestedBy: strOrNull(d.requestedBy),
     requestedAt: millis(d.requestedAt),
+    requestedOf: strOrNull(d.requestedOf), // missing on older documents: null
     createdBy: str(d.createdBy),
     createdAt: millisOr0(d.createdAt),
     updatedBy: str(d.updatedBy),
@@ -272,9 +273,15 @@ export type TaskContent = Pick<
 
 /**
  * A new open task (createTask, or the next recurring instance): the full create shape, created and
- * updated now by `uid`, requested now by `uid` when `requested`.
+ * updated now by `uid`, requested now by `uid` when `requested`. `requestedOf` (a request that
+ * waits for that member's answer; ownerId then null) is the one optional key: written only when set.
  */
-export function newTaskDoc(t: TaskContent, uid: string, requested: boolean): DocumentData {
+export function newTaskDoc(
+  t: TaskContent,
+  uid: string,
+  requested: boolean,
+  requestedOf: string | null = null
+): DocumentData {
   const now: FieldValue = serverTimestamp();
   return {
     title: t.title,
@@ -300,7 +307,8 @@ export function newTaskDoc(t: TaskContent, uid: string, requested: boolean): Doc
     lastSnoozedAt: null,
     completedAt: null,
     completedBy: null,
-    completion: null
+    completion: null,
+    ...(requested && requestedOf !== null ? { requestedOf } : {})
   };
 }
 
@@ -311,7 +319,13 @@ export function touch(uid: string): DocumentData {
 
 // ── events ────────────────────────────────────────────────────────────────────
 
-const PUSH_PENDING: ReadonlySet<EventType> = new Set(['requested', 'completed', 'jar_filled']);
+const PUSH_PENDING: ReadonlySet<EventType> = new Set([
+  'requested',
+  'accepted',
+  'declined',
+  'completed',
+  'jar_filled'
+]);
 
 export function eventDoc(
   type: EventType,

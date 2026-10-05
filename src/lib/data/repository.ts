@@ -29,8 +29,11 @@ export interface Repository {
   watchTask(hid: string, id: string, cb: (t: Task | null) => void): Unsubscribe;
   createTask(hid: string, d: TaskDraft): string;                 // sync id; write queued
   updateTask(hid: string, id: string, p: TaskPatch): void;
-  takeTask(hid: string, id: string): Promise<TakeResult>;        // tx online; batch offline
-  requestTask(hid: string, id: string, toUid: string): void;     // ownerId=to, requestedBy=me
+  takeTask(hid: string, id: string): Promise<TakeResult>;        // tx online; batch offline. Clears any waiting request; by the asked member it is acceptRequest
+  requestTask(hid: string, id: string, toUid: string): void;     // a proposal (domain/requests.ts): ownerId=null, requestedOf=to, requestedBy=me, 'requested' event; to myself = take
+  acceptRequest(hid: string, id: string): Promise<TakeResult>;   // the asked member: ownerId=me, requestedOf=null (requestedBy/At kept), 'accepted' event → requester. Same tx/answers as takeTask (a request gone meanwhile = a plain take)
+  declineRequest(hid: string, id: string): void;                 // the asked member: requestedOf/By/At=null (waits for anyone), 'declined' event → requester. Nothing waiting for me: no-op
+  cancelRequest(hid: string, id: string): void;                  // the asker (or the asked member): requestedOf/By/At=null, 'released' event (targetId = the asked member). Nothing waiting: no-op
   releaseTask(hid: string, id: string): void;                    // ownerId=null
   snoozeTask(hid: string, id: string, until: ISODate): void;     // applies domain snoozePatch(task, until, now): moves the effective date (see Blueprint §3), snoozeCount+1
   completeTask(hid: string, id: string, c: Omit<Completion,'photoIds'>, photos: EncodedPhoto[]): Promise<CompleteResult>; // photos already compressed+thumbnailed by platform/image.ts; ≤3 stored

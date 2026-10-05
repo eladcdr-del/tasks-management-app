@@ -93,7 +93,13 @@ const PROFILES = {
 
 const NO_DOCS = { note: '', cost: null, place: '', contact: '' };
 const ALL_NOTIFY = { requests: true, reminders: true, partnerDone: true, weekly: true };
-const PUSH_PENDING: ReadonlySet<EventType> = new Set(['requested', 'completed', 'jar_filled']);
+const PUSH_PENDING: ReadonlySet<EventType> = new Set([
+  'requested',
+  'accepted',
+  'declined',
+  'completed',
+  'jar_filled'
+]);
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -275,6 +281,17 @@ export function runRepositoryContract(
       await repo.joinHousehold(invite.code, PROFILES.dani);
       await env.asUser(A);
       return { hid, A, B, invite };
+    }
+
+    /** `pair()` plus a third member C (נועה); signed in as A afterwards. */
+    async function trio() {
+      const { hid, A, B } = await pair();
+      const invite = await repo.createInvite(hid);
+      const C = user('noa');
+      await env.asUser(C);
+      await repo.joinHousehold(invite.code, PROFILES.noa);
+      await env.asUser(A);
+      return { hid, A, B, C };
     }
 
     /** Creates a task and waits until it is visible. */
@@ -597,11 +614,14 @@ export function runRepositoryContract(
         await membersOf(hid, (ms) => ms.length === 1 && ms[0]!.uid === A);
       });
 
-      it("leaving releases my open tasks (owner and request cleared); finished and others' tasks stay", async () => {
+      it("leaving releases my open tasks and answers requests to me; finished and others' tasks stay", async () => {
         const { hid, A, B } = await pair();
         const requested = await newTask(hid, { title: 'לתקן את הברז', ownerId: B }); // A asks B
-        await existing(hid, requested, (t) => t.requestedBy === A);
+        await existing(hid, requested, (t) => t.requestedOf === B);
+        const accepted = await newTask(hid, { title: 'להחליף נורה', ownerId: B }); // A asks B…
+        await existing(hid, accepted, (t) => t.requestedOf === B);
         await env.asUser(B);
+        expect(await repo.acceptRequest(hid, accepted)).toEqual({ ok: true }); // …B accepts
         const mine = await newTask(hid, { title: 'לקנות נורות', ownerId: B });
         const finished = await newTask(hid, { title: 'לשלם חשמל', ownerId: B });
         await repo.completeTask(hid, finished, NO_DOCS, []);
@@ -613,9 +633,14 @@ export function runRepositoryContract(
         expect(await repo.getMyHouseholdId()).toBeNull();
 
         await env.asUser(A);
-        for (const id of [requested, mine]) {
-          const t = await existing(hid, id, (t) => t.ownerId === null);
+        for (const id of [requested, accepted, mine]) {
+          const t = await existing(
+            hid,
+            id,
+            (t) => t.ownerId === null && t.requestedBy === null && t.updatedBy === B
+          );
           expect(t).toMatchObject({
+            requestedOf: null,
             requestedBy: null,
             requestedAt: null,
             updatedBy: B,
@@ -655,6 +680,7 @@ export function runRepositoryContract(
           ownerId: null,
           requestedBy: null,
           requestedAt: null,
+          requestedOf: null,
           createdBy: A,
           updatedBy: A,
           scheduledFor: null,
@@ -733,11 +759,11 @@ export function runRepositoryContract(
         expect((await existing(hid, id)).recurrence).toEqual({ freq: 'weekly' });
       });
 
-      it('a draft owned by ANOTHER member is a request: requestedBy=me and a pending requested event', async () => {
+      it('a draft for ANOTHER member is a request waiting for them (nobody holds it yet)', async () => {
         const { hid, A, B } = await pair();
         const id = await newTask(hid, { title: 'לאסוף חבילה מהדואר', ownerId: B });
         const t = await existing(hid, id);
-        expect(t).toMatchObject({ ownerId: B, requestedBy: A, createdBy: A });
+        expect(t).toMatchObject({ ownerId: null, requestedOf: B, requestedBy: A, createdBy: A });
         expect(typeof t.requestedAt).toBe('number');
 
         const es = await eventsOf(
@@ -755,7 +781,8 @@ export function runRepositoryContract(
         expect(await existing(hid, id)).toMatchObject({
           ownerId: A,
           requestedBy: null,
-          requestedAt: null
+          requestedAt: null,
+          requestedOf: null
         });
         const es = await eventsOf(hid, hasEvent('created', id));
         expect(es.some((e) => e.type === 'requested' && e.taskId === id)).toBe(false);
@@ -920,13 +947,13 @@ export function runRepositoryContract(
         await expectRepoError(repo.takeTask(hid, 'no-such-task'), 'not-found');
       });
 
-      it('requestTask sets ownerId=target, requestedBy=me and writes a pending requested event', async () => {
+      it('requestTask is a proposal: nobody holds it, requestedOf=target, a pending requested event', async () => {
         const { hid, A, B } = await pair();
         const id = await newTask(hid, { title: 'להתקשר לחברת הביטוח' });
         await tick();
         repo.requestTask(hid, id, B);
-        const t = await existing(hid, id, (t) => t.ownerId === B);
-        expect(t).toMatchObject({ requestedBy: A, updatedBy: A });
+        const t = await existing(hid, id, (t) => t.requestedOf === B);
+        expect(t).toMatchObject({ ownerId: null, requestedBy: A, updatedBy: A });
         expect(typeof t.requestedAt).toBe('number');
         const es = await eventsOf(hid, hasEvent('requested', id));
         const e = findEvent(es, 'requested', id);
@@ -934,12 +961,22 @@ export function runRepositoryContract(
         expect(e).toMatchObject({ targetId: B, taskTitle: 'להתקשר לחברת הביטוח' });
       });
 
+      it('requestTask on a task someone holds hands it over only once they accept', async () => {
+        const { hid, A, B } = await pair();
+        const id = await newTask(hid, { title: 'להחליף פילטר למזגן', ownerId: A });
+        repo.requestTask(hid, id, B);
+        expect(await existing(hid, id, (t) => t.requestedOf === B)).toMatchObject({
+          ownerId: null,
+          requestedBy: A
+        });
+      });
+
       it('requestTask to myself is a take (no request)', async () => {
         const { hid, A } = await pair();
         const id = await newTask(hid, { title: 'לשלם חשבון חשמל' });
         repo.requestTask(hid, id, A);
         const t = await existing(hid, id, (t) => t.ownerId === A);
-        expect(t).toMatchObject({ requestedBy: null, requestedAt: null });
+        expect(t).toMatchObject({ requestedBy: null, requestedAt: null, requestedOf: null });
         await eventsOf(hid, hasEvent('taken', id));
       });
 
@@ -957,13 +994,207 @@ export function runRepositoryContract(
       it('releaseTask clears the owner and the request, with a released event', async () => {
         const { hid, A, B } = await pair();
         const id = await newTask(hid, { title: 'לסדר את הארון', ownerId: B });
-        await existing(hid, id, (t) => t.requestedBy === A);
+        await existing(hid, id, (t) => t.requestedOf === B);
         await env.asUser(B);
+        expect(await repo.acceptRequest(hid, id)).toEqual({ ok: true });
+        await existing(hid, id, (t) => t.ownerId === B && t.requestedBy === A);
         repo.releaseTask(hid, id);
         const t = await existing(hid, id, (t) => t.ownerId === null);
-        expect(t).toMatchObject({ requestedBy: null, requestedAt: null, updatedBy: B });
+        expect(t).toMatchObject({
+          requestedBy: null,
+          requestedAt: null,
+          requestedOf: null,
+          updatedBy: B
+        });
         const es = await eventsOf(hid, hasEvent('released', id));
         expectEventShape(findEvent(es, 'released', id), 'released', B);
+      });
+    });
+
+    // ── requests: a proposal until the asked member answers ─────────────────
+
+    describe('requests', () => {
+      /** A asks B (pair) and waits until the request is visible; signed in as A. */
+      async function asked(hid: string, B: string, title = 'לאסוף את הכביסה מהמכבסה') {
+        const id = await newTask(hid, { title });
+        repo.requestTask(hid, id, B);
+        // Settled (server-stamped requestedAt), so it can be compared after the answer.
+        return (await existing(hid, id, (t) => t.requestedOf === B && t.pending !== true)).id;
+      }
+
+      it('acceptRequest by the asked member: theirs, the request kept as history, the asker told', async () => {
+        const { hid, A, B } = await pair();
+        const id = await asked(hid, B);
+        const before = await existing(hid, id);
+        await env.asUser(B);
+        await tick();
+        expect(await repo.acceptRequest(hid, id)).toEqual({ ok: true });
+        const t = await existing(hid, id, (t) => t.ownerId === B);
+        expect(t).toMatchObject({
+          requestedOf: null,
+          requestedBy: A,
+          requestedAt: before.requestedAt,
+          updatedBy: B
+        });
+        const es = await eventsOf(hid, hasEvent('accepted', id));
+        const e = findEvent(es, 'accepted', id);
+        expectEventShape(e, 'accepted', B);
+        expect(e).toMatchObject({ targetId: A, push: 'pending', taskTitle: before.title });
+        expect(es.some((x) => x.type === 'taken' && x.taskId === id)).toBe(false);
+      });
+
+      it('takeTask by the asked member is the same accept', async () => {
+        const { hid, A, B } = await pair();
+        const id = await asked(hid, B);
+        await env.asUser(B);
+        expect(await repo.takeTask(hid, id)).toEqual({ ok: true });
+        expect(await existing(hid, id, (t) => t.ownerId === B)).toMatchObject({
+          requestedOf: null,
+          requestedBy: A
+        });
+        await eventsOf(
+          hid,
+          hasEvent('accepted', id, (e) => e.targetId === A)
+        );
+      });
+
+      it('anyone may still take a waiting request; the request is then cleared', async () => {
+        const { hid, A, B, C } = await trio();
+        const id = await asked(hid, B);
+        await env.asUser(C);
+        expect(await repo.takeTask(hid, id)).toEqual({ ok: true });
+        expect(await existing(hid, id, (t) => t.ownerId === C)).toMatchObject({
+          requestedOf: null,
+          requestedBy: null,
+          requestedAt: null
+        });
+        await eventsOf(hid, hasEvent('taken', id));
+        // B's late "yes" is answered like a late take.
+        await env.asUser(B);
+        expect(await repo.acceptRequest(hid, id)).toEqual({ ok: false, takenBy: C });
+        // The asker may take it too.
+        const other = await (async () => {
+          await env.asUser(A);
+          return asked(hid, B, 'להזמין גז');
+        })();
+        expect(await repo.takeTask(hid, other)).toEqual({ ok: true });
+        expect(await existing(hid, other, (t) => t.ownerId === A)).toMatchObject({
+          requestedOf: null,
+          requestedBy: null
+        });
+      });
+
+      it('acceptRequest after the request was cancelled is a plain take', async () => {
+        const { hid, B } = await pair();
+        const id = await asked(hid, B);
+        repo.cancelRequest(hid, id);
+        await existing(hid, id, (t) => t.requestedOf === null);
+        await env.asUser(B);
+        expect(await repo.acceptRequest(hid, id)).toEqual({ ok: true });
+        expect(await existing(hid, id, (t) => t.ownerId === B)).toMatchObject({
+          requestedBy: null
+        });
+        await eventsOf(
+          hid,
+          hasEvent('taken', id, (e) => e.actorId === B)
+        );
+      });
+
+      it('declineRequest by the asked member: back to waiting for anyone, the asker told gently', async () => {
+        const { hid, A, B } = await pair();
+        const id = await asked(hid, B);
+        await env.asUser(B);
+        await tick();
+        repo.declineRequest(hid, id);
+        const t = await existing(hid, id, (t) => t.requestedOf === null);
+        expect(t).toMatchObject({
+          ownerId: null,
+          requestedBy: null,
+          requestedAt: null,
+          updatedBy: B
+        });
+        const es = await eventsOf(hid, hasEvent('declined', id));
+        const e = findEvent(es, 'declined', id);
+        expectEventShape(e, 'declined', B);
+        expect(e).toMatchObject({ targetId: A, push: 'pending' });
+      });
+
+      it('cancelRequest by the asker: back to waiting, a released event naming the asked member, no push', async () => {
+        const { hid, A, B } = await pair();
+        const id = await asked(hid, B);
+        await tick();
+        repo.cancelRequest(hid, id);
+        const t = await existing(hid, id, (t) => t.requestedOf === null);
+        expect(t).toMatchObject({
+          ownerId: null,
+          requestedBy: null,
+          requestedAt: null,
+          updatedBy: A
+        });
+        const es = await eventsOf(hid, hasEvent('released', id));
+        const e = findEvent(es, 'released', id);
+        expectEventShape(e, 'released', A);
+        expect(e).toMatchObject({ targetId: B, push: 'none' });
+      });
+
+      it('only the asked member declines, and only they or the asker cancel', async () => {
+        const { hid, A, B, C } = await trio();
+        const id = await asked(hid, B);
+        // Nothing waits for A's or C's answer: their decline is a no-op.
+        for (const who of [A, C]) {
+          await env.asUser(who);
+          const cap = captureWriteErrors();
+          repo.declineRequest(hid, id);
+          await sentinel(hid);
+          cap.stop();
+          expect(cap.errors).toEqual([]);
+        }
+        // C neither asked nor was asked: cancelling is refused.
+        const cap = captureWriteErrors();
+        repo.cancelRequest(hid, id);
+        await waitFor(() => cap.errors.length > 0, 'write error');
+        expect(cap.errors[0]).toBeInstanceOf(RepoError);
+        expect(cap.errors[0]!.code).toBe('permission');
+        cap.stop();
+        await sentinel(hid);
+        expect(await existing(hid, id)).toMatchObject({ requestedOf: B, requestedBy: A });
+        const es = await eventsOf(hid);
+        expect(es.some((e) => e.taskId === id && ['declined', 'released'].includes(e.type))).toBe(
+          false
+        );
+        // The asked member may withdraw it as well.
+        await env.asUser(B);
+        repo.cancelRequest(hid, id);
+        await existing(hid, id, (t) => t.requestedOf === null && t.requestedBy === null);
+      });
+
+      it('declining or cancelling when nothing waits changes nothing', async () => {
+        const { hid, B } = await pair();
+        const id = await newTask(hid, { title: 'לתלות תמונה' });
+        await env.asUser(B);
+        const cap = captureWriteErrors();
+        repo.declineRequest(hid, id);
+        repo.cancelRequest(hid, id);
+        await sentinel(hid);
+        cap.stop();
+        expect(cap.errors).toEqual([]);
+        expect(await existing(hid, id)).toMatchObject({ ownerId: null, requestedBy: null });
+        const es = await eventsOf(hid);
+        expect(es.filter((e) => e.taskId === id).map((e) => e.type)).toEqual(['created']);
+      });
+
+      it('asking someone else replaces a waiting request', async () => {
+        const { hid, A, B, C } = await trio();
+        const id = await asked(hid, B);
+        repo.requestTask(hid, id, C);
+        expect(await existing(hid, id, (t) => t.requestedOf === C)).toMatchObject({
+          ownerId: null,
+          requestedBy: A
+        });
+        await env.asUser(B);
+        repo.declineRequest(hid, id); // no longer waiting for B: nothing to decline
+        await sentinel(hid);
+        expect((await existing(hid, id)).requestedOf).toBe(C);
       });
     });
 

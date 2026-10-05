@@ -9,10 +9,13 @@
 //   bucket          overdue | today | week | later, see bucketOf
 //   attention       overdue, OR urgent and not planned for a later day, OR a hard deadline today or
 //                   tomorrow (see needsAttention), OR an urgent request to the viewer (urgentRequestFor)
-//   requested       someone else asked the viewer to do it, see isRequestFor / groupTasks
-//   waiting         nobody (or a former member) owns it, see groupTasks
+//   requested       someone else asked the viewer, and the request waits for their answer
+//                   (isRequestFor, domain/requests.ts); not the viewer's until they accept
+//   waiting         nobody (or a former member) owns it, see groupTasks. A request waiting for
+//                   SOMEONE ELSE's answer is waiting too: nobody took it yet
 
 import { addDays, endOfWeek, minISO, weekday } from './dates';
+import { isPendingRequestFor, type RequestFields } from './requests';
 import type { Bucket, ISODate, Priority, Task } from './types';
 
 /** The fields of a Task that bucketing reads. */
@@ -84,14 +87,16 @@ export function needsAttention(
 }
 
 /**
- * Someone else asked `me` to do it: `me` owns it and another uid requested it. Never true while the
- * viewer is unknown (`me` null).
+ * Someone else asked `me` to do it and the request waits for my answer (pendingRequestOf in
+ * domain/requests.ts: nobody owns it yet). Never true while the viewer is unknown (`me` null). With
+ * `memberIds`, a request to a former member is no request.
  */
 export function isRequestFor(
-  task: Pick<Task, 'ownerId' | 'requestedBy'>,
-  me: string | null
+  task: RequestFields,
+  me: string | null,
+  memberIds: MemberIds = undefined
 ): boolean {
-  return me !== null && task.ownerId === me && task.requestedBy !== null && task.requestedBy !== me;
+  return isPendingRequestFor(task, me, memberIds);
 }
 
 /**
@@ -100,10 +105,11 @@ export function isRequestFor(
  * rule takes over (out of attention until its new date), so a snooze still quiets it.
  */
 export function urgentRequestFor(
-  task: Pick<Task, 'ownerId' | 'requestedBy' | 'requestedAt' | 'priority' | 'lastSnoozedAt'>,
-  me: string | null
+  task: RequestFields & Pick<Task, 'requestedAt' | 'priority' | 'lastSnoozedAt'>,
+  me: string | null,
+  memberIds: MemberIds = undefined
 ): boolean {
-  if (task.priority !== 'urgent' || !isRequestFor(task, me)) return false;
+  if (task.priority !== 'urgent' || !isRequestFor(task, me, memberIds)) return false;
   const snoozedSince =
     task.lastSnoozedAt !== null &&
     (task.requestedAt === null || task.lastSnoozedAt >= task.requestedAt);
@@ -139,9 +145,15 @@ export interface GroupedTasks {
    * plus an urgent request to the viewer (urgentRequestFor).
    */
   attention: Task[];
-  /** Asked of the viewer by someone else ("ביקשו ממך"), not already in `attention`. */
+  /**
+   * Asked of the viewer by someone else and waiting for their answer ("ביקשו ממך"), not already in
+   * `attention`.
+   */
   requested: Task[];
-  /** Unowned tasks (or a former member's) that are not already in `attention`. */
+  /**
+   * Unowned tasks (or a former member's) that are not already in `attention`, including requests
+   * that wait for SOMEONE ELSE's answer (nobody took them yet), but not the ones in `requested`.
+   */
   waiting: Task[];
   today: Task[];
   week: Task[];
@@ -169,10 +181,12 @@ export type MemberIds = readonly string[] | undefined;
  *     not look done while work is waiting). The overlap is deliberate; the Home screen (3.2)
  *     de-emphasises unowned cards in the time lists. pulseCounts follows the lists, so its today and
  *     waiting numbers can count the same task.
- *  4. `requested` ("ביקשו ממך": someone else asked the viewer `me`) works like `waiting`: shown
- *     whatever the date tab, and still in its time bucket (a request due today counts for today).
- *     Requests usually have no date, so they would otherwise sit unseen under "later". An urgent
- *     request is attention instead (urgentRequestFor), until it is snoozed.
+ *  4. `requested` ("ביקשו ממך": someone else asked the viewer `me`, who has not answered yet) works
+ *     like `waiting`: shown whatever the date tab, and still in its time bucket (a request due today
+ *     counts for today). Requests usually have no date, so they would otherwise sit unseen under
+ *     "later". An urgent request is attention instead (urgentRequestFor), until it is snoozed. A
+ *     request is a proposal: for everyone else (the asker included) the task is unowned, so it is
+ *     in their `waiting`, and once the viewer accepts it is simply theirs.
  *
  * Defensive: tasks whose status is not 'open' are ignored. A task owned by someone who is not in
  * `memberIds` (a member who left the household) is treated as unowned; with `memberIds` undefined
@@ -194,11 +208,11 @@ export function groupTasks(
 
   for (const t of openTasks) {
     if (t.status !== 'open') continue;
-    if (needsAttention(t, today) || urgentRequestFor(t, me)) {
+    if (needsAttention(t, today) || urgentRequestFor(t, me, memberIds)) {
       attention.push(t);
       continue;
     }
-    if (isRequestFor(t, me)) requested.push(t);
+    if (isRequestFor(t, me, memberIds)) requested.push(t);
     else if (t.ownerId === null || (members !== null && !members.has(t.ownerId))) waiting.push(t);
     const bucket = bucketOf(t, today);
     if (bucket === 'today') today_.push(t);
