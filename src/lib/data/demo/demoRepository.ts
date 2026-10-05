@@ -27,7 +27,16 @@ import { sortTasks } from '../../domain/buckets';
 import { DEFAULT_CATEGORIES } from '../../domain/categories';
 import { isoDateAt, isValidISO, todayISO } from '../../domain/dates';
 import { inviteCode, isInviteCode, randomId } from '../../domain/ids';
-import { applyCompletion, applyRedeem, applyReopen, isFull } from '../../domain/jar';
+import {
+  applyCompletion,
+  applyRedeem,
+  applyReopen,
+  backfillAllowed,
+  cleanJarSettings,
+  isFull,
+  modeOf,
+  type JarSettings
+} from '../../domain/jar';
 import {
   buildNextInstance,
   ensureAnchor,
@@ -899,8 +908,9 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         }));
         const next = buildNextInstance(task, isoDateAt(t), t, uid); // from the task as it was
         const jarBefore = rec.household.jar;
-        const jarAfter = applyCompletion(jarBefore);
-        const jarFilled = !isFull(jarBefore) && isFull(jarAfter);
+        const jarAfter = applyCompletion(jarBefore, uid);
+        const ids = rec.household.memberIds;
+        const jarFilled = !isFull(jarBefore, ids) && isFull(jarAfter, ids);
 
         for (const p of docs) rec.photos[p.id] = p;
         task.status = 'done';
@@ -937,6 +947,9 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
           task.completedBy ?? uid
         );
         const photoIds = task.completion?.photoIds ?? [];
+        const completer = task.completedBy;
+        // Only a completion of the jar's current round is taken back out of it.
+        const thisRound = rec.household.jar !== null && completedAt >= rec.household.jar.startedAt;
         const t = now();
 
         task.status = 'open';
@@ -947,7 +960,9 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         for (const pid of photoIds) delete rec.photos[pid];
         const auto = expected ? rec.tasks[expected.id] : undefined;
         if (expected && auto && isUntouchedInstance(auto, expected)) delete rec.tasks[expected.id];
-        rec.household.jar = applyReopen(rec.household.jar);
+        if (thisRound) {
+          rec.household.jar = applyReopen(rec.household.jar, completer, rec.household.memberIds);
+        }
         pushEvent(rec, 'reopened', uid, task, t);
       });
     },
@@ -971,19 +986,20 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
 
     // jar
 
-    setJar(hid: string, j: { treat: string; target: number }): void {
+    setJar(hid: string, j: JarSettings, backfill?: Record<string, number>): void {
       queued((st, uid) => {
         const rec = memberHousehold(st, hid, uid);
-        const treat = typeof j.treat === 'string' ? j.treat.trim() : '';
-        if (treat.length < 1 || treat.length > 60)
-          throw new RepoError('permission', 'treat must be 1-60 characters');
-        if (!Number.isInteger(j.target) || j.target < 3 || j.target > 50) {
-          throw new RepoError('permission', 'target must be a whole number from 3 to 50');
-        }
+        const clean = cleanJarSettings(j, rec.household.memberCount);
+        if (!clean.ok) throw new RepoError('permission', clean.reason);
+        const { treat, mode, target, share } = clean.value;
+        const settings = { treat, mode, target, ...(share !== undefined ? { share } : {}) };
         const jar = rec.household.jar;
+        if (backfill && !(jar && backfillAllowed(jar, rec.household.memberIds, backfill))) {
+          throw new RepoError('permission', 'the backfill does not match the jar');
+        }
         rec.household.jar = jar
-          ? { ...jar, treat, target: j.target }
-          : { treat, target: j.target, count: 0, round: 1, startedAt: now() };
+          ? { ...jar, ...settings, ...(backfill ? { counts: { ...backfill } } : {}) }
+          : { ...settings, count: 0, counts: {}, round: 1, startedAt: now() };
       });
     },
 
@@ -992,7 +1008,9 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const rec = memberHousehold(st, hid, uid);
         const jar = rec.household.jar;
         if (!jar) throw new RepoError('not-found', 'there is no jar');
-        if (!isFull(jar)) throw new RepoError('conflict', 'the jar is not full yet');
+        if (!isFull(jar, rec.household.memberIds)) {
+          throw new RepoError('conflict', 'the jar is not full yet');
+        }
         const t = now();
         let filledAt = t;
         for (let i = rec.events.length - 1; i >= 0; i--) {
@@ -1009,7 +1027,10 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
           treat: jar.treat,
           target: jar.target,
           filledAt,
-          redeemedAt: t
+          redeemedAt: t,
+          mode: modeOf(jar),
+          ...(modeOf(jar) === 'each' && jar.share !== undefined ? { share: jar.share } : {}),
+          counts: { ...jar.counts }
         };
         rec.treats[id] = treat;
         rec.household.jar = applyRedeem(jar, t);

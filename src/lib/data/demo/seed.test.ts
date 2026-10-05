@@ -3,6 +3,7 @@ import { isStuck } from '../../domain/age';
 import { bucketInfo, groupTasks, needsAttention } from '../../domain/buckets';
 import { DEFAULT_CATEGORIES } from '../../domain/categories';
 import { addDays, diffDays, isoDateAt, todayISO } from '../../domain/dates';
+import { filled, isFull, partsOf } from '../../domain/jar';
 import { buildNextInstance, nextTaskId } from '../../domain/recurrence';
 import { pendingRequestOf } from '../../domain/requests';
 import { searchDoneTasks } from '../../domain/search';
@@ -228,24 +229,51 @@ describe('createSeed: done tasks and documentation', () => {
 });
 
 describe('createSeed: jar and treats', () => {
-  it('has "ארוחה במסעדה" at 7/10 in round 3 and two earned treats', () => {
+  it('has "ארוחה במסעדה", everyone does their part (5 each), 7 of 10 in round 3', () => {
     expect(rec.household.jar).toMatchObject({
       treat: 'ארוחה במסעדה',
+      mode: 'each',
+      share: 5,
       target: 10,
       count: 7,
+      counts: { [MICHAL]: 4, [DANI]: 3 },
       round: 3
     });
+    const jar = rec.household.jar!;
+    expect(filled(jar, memberIds)).toBe(7);
+    expect(isFull(jar, memberIds)).toBe(false);
+    expect(partsOf(jar, memberIds).map((p) => [p.uid, p.done])).toEqual([
+      [MICHAL, 4],
+      [DANI, 3]
+    ]);
     expect(Object.values(rec.treats).map((t) => [t.id, t.treat])).toEqual([
       ['1', 'גלידה בנמל'],
       ['2', 'סרט בקולנוע']
     ]);
   });
 
+  it('a task דני closed for מיכל, who asked, is in this round (a "help" marble)', () => {
+    const jar = rec.household.jar!;
+    expect(
+      done.some(
+        (t) =>
+          t.completedAt! > jar.startedAt &&
+          t.requestedBy !== null &&
+          t.requestedBy !== t.completedBy
+      )
+    ).toBe(true);
+  });
+
   it('jar counts match the completions of each round', () => {
     const jar = rec.household.jar!;
-    const completedIn = (from: number, to: number) =>
-      done.filter((t) => t.completedAt! > from && t.completedAt! <= to).length;
+    const completedIn = (from: number, to: number, by?: string) =>
+      done.filter(
+        (t) => t.completedAt! > from && t.completedAt! <= to && (!by || t.completedBy === by)
+      ).length;
     expect(completedIn(jar.startedAt, NOW.getTime())).toBe(jar.count);
+    for (const uid of memberIds) {
+      expect(completedIn(jar.startedAt, NOW.getTime(), uid)).toBe(jar.counts?.[uid] ?? 0);
+    }
     const [r1, r2] = [rec.treats['1']!, rec.treats['2']!];
     expect(completedIn(r1.redeemedAt!, r2.filledAt)).toBe(r2.target);
     for (const t of [r1, r2]) {
@@ -253,6 +281,12 @@ describe('createSeed: jar and treats', () => {
       expect(t.filledAt).toBeLessThan(t.redeemedAt!);
     }
     expect(jar.startedAt).toBe(r2.redeemedAt);
+    // Each earned treat remembers who took part: the completions of its round.
+    const sum = (c: Record<string, number> = {}) => Object.values(c).reduce((a, n) => a + n, 0);
+    expect(sum(r2.counts)).toBe(completedIn(r1.redeemedAt!, r2.redeemedAt!));
+    expect(sum(r2.counts)).toBeGreaterThanOrEqual(r2.target);
+    expect(Object.keys(r2.counts ?? {}).sort()).toEqual([DANI, MICHAL]);
+    expect(r1.counts).toBeUndefined(); // earned before goal modes
   });
 });
 
@@ -416,7 +450,9 @@ describe('createSeed: integrity', () => {
     expect(diffDays(arnona.dueDate!, today)).toBeGreaterThanOrEqual(8);
     expect(diffDays(arnona.dueDate!, today)).toBeLessThanOrEqual(10);
     const jar = p.rec.household.jar!;
-    expect(p.done.filter((t) => t.completedAt! > jar.startedAt)).toHaveLength(jar.count);
+    const thisRound = p.done.filter((t) => t.completedAt! > jar.startedAt);
+    expect(thisRound).toHaveLength(Object.values(jar.counts ?? {}).reduce((a, n) => a + n, 0));
+    expect(filled(jar, p.rec.household.memberIds)).toBe(jar.count);
   });
 });
 

@@ -103,7 +103,7 @@ export type SheetSpec =
   | { name: 'complete'; taskId: string }
   | { name: 'request'; taskId: string }
   | { name: 'snooze'; taskId: string }
-  | { name: 'jarSetup' }
+  | { name: 'jarSetup'; next?: boolean } // next: right after a redeem ("הצ׳ופר הבא")
   | { name: 'photo'; photoId: string }; // full-screen photo viewer (3.3 TaskDetail, 4.1 Memory); Back closes it
 
 export type SheetName = SheetSpec['name'];

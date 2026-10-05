@@ -8,9 +8,10 @@ The Firebase adapter (step 2.2) must write exactly these shapes. Anything else i
 
 - **Exact key sets.** Every listed field is present on every write of a full document (use `null`,
   never omit) and no other field exists. The optional keys are inside `tasks.recurrence` (`anchor`,
-  `interval` and `weekdays`: omit them when absent; they are never `null` or `undefined`) and
+  `interval` and `weekdays`: omit them when absent; they are never `null` or `undefined`),
   `tasks.requestedOf` (a uid or `null`; missing on every document written before requests could
-  wait for an answer, and read as `null`).
+  wait for an answer, and read as `null`), and the jar's goal keys `mode`, `share`, `counts` (in
+  `households.jar` and `treats`; missing on jars set up before goal modes, see "Jar goal modes").
 - **Ids are not stored.** `Task.id`, `ActivityEvent.id`, `Photo.id`, `EarnedTreat.id` are the doc id;
   `Member.uid` is the members doc id; `Invite.code` is the invites doc id; `DeviceToken.deviceId` is
   the devices doc id. Converters strip them on write and inject them from `snap.id` on read.
@@ -50,18 +51,41 @@ the path uid. Nothing is readable or writable by anyone else. No collection-grou
 | jar         | TreatJar \| null            | create `null` or a fresh jar; never set back to `null` once set    |
 | invite      | `{code, expiresAt}` \| null | create `null`; `code` 24 base62; `expiresAt` > now, ≤ now + 7 d    |
 
-`TreatJar = {treat: string 1..60, target: int 3..50, count: int ≥ 0, round: int ≥ 1, startedAt: Timestamp}`.
-A fresh jar is `{treat, target, count: 0, round: 1, startedAt: now}`.
+`TreatJar = {treat: string 1..60, target: int 3..50, count: int ≥ 0, round: int ≥ 1, startedAt: Timestamp,
+mode?: 'together' | 'each', share?: int 1..20, counts?: {[uid]: int ≥ 0}}` (`share` is required when
+`mode == 'each'`). A fresh jar is `{treat, target, mode, share?, count: 0, counts: {}, round: 1,
+startedAt: now}`; a fresh jar without the goal keys (the previous app version) is still valid.
+
+#### Jar goal modes
+
+`src/lib/domain/jar.ts` is the reference; the rules (`jarFull`, `jarTransitionOk`) mirror it.
+
+- **`together`** (also: no `mode`, every jar set up before goal modes): `target` completions in
+  total, by anyone. Full when `count ≥ target`; the surplus carries into the next round.
+- **`each`** ("כל אחד תורם", the default for new jars in the app): every **current** member (the
+  household's `memberIds`) closes their `share`. Full when `counts[uid] ≥ share` for every
+  current member; a newcomer's part counts from the moment they join, a departed member's no
+  longer does. `count` is kept as `Σ min(counts[uid], share)` and `target` as
+  `clamp(share × memberCount, 3, 50)`, only so that the previous app version (which shows "count
+  of target") reads something sensible. Completions past one's share are recorded in `counts`
+  (shown as a shared bonus) and never carry over.
+- `counts` (completions per member this round) is kept in both modes; the redeem batch copies it
+  into `treats/{round}` (who took part) and clears it.
 
 Member update may change only `name`, `jar`, `invite`. **Jar transitions (one per write):**
 
-| transition | write                                                                                              | rule                                                                   |
-| ---------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| setup      | `{jar: fresh jar}`                                                                                 | only from `null`                                                       |
-| edit       | `{'jar.treat': t, 'jar.target': n}`                                                                | count, round, startedAt unchanged                                      |
-| complete   | `{'jar.count': increment(1)}`                                                                      | exactly +1 (may exceed target)                                         |
-| reopen     | `{'jar.count': increment(-1)}`                                                                     | exactly −1, never below 0 (skip the write when count is 0)             |
-| redeem     | `{'jar.count': increment(-target), 'jar.round': increment(1), 'jar.startedAt': serverTimestamp()}` | only when `count ≥ target`; `treats/{round}` created in the same batch |
+| transition | write (this version)                                                                                                                                       | rule                                                                                                                                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| setup      | `{jar: fresh jar}`                                                                                                                                         | only from `null`; `counts` empty                                                                                                                                                                               |
+| edit       | `{'jar.treat', 'jar.target', 'jar.mode', 'jar.share'?}` (+ `'jar.counts'` backfill)                                                                        | count, round, startedAt unchanged; `counts` unchanged, or a **backfill** (switching to each mid-round): only current members' entries change, none goes down, and their sum is `≤ count`                       |
+| complete   | `{'jar.counts.<me>': increment(1)}` + `{'jar.count': increment(1)}` when it fills (together: always; each: while `counts[me] < share`)                     | my entry exactly +1, nothing else; `count` +1 or unchanged. **Previous version:** `{'jar.count': increment(1)}` alone                                                                                          |
+| reopen     | `{'jar.counts.<completer>': increment(-1)}` (a current member with an entry) + `{'jar.count': increment(-1)}` when that completion counted (and count > 0) | one current member's entry exactly −1 (never below 0); `count` −1 or unchanged. **Previous version:** `{'jar.count': increment(-1)}` alone. Only a completion of the current round (`completedAt ≥ startedAt`) |
+| redeem     | `{'jar.count': together ? increment(-target) : 0, 'jar.counts': {}, 'jar.round': increment(1), 'jar.startedAt': serverTimestamp()}`                        | only when full (by mode); settings unchanged; `treats/{round}` created in the same batch. **Previous version** (`count −target`, `counts` untouched): accepted for a together jar only                         |
+
+Writes of the previous app version stay valid; they only move `count`, so in `each` mode `count`
+may drift a little from `Σ min(counts, share)` during the transition. Nothing relies on it: an
+`each` jar's fullness reads `counts` only. The jar bookkeeping never blocks a completion or a
+reopen: `count` may move or stay with a tally step (an offline view may misjudge a share).
 
 `household.invite` is the **only** code that admits joiners. Replacing it or setting it to `null`
 invalidates every other code at once.
@@ -215,8 +239,13 @@ document id and a `targetId` that is another current member, and must ride with 
 | target     | int               | `== jar.target`                                                |
 | filledAt   | Timestamp         | `jar.startedAt ≤ filledAt ≤ now` (`serverTimestamp()` is fine) |
 | redeemedAt | Timestamp \| null | create null or now; update only `null → now`, once             |
+| mode?      | string            | `== jar.mode` (missing = together)                             |
+| share?     | int               | `== jar.share`                                                 |
+| counts?    | map               | `== jar.counts`: who took part (missing on older treats)       |
 
-Create also requires: the jar is full, and the same batch advances `jar.round` to `round + 1`.
+Create also requires: the jar is full (by its mode, for the household's current members), and
+the same batch advances `jar.round` to `round + 1`. The optional keys may be left out (the
+previous app version writes the four required keys only).
 
 ### `households/{hid}/sent/{key}`: no client access
 
@@ -263,9 +292,9 @@ enforces both limits, and every batch below is tested.
 | **revokeInvite**                                     | `update invites/{code}` `{revoked: true}` · `update households/{hid}` `{invite: null}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 2     |
 | **leaveHousehold**                                   | `delete members/{me}` · `update households/{hid}` `{memberIds: arrayRemove(me), memberCount: increment(-1)}`, plus `invite: null` (**required** if you are the last member, optional otherwise) · `set users/{me}` `{householdId: null, createdAt: now}` · for every **open** task with `ownerId == me`: `update tasks/{id}` `{ownerId: null, requestedBy: null, requestedAt: null, …touch}`, and for every open request waiting for me the same with `requestedOf: null` (no events: the events rule needs the caller to still be a member after the batch). Then `unregisterDevice`. | 2     |
 | owner removes `x` (no repo method yet)               | `delete members/{x}` · `update households/{hid}` `{memberIds: arrayRemove(x), memberCount: increment(-1), invite: null}` · `update invites/{code}` `{revoked: true}`                                                                                                                                                                                                                                                                                                                                                                                                                   | 5     |
-| **completeTask** (transaction online, batch offline) | ≤ 3 × `set photos/{autoId}` · `update tasks/{id}` `{status: 'done', completedAt: now, completedBy: me, completion: {…, photoIds}, updatedBy, updatedAt}` (optionally `ownerId: me`) · +event `completed` · `update households/{hid}` `{'jar.count': increment(1)}` **only if jar ≠ null** · if recurring: `set tasks/{seriesId}__{nextDate}` · +event `jar_filled` if `count + 1 == target`                                                                                                                                                                                            | 10    |
-| **reopenTask**                                       | `update tasks/{id}` `{status: 'open', completedAt: null, completedBy: null, completion: null, updatedBy, updatedAt}` · `{'jar.count': increment(-1)}` only if jar ≠ null and count > 0 · +event `reopened` · `delete` the untouched next instance (and its photos if wanted)                                                                                                                                                                                                                                                                                                           | 5     |
-| **redeemJar** (jar full)                             | `set treats/{String(round)}` `{treat, target, filledAt: now, redeemedAt: now}` · `update households/{hid}` (redeem transition above) · +event `jar_redeemed`                                                                                                                                                                                                                                                                                                                                                                                                                           | 6     |
+| **completeTask** (transaction online, batch offline) | ≤ 3 × `set photos/{autoId}` · `update tasks/{id}` `{status: 'done', completedAt: now, completedBy: me, completion: {…, photoIds}, updatedBy, updatedAt}` (optionally `ownerId: me`) · +event `completed` · `update households/{hid}` with the jar's complete step (see Jar transitions) **only if jar ≠ null** · if recurring: `set tasks/{seriesId}__{nextDate}` · +event `jar_filled` if this completion makes the jar full (by its mode)                                                                                                                                            | 10    |
+| **reopenTask**                                       | `update tasks/{id}` `{status: 'open', completedAt: null, completedBy: null, completion: null, updatedBy, updatedAt}` · the jar's reopen step (see Jar transitions) only if jar ≠ null, the task was completed in the current round and the step is not empty · +event `reopened` · `delete` the untouched next instance (and its photos if wanted)                                                                                                                                                                                                                                     | 5     |
+| **redeemJar** (jar full)                             | `set treats/{String(round)}` `{treat, target, filledAt: now, redeemedAt: now, mode, share?, counts}` · `update households/{hid}` (redeem transition above) · +event `jar_redeemed`                                                                                                                                                                                                                                                                                                                                                                                                     | 6     |
 | createTask                                           | `set tasks/{autoId}` (create shape) · +event `created`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 3     |
 | takeTask (transaction online)                        | `update tasks/{id}` `{ownerId: me, requestedBy: null, requestedAt: null, requestedOf: null (if set), …touch}` · +event `taken`. By the asked member of a waiting request it is **acceptRequest**                                                                                                                                                                                                                                                                                                                                                                                       | 3     |
 | requestTask                                          | `update tasks/{id}` `{ownerId: null, requestedOf: to, requestedBy: me, requestedAt: now, …touch}` · +event `requested` (`targetId: to`)                                                                                                                                                                                                                                                                                                                                                                                                                                                | 3     |
@@ -312,3 +341,5 @@ Re-check current membership before every send: device owner ∈ `memberIds`, and
 `requested` goes to `targetId` (the asked member) while the task is still asked of them
 (`requestedOf == targetId`, or the previous version's `ownerId == targetId`); `accepted` /
 `declined` go to `targetId` (the asker) under their `requests` preference.
+`jar_filled` goes out only while the jar is still full by its goal (`scripts/notify/jar.ts`, the
+same test as `isFull` in `src/lib/domain/jar.ts`) and in the same round.

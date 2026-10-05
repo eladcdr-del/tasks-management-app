@@ -6,12 +6,13 @@
 //   household.household, .members (by joinedAt), .me, .partner, .memberById(uid), .memberIds
 //   household.jar, .treats, .invite, .loaded
 //   household.createInvite() / revokeInvite(code?) / updateMember(patch) / updateHousehold(patch)
-//   household.setJar({ treat, target }) / redeemJar()
+//   household.setJar({ treat, target } | { treat, mode: 'each', share }) / redeemJar()
 //
 // Actions never reject: a failure is shown as a snackbar (ui.pushError) and the action resolves to
 // null / undefined.
 
 import type { Repository } from '$lib/data/repository';
+import type { JarSettings } from '$lib/domain/jar';
 import type { EarnedTreat, Household, Invite, Member, Unsubscribe } from '$lib/domain/types';
 import { ui as defaultUi, type UiStore } from './ui.svelte';
 import type { HouseholdScope, ScopedStore } from './session.svelte';
@@ -115,9 +116,12 @@ export class HouseholdStore implements ScopedStore {
     await this.#call((repo, hid) => repo.updateHousehold(hid, patch), undefined);
   }
 
-  /** Sets the jar's treat and target (a first call starts round 1). Queued write. */
-  setJar(j: { treat: string; target: number }): void {
-    void this.#call((repo, hid) => repo.setJar(hid, j), undefined);
+  /**
+   * Sets the jar's treat and goal (a first call starts round 1). `backfill`: domain backfillCounts
+   * when switching to 'each' mid-round. Queued write.
+   */
+  setJar(j: JarSettings, backfill?: Record<string, number> | null): void {
+    void this.#call((repo, hid) => repo.setJar(hid, j, backfill ?? undefined), undefined);
   }
 
   /** "מימשנו": records the treat and starts the next round. Queued write. */

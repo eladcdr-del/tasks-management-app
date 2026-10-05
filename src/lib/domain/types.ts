@@ -12,7 +12,10 @@ export interface Recurrence { freq: RecurrenceFreq; interval?: number; weekdays?
 export type Bucket = 'overdue'|'today'|'week'|'later';
 
 export interface NotifyPrefs { requests: boolean; reminders: boolean; partnerDone: boolean; weekly: boolean }
-export interface TreatJar { treat: string; target: number; count: number; round: number; startedAt: Millis }
+/** The jar's goal: 'together' = `target` tasks in total by anyone; 'each' = every member closes their `share` (domain/jar.ts). */
+export type JarMode = 'together'|'each';
+/** mode missing = 'together' (jars set up before goal modes). share: 'each' only, 1..20. counts: completions per member uid this round (missing = none recorded yet); in 'each' mode `count` = Σ min(counts, share) and `target` = share × members for the previous app version. */
+export interface TreatJar { treat: string; target: number; count: number; round: number; startedAt: Millis; mode?: JarMode; share?: number; counts?: Record<string, number> }
 export interface Household {
   id: string; name: string; memberIds: string[]; memberCount: number; maxMembers: number; // 6
   createdBy: string; createdAt: Millis; jar: TreatJar | null;
@@ -48,7 +51,7 @@ export interface ActivityEvent {
   targetId: string | null; createdAt: Millis;
   push: 'pending'|'none'|'sent'|'skipped';  // client writes 'pending' for requested|accepted|declined|completed|jar_filled, else 'none'
 }
-export interface EarnedTreat { id: string /* String(round) */; treat: string; target: number; filledAt: Millis; redeemedAt: Millis | null }
+export interface EarnedTreat { id: string /* String(round) */; treat: string; target: number; filledAt: Millis; redeemedAt: Millis | null; mode?: JarMode; share?: number; counts?: Record<string, number> /* the round's jar at redeem: who took part (missing on older treats) */ }
 export interface Invite { code: string; householdId: string; householdName: string; inviterName: string; memberCount: number /* snapshot at creation: non-members cannot read the household */; createdBy: string; createdAt: Millis; expiresAt: Millis; revoked: boolean }
 export interface InvitePreview { householdName: string; inviterName: string; memberCount: number }
 export interface DeviceToken { deviceId: string; householdId: string; token: string; userAgent: string; createdAt: Millis; updatedAt: Millis }

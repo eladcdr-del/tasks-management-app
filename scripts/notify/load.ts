@@ -15,7 +15,8 @@ import type {
   NotifyPrefs,
   Recurrence,
   RecurrenceFreq,
-  Task
+  Task,
+  TreatJar
 } from './types.ts';
 import { isValidISO } from './time.ts';
 
@@ -60,13 +61,31 @@ export function normalizeHousehold(id: string, raw: DocumentData): Household {
             target: num(jar.target),
             count: num(jar.count),
             round: num(jar.round),
-            startedAt: num(jar.startedAt)
+            startedAt: num(jar.startedAt),
+            ...normalizeJarGoal(jar)
           }
         : null,
     invite:
       d.invite && typeof invite.code === 'string'
         ? { code: invite.code, expiresAt: num(invite.expiresAt) }
         : null
+  };
+}
+
+/** The jar's optional goal-mode fields (mode, share, per-member tallies), kept only when sane. */
+export function normalizeJarGoal(
+  jar: Record<string, unknown>
+): Pick<TreatJar, 'mode' | 'share' | 'counts'> {
+  const counts: Record<string, number> = {};
+  for (const [uid, n] of Object.entries(obj(jar.counts))) {
+    if (typeof n === 'number' && Number.isInteger(n) && n >= 0) counts[uid] = n;
+  }
+  return {
+    ...(jar.mode === 'each' || jar.mode === 'together' ? { mode: jar.mode } : {}),
+    ...(typeof jar.share === 'number' && Number.isInteger(jar.share) && jar.share >= 1
+      ? { share: jar.share }
+      : {}),
+    ...(jar.counts !== undefined ? { counts } : {})
   };
 }
 

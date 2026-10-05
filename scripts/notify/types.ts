@@ -27,12 +27,20 @@ export interface NotifyPrefs {
   weekly: boolean;
 }
 
+/** The jar's goal (src/lib/domain/jar.ts): missing mode = 'together'. */
+export type JarMode = 'together' | 'each';
+
 export interface TreatJar {
   treat: string;
   target: number;
   count: number;
   round: number;
   startedAt: Millis;
+  mode?: JarMode;
+  /** 'each': the tasks every member closes. */
+  share?: number;
+  /** Completions per member uid this round. */
+  counts?: Record<string, number>;
 }
 
 export interface Household {

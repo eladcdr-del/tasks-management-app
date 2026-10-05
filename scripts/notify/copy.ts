@@ -4,7 +4,7 @@
 // one by gender, so the recipient's form is never needed. Gentle tone: one exclamation mark, for the
 // jar, and nowhere else.
 
-import type { AddressAs } from './types.ts';
+import type { AddressAs, JarMode } from './types.ts';
 
 export const APP_URL = 'https://eladcdr-del.github.io/tasks-management-app/';
 
@@ -106,12 +106,16 @@ export function completedMany(actor: Actor, taskTitles: (string | null)[]): Copy
   };
 }
 
-/** "הצנצנת התמלאה!" + "הגיע הזמן לצ׳ופר: {treat}" (the app's own words on the jar screen). */
-export function jarFilled(treat: string | null | undefined): Copy {
+/**
+ * "הצנצנת התמלאה!" + "הגיע הזמן לצ׳ופר: {treat}" (the app's own words on the jar screen). When
+ * everyone had a part ('each'), the body says so first: "כל אחד עשה את החלק שלו. הגיע הזמן…".
+ */
+export function jarFilled(treat: string | null | undefined, mode?: JarMode): Copy {
   const t = (treat ?? '').trim();
+  const time = t ? `הגיע הזמן לצ׳ופר: ${t}` : 'הגיע הזמן לצ׳ופר שקבעתם';
   return {
     title: 'הצנצנת התמלאה!',
-    body: t ? `הגיע הזמן לצ׳ופר: ${t}` : 'הגיע הזמן לצ׳ופר שקבעתם'
+    body: mode === 'each' ? `כל אחד עשה את החלק שלו. ${time}` : time
   };
 }
 

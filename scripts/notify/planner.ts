@@ -34,6 +34,7 @@ import {
   type LocalParts
 } from './time.ts';
 import * as copy from './copy.ts';
+import { jarIsFull } from './jar.ts';
 
 export type SendType =
   'requested' | 'accepted' | 'declined' | 'completed' | 'jar_filled' | 'due' | 'eve' | 'weekly';
@@ -197,9 +198,12 @@ export function plan(input: PlanInput): Plan {
   const openTasks = input.tasks.filter((t) => t.status === 'open').sort(byId);
   const openById = new Map(openTasks.map((t) => [t.id, t]));
   const jar = input.household.jar;
-  /** The jar a fill event filled is still full now: no undo took a marble out, no redeem since. */
+  /**
+   * The jar a fill event filled is still full now, by its goal (jar.ts): no undo took a marble out
+   * (or someone's part back below their share), nobody joined with a part still to do, no redeem.
+   */
   const jarStillFull = (e: ActivityEvent): boolean =>
-    jar !== null && jar.count >= jar.target && jar.startedAt <= e.createdAt;
+    jar !== null && jarIsFull(jar, input.household.memberIds) && jar.startedAt <= e.createdAt;
 
   const sends: Send[] = [];
   const eventMarks: EventMark[] = [];
@@ -299,7 +303,7 @@ export function plan(input: PlanInput): Plan {
               keys: [`ev:${e.id}:${m.uid}`],
               uid: m.uid,
               type: 'jar_filled',
-              ...copy.jarFilled(jar?.treat),
+              ...copy.jarFilled(jar?.treat, jar?.mode),
               url: copy.jarUrl(),
               tag: `jar:${e.id}`,
               eventIds: [e.id]

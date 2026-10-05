@@ -2,7 +2,8 @@
   // owner: step 3.3. Completing a task: a warm line, an optional documentation block (collapsed by
   // default: note, cost ₪, place, contact, up to 3 photos) and "סיום". The house memory is built
   // from this documentation, but documenting is never required. After "סיום": the sheet closes,
-  // a completion haptic plays and a "בוצע · ביטול" snackbar offers undo (tasks.reopen).
+  // a completion haptic plays and a "בוצע · ביטול" snackbar offers undo (tasks.reopen); when the
+  // completion fills the jar or closes my part of it, the snackbar says so (he.jar.snack).
   import PartyPopper from '@lucide/svelte/icons/party-popper';
   import NotebookPen from '@lucide/svelte/icons/notebook-pen';
   import type { EncodedPhoto } from '$lib/domain/types';
@@ -18,6 +19,8 @@
   import { relativeDayLabel } from '$lib/i18n/format';
   import { textDir } from '$lib/i18n/textDir';
   import { he } from '$lib/i18n/he';
+  import { completionMoment } from '$lib/domain/jar';
+  import { household } from '$lib/state/household.svelte';
   import { tasks } from '$lib/state/tasks.svelte';
   import { ui } from '$lib/state/ui.svelte';
   import { haptic } from '$lib/platform/haptics';
@@ -45,6 +48,7 @@
     if (saving || photoBusy) return;
     saving = true;
     const id = taskId;
+    const jarBefore = household.jar;
     const result = await tasks.complete(
       id,
       { note: note.trim(), cost, place: place.trim(), contact: contact.trim() },
@@ -56,7 +60,15 @@
     const next = result.nextTaskId ? tasks.byId(result.nextTaskId) : null;
     const nextDate = next?.dueDate ?? next?.scheduledFor ?? null;
     onClose();
-    ui.show(nextDate ? t.doneNext(relativeDayLabel(nextDate, tasks.today)) : t.done, {
+    // A jar moment (the jar filled, or I just closed my part) says so instead of plain "בוצע".
+    const moment = completionMoment(
+      jarBefore,
+      household.uid,
+      household.memberIds ?? [],
+      result.jarFilled
+    );
+    const done = moment ? he.jar.snack[moment] : t.done;
+    ui.show(nextDate && !moment ? t.doneNext(relativeDayLabel(nextDate, tasks.today)) : done, {
       action: he.common.undo,
       onAction: () => tasks.reopen(id)
     });

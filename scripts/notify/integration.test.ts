@@ -254,6 +254,14 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     [
       'the treat was redeemed already',
       { 'jar.count': 0, 'jar.round': 2, 'jar.startedAt': Timestamp.fromMillis(NOW.getTime() - MIN) }
+    ],
+    [
+      'it is an each jar and a part is not done (the count alone reached the target)',
+      {
+        'jar.mode': 'each',
+        'jar.share': 5,
+        'jar.counts': { [DEMO.michal]: 8, [DEMO.dani]: 2 }
+      }
     ]
   ])('does not announce a full jar when %s', async (_label, jar) => {
     await seedDemo(db, NOW);
@@ -262,6 +270,20 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     await run({ db, sender, now: NOW });
     expect(sender.calls.map((c) => c.msg.title)).not.toContain('הצנצנת התמלאה!');
     expect(await push('ev-jar')).toBe('skipped');
+  });
+
+  it('announces an each jar while every part is done, in its own words', async () => {
+    await seedDemo(db, NOW);
+    await db.doc(`households/${HID}`).update({
+      'jar.mode': 'each',
+      'jar.share': 5,
+      'jar.counts': { [DEMO.michal]: 5, [DEMO.dani]: 6 }
+    });
+    const sender = new FakeSender();
+    await run({ db, sender, now: NOW });
+    const jar = sender.calls.find((c) => c.msg.title === 'הצנצנת התמלאה!');
+    expect(jar?.msg.body).toBe('כל אחד עשה את החלק שלו. הגיע הזמן לצ׳ופר: ארוחה במסעדה');
+    expect(await push('ev-jar')).toBe('sent');
   });
 
   it('retries a transient failure on the next run, then goes quiet', async () => {

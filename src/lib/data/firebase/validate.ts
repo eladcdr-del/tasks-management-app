@@ -6,6 +6,7 @@
 import { RepoError } from '../repository';
 import { DEFAULT_CATEGORIES } from '../../domain/categories';
 import { isValidISO } from '../../domain/dates';
+import { cleanJarSettings, type CleanJarSettings, type JarSettings } from '../../domain/jar';
 import { recurrenceProblem } from '../../domain/recurrence';
 import type {
   AddressAs,
@@ -130,16 +131,12 @@ export function cleanNotify(n: NotifyPrefs): NotifyPrefs {
   return out as NotifyPrefs;
 }
 
-/** Jar settings: treat trimmed 1..60, target an integer 3..50. */
-export function cleanJar(j: { treat: unknown; target: unknown }): {
-  treat: string;
-  target: number;
-} {
-  const treat = typeof j.treat === 'string' ? j.treat.trim() : '';
-  if (!isLen(treat, 1, 60)) invalid('treat must be 1-60 characters');
-  const target = j.target;
-  if (typeof target !== 'number' || !Number.isInteger(target) || target < 3 || target > 50) {
-    invalid('target must be a whole number from 3 to 50');
-  }
-  return { treat, target };
+/**
+ * Jar settings (domain/jar.ts cleanJarSettings): treat trimmed 1..60; together: target 3..50;
+ * each: share 1..20 and target = share × members (for the previous app version).
+ */
+export function cleanJar(j: JarSettings, memberCount: number): CleanJarSettings {
+  const r = cleanJarSettings(j, memberCount);
+  if (!r.ok) invalid(r.reason);
+  return r.value;
 }

@@ -550,6 +550,53 @@ describe('jar_filled', () => {
       expect(withJar({ ...JAR_FULL, count: 11 }).sends.map((s) => s.type)).toEqual(['jar_filled']);
     });
   });
+
+  describe('an each jar ("כל אחד תורם"): full only while EVERY member has done their part', () => {
+    const fill = { ...jar, taskId: null, taskTitle: null };
+    /** 3 each; both parts done (count = Σ min(counts, share) = 6). */
+    const EACH = {
+      ...JAR_FULL,
+      mode: 'each' as const,
+      share: 3,
+      target: 6,
+      count: 6,
+      counts: { 'u-michal': 4, 'u-dani': 3 }
+    };
+    const withJar = (j: PlanInput['household']['jar'], members = [MICHAL, DANI]) => {
+      const base = input({ members, events: [fill] });
+      return plan({ ...base, household: { ...base.household, jar: j } });
+    };
+
+    it('is sent with the each-mode words while everyone is still done', () => {
+      expect(withJar(EACH).sends.map((s) => [s.uid, s.title, s.body])).toEqual([
+        ['u-dani', 'הצנצנת התמלאה!', 'כל אחד עשה את החלק שלו. הגיע הזמן לצ׳ופר: ארוחה במסעדה']
+      ]);
+    });
+
+    it.each([
+      [
+        'someone’s part went back below the share (an undo after the fill)',
+        { ...EACH, count: 5, counts: { 'u-michal': 4, 'u-dani': 2 } }
+      ],
+      [
+        'the count reached the target but a part is not done',
+        { ...EACH, count: 9, counts: { 'u-michal': 9, 'u-dani': 0 } }
+      ],
+      [
+        'a new round started',
+        { ...EACH, count: 0, counts: {}, round: 2, startedAt: SUN('08:45').getTime() }
+      ]
+    ] as [string, PlanInput['household']['jar']][])('is skipped when %s', (_label, j) => {
+      const out = withJar(j);
+      expect(out.sends).toEqual([]);
+      expect(out.eventMarks).toEqual([{ eventId: 'j1', push: 'skipped' }]);
+    });
+
+    it('is skipped when someone joined since with their part still to do', () => {
+      const out = withJar(EACH, [MICHAL, DANI, NOAM]);
+      expect(out.sends).toEqual([]);
+    });
+  });
 });
 
 describe('event housekeeping', () => {
