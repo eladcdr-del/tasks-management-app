@@ -7,17 +7,22 @@
    * Opens with the current jar when there is one. `next`: right after a redeem ("הצ׳ופר הבא").
    * Switching an existing jar to "כל אחד תורם" mid-round attributes what is already in it to whoever
    * closed it (domain backfillCounts), so nobody's part starts from zero. → household.setJar.
+   * Editing a jar also offers, quietly at the bottom, "מחיקת הצנצנת": a confirmation says exactly
+   * what goes (the jar and what is in it, an unredeemed treat too) and what stays (the earned
+   * treats); then household.deleteJar (gone at once, with an undo) and the sheet closes.
    * Rendered by SheetHost; `onClose` pops its entry.
    */
   import { untrack } from 'svelte';
   import Puzzle from '@lucide/svelte/icons/puzzle';
+  import Trash2 from '@lucide/svelte/icons/trash-2';
   import Users from '@lucide/svelte/icons/users';
-  import { Button, Chip, Stepper, TextField } from '$components/ui';
+  import { Button, Chip, Dialog, Stepper, TextField } from '$components/ui';
   import {
     backfillCounts,
     DEFAULT_MODE,
     DEFAULT_SHARE,
     DEFAULT_TARGET,
+    isFull,
     modeOf,
     SHARE_MAX,
     SHARE_MIN,
@@ -45,6 +50,8 @@
   const members = Math.max(1, memberIds.length);
   /** A jar set up before goal modes never chose one: its next round starts with the new default. */
   const legacy = current !== null && current.mode === undefined;
+  /** Editing the jar there is (not starting one, not choosing the next treat): it can be deleted. */
+  const editing = current !== null && !untrack(() => next);
 
   const startMode: JarMode = current
     ? untrack(() => next) && legacy
@@ -78,6 +85,16 @@
     if (m === mode) return;
     mode = m;
     haptic('select');
+  }
+
+  const tr = he.jar.remove;
+  /** The delete confirmation is open. */
+  let confirming = $state(false);
+
+  function deleteJar() {
+    confirming = false;
+    household.deleteJar();
+    onClose();
   }
 
   function save(e: SubmitEvent) {
@@ -179,6 +196,33 @@
   {/if}
 
   <Button type="submit" block size="lg">{current && !next ? t.save : t.start}</Button>
+
+  {#if editing}
+    <div class="danger-zone">
+      <Button
+        variant="ghost"
+        icon={Trash2}
+        class="delete-jar"
+        data-action="delete-jar"
+        onclick={() => (confirming = true)}>{tr.action}</Button
+      >
+    </div>
+    <!-- data-no-drag: pressing inside the dialog never drags the sheet behind it. -->
+    <div data-no-drag>
+      <Dialog
+        open={confirming}
+        title={tr.title}
+        message={tr.body({
+          full: isFull(current, memberIds),
+          history: household.treats.length > 0
+        })}
+        tone="danger"
+        confirmLabel={tr.confirm}
+        onConfirm={deleteJar}
+        onCancel={() => (confirming = false)}
+      />
+    </div>
+  {/if}
 </form>
 
 <style>
@@ -327,6 +371,19 @@
     border-radius: var(--r-md);
     background: var(--surface-2);
     color: var(--ink);
+  }
+
+  /* Away from "שמירה" and quieter than it: a destructive text button, centred. */
+  .danger-zone {
+    display: flex;
+    justify-content: center;
+    margin-block-start: calc(var(--s2) * -1);
+    padding-block-start: var(--s3);
+    border-block-start: 1px solid var(--line);
+  }
+
+  .danger-zone :global(.delete-jar) {
+    --btn-fg: var(--danger);
   }
 
   @media (prefers-reduced-motion: reduce) {
