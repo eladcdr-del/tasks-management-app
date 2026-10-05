@@ -192,9 +192,10 @@ service cloud.firestore {
         && (!('counts' in j) || j.counts is map);
     }
 
-    // A brand-new jar (household create, or first setup from null): nobody's tally yet.
-    function isFreshJar(j) {
-      return isJar(j) && j.count == 0 && j.round == 1 && j.startedAt == request.time
+    // A brand-new jar in `round` (household create: 1; setup from null: the household's
+    // nextJarRound, see jarSetupOk): nobody's tally yet.
+    function isFreshJar(j, round) {
+      return isJar(j) && j.count == 0 && j.round == round && j.startedAt == request.time
         && tallies(j) == {};
     }
 
@@ -234,14 +235,13 @@ service cloud.firestore {
     }
 
     // Jar transitions allowed in one write (strictness decision, see docs/firestore-schema.md):
-    //   unchanged | first setup | edit settings (treat, target, mode, share; progress untouched,
-    //   tallies untouched or backfilled) | completion | reopen | redeem (only when full; treat
-    //   recorded in the same batch).
-    // `ids` = the household's current memberIds. The jar can never be removed once set (a
-    // re-created round 1 would collide with treats/1).
-    function jarTransitionOk(hid, ids, o, n) {
+    //   unchanged | setup from null | edit settings (treat, target, mode, share; progress
+    //   untouched, tallies untouched or backfilled) | completion | reopen | redeem (only when full;
+    //   treat recorded in the same batch). Deleting the jar (→ null) is jarDeleteOk, not this.
+    // `ids` = the household's current memberIds; `first` = the round a new jar must start at.
+    function jarTransitionOk(hid, ids, o, n, first) {
       return n == o
-        || (o == null && isFreshJar(n))
+        || (o == null && isFreshJar(n, first))
         || (o != null && isJar(n) && (
               jarEditOk(ids, o, n)
               || jarStepOk(ids, o, n, 1)
@@ -439,7 +439,7 @@ service cloud.firestore {
         && incoming().maxMembers == 6
         && incoming().createdBy == me()
         && incoming().createdAt == request.time
-        && (incoming().jar == null || isFreshJar(incoming().jar))
+        && (incoming().jar == null || isFreshJar(incoming().jar, 1))
         && incoming().invite == null
         && existsAfter(memberPath(hid, me()));
 
@@ -447,14 +447,32 @@ service cloud.firestore {
 
       allow delete: if false;
 
-      // A member edits name / jar / invite. Nothing else is writable by members.
+      // A member edits name / jar / invite, or deletes the jar (jar + nextJarRound). Nothing else
+      // is writable by members.
       function memberEdit() {
-        return changed().hasOnly(['name', 'jar', 'invite'])
+        return changed().hasOnly(['name', 'jar', 'invite', 'nextJarRound'])
           && isMember(hid)
           && (!changed().hasAny(['name']) || isStr(incoming().name, 1, 60))
           && (!changed().hasAny(['invite']) || isInviteRef(incoming().invite))
+          && (!changed().hasAny(['nextJarRound']) || jarDeleteOk())
           && (!changed().hasAny(['jar'])
-              || jarTransitionOk(hid, existing().memberIds, existing().jar, incoming().jar));
+              || (incoming().jar == null
+                  ? jarDeleteOk()
+                  : jarTransitionOk(hid, existing().memberIds, existing().jar, incoming().jar,
+                                    existing().get('nextJarRound', 1))));
+      }
+
+      // Deleting the jar: exactly {jar: null, nextJarRound: <the deleted jar's round>}, nothing
+      // else. That round earned no treat (a redeem advances the round in the same batch that
+      // creates treats/{round}), so the next jar may start at it (jarTransitionOk `first`) while
+      // every earlier round, which may have a treat, is never used again. Earned treats stay.
+      // The previous app version never writes this; it reads a null jar as "no jar yet", and its
+      // own setup (always round 1) is accepted only while nextJarRound is 1.
+      function jarDeleteOk() {
+        return changed().hasOnly(['jar', 'nextJarRound'])
+          && existing().jar != null
+          && incoming().jar == null
+          && incoming().nextJarRound == existing().jar.round;
       }
 
       // Join batch: the caller appends ONLY themself (arrayUnion + increment(1)) and creates their
@@ -719,7 +737,10 @@ service cloud.firestore {
           && existing().redeemedAt == null
           && incoming().redeemedAt == request.time;
 
-        allow delete: if false;
+        // A member removes an earned treat from the history. Its round is never used again (a
+        // treat can only be created for the jar's current round, and rounds only go up), so it
+        // cannot come back by itself.
+        allow delete: if isMember(hid);
 
         function treatMatchesJar(h, after) {
           let jar = h.jar;

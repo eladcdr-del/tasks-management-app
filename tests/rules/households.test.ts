@@ -197,7 +197,7 @@ describe('jar transitions', () => {
       });
       await assertFails(b.commit());
     });
-    it('denied: removing the jar or adding unknown jar keys', async () => {
+    it('denied: removing the jar without remembering its round, or adding unknown jar keys', async () => {
       await assertFails(updateDoc(jarRef(BOB), { jar: null }));
       await assertFails(updateDoc(jarRef(BOB), { 'jar.bonus': 1 }));
       await assertFails(updateDoc(jarRef(BOB), { 'jar.startedAt': deleteField() }));
