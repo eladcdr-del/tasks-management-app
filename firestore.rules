@@ -86,6 +86,14 @@ service cloud.firestore {
       return m.keys().hasAll(ks) && m.keys().hasOnly(ks);
     }
 
+    // A task's key set: exactly `ks`, plus the optional `requestedOf` (a uid or null; documents
+    // written before requests could wait for an answer do not have it, and read as null).
+    function hasTaskKeys(m, ks) {
+      return m.keys().hasAll(ks)
+        && m.keys().hasOnly(ks.concat(['requestedOf']))
+        && (m.get('requestedOf', null) == null || isStr(m.requestedOf, 1, 128));
+    }
+
     // ───────────────────────────── Value helpers ─────────────────────────────
 
     function isStr(v, min, max) {
@@ -239,7 +247,7 @@ service cloud.firestore {
 
     // Shape of a stored Task (Task minus `id` and `pending`), shared by create and update.
     function isTaskShape(d) {
-      return hasExactly(d, [
+      return hasTaskKeys(d, [
           'title', 'notes', 'categoryId', 'priority', 'ownerId', 'requestedBy', 'requestedAt',
           'createdBy', 'createdAt', 'updatedBy', 'updatedAt', 'scheduledFor', 'weekPlan', 'dueDate',
           'dueTime', 'hardDeadline', 'recurrence', 'seriesId', 'status', 'snoozeCount', 'lastSnoozedAt',
@@ -408,7 +416,8 @@ service cloud.firestore {
           && (incoming().ownerId == null || incoming().ownerId in hh(hid).memberIds)
           && (incoming().requestedBy == null || incoming().requestedBy == me())
           && isNullOrNow(incoming().requestedAt)
-          && incoming().lastSnoozedAt == null;
+          && incoming().lastSnoozedAt == null
+          && requestCreateOk();
 
         allow update: if isMember(hid)
           && isTaskShape(incoming())
@@ -421,9 +430,63 @@ service cloud.firestore {
           && attributionOk(incoming().completedBy, existing().completedBy)
           && stampOk(incoming().requestedAt, existing().requestedAt)
           && stampOk(incoming().lastSnoozedAt, existing().lastSnoozedAt)
-          && stampOk(incoming().completedAt, existing().completedAt);
+          && stampOk(incoming().completedAt, existing().completedAt)
+          && requestUpdateOk();
 
         allow delete: if isMember(hid);
+
+        // ── Requests (docs/firestore-schema.md "Requests", src/lib/domain/requests.ts) ──
+        // A request is a proposal: `requestedOf` names the asked member while it waits for their
+        // answer, and nobody holds the task meanwhile. Writes by the previous app version never
+        // touch `requestedOf` (it asked by setting ownerId to the asked member): they stay valid.
+
+        // A request on a new task: to another current member, nobody holds it, asked by me, now.
+        function requestCreateOk() {
+          return incoming().get('requestedOf', null) == null
+            || askOk(incoming().requestedOf);
+        }
+
+        function askOk(to) {
+          return to != me()
+            && to in hh(hid).memberIds
+            && incoming().ownerId == null
+            && incoming().requestedBy == me()
+            && incoming().requestedAt == request.time;
+        }
+
+        // `requestedOf` moves only to null or to a new request (askOk). While a request waits, the
+        // asked member may answer it any way (accept, decline, leave); anyone else may only leave
+        // it untouched, take the task (the request goes with it), ask someone (again), or, as the
+        // asker, withdraw it. A request to a former member binds nobody.
+        function requestUpdateOk() {
+          let o = existing().get('requestedOf', null);
+          let n = incoming().get('requestedOf', null);
+          return (n == o || n == null || askOk(n))
+            && (!requestWaits(o) || o == me() || requestHandledOk(o, n));
+        }
+
+        // The stored request waits for `o`'s answer (as domain/requests.ts pendingRequestOf).
+        function requestWaits(o) {
+          return o != null
+            && existing().ownerId == null
+            && existing().requestedBy != null
+            && existing().requestedBy != o;
+        }
+
+        function requestHandledOk(o, n) {
+          let by = existing().requestedBy;
+          // untouched (edit, snooze, complete, reopen)
+          return (n == o && incoming().requestedBy == by && incoming().ownerId == null)
+            // took it (the previous app version leaves requestedOf as it was)
+            || (incoming().ownerId == me() && incoming().requestedBy == null)
+            // asked again: a new request, or the previous app version's ownerId = the asked one
+            || (incoming().requestedBy == me()
+                && ((incoming().ownerId != null && n == o) || (n != null && askOk(n))))
+            // the asker withdrew it
+            || (by == me() && n == null && incoming().requestedBy == null
+                && incoming().ownerId == null)
+            || !(o in hh(hid).memberIds);
+        }
       }
 
       // ─────────────────────── households/{hid}/events/{eventId} ───────────────────────
@@ -439,16 +502,38 @@ service cloud.firestore {
                                      'createdAt', 'push'])
           && incoming().type in ['created', 'taken', 'requested', 'released', 'completed', 'reopened',
                                  'snoozed', 'edited', 'deleted', 'jar_filled', 'jar_redeemed',
-                                 'member_joined']
+                                 'member_joined', 'accepted', 'declined']
           && incoming().actorId == me()
           && (incoming().taskId == null || isStr(incoming().taskId, 1, 128))
           && (incoming().taskTitle == null || isStr(incoming().taskTitle, 1, 200))
           && (incoming().targetId == null || isStr(incoming().targetId, 1, 128))
           && incoming().createdAt == request.time
           && incoming().push
-               == (incoming().type in ['requested', 'completed', 'jar_filled'] ? 'pending' : 'none');
+               == (incoming().type in ['requested', 'completed', 'jar_filled', 'accepted', 'declined']
+                   ? 'pending' : 'none')
+          && answerEventOk();
 
         allow update, delete: if false;
+
+        // The asked member's answer to a request ('accepted' / 'declined') tells the asker (a
+        // push): it names a task this batch really answered, and the asker is another current
+        // member. accepted: I hold the task afterwards (like a take, last write wins offline).
+        // declined: the request waited for me before this batch and no longer does after it.
+        function answerEventOk() {
+          return !(incoming().type in ['accepted', 'declined'])
+            || (isSafeId(incoming().taskId)
+                && incoming().targetId != null
+                && incoming().targetId != me()
+                && incoming().targetId in hh(hid).memberIds
+                && answeredTask(/databases/$(database)/documents/households/$(hid)/tasks/$(incoming().taskId)));
+        }
+
+        function answeredTask(task) {
+          return incoming().type == 'accepted'
+            ? getAfter(task).data.ownerId == me()
+            : (get(task).data.get('requestedOf', null) == me()
+               && getAfter(task).data.get('requestedOf', null) != me());
+        }
       }
 
       // ─────────────────────── households/{hid}/photos/{photoId} ───────────────────────
