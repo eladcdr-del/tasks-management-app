@@ -1,5 +1,11 @@
 // owner: step 5.1 — only that step edits this file
-// Notification settings block, permission states, foreground messages.
+// Notification settings block, permission states, foreground messages, "בדיקת התראות" and the
+// installed app's own permission (Home's banner).
+
+import { gendered } from '../gender';
+
+/** The site as Chrome lists it under its notification settings (isolated: an LTR run). */
+const SITE = '⁨eladcdr-del.github.io⁩';
 
 export const notifications = {
   title: 'התראות',
@@ -36,5 +42,46 @@ export const notifications = {
   failed: 'לא הצלחנו להפעיל התראות. נסו שוב בעוד רגע',
   quietHours: 'בין 22:00 ל-07:30 לא נשלחות התראות',
   /** Foreground snackbar action. */
-  open: 'פתיחה'
+  open: 'פתיחה',
+
+  /**
+   * "בדיקת התראות" (Settings): a notification from this phone right away, and a real push from the
+   * notifier on its next run (within about 5 minutes). The panel tells the two apart.
+   */
+  test: {
+    action: 'בדיקת התראות',
+    /** The local notification. */
+    localTitle: 'בדיקה: כך נראית התראה מ-HomeCare',
+    localBody: 'אם רואים אותה, הטלפון מציג התראות של האפליקציה',
+    /** The panel's first line, by what worked. */
+    sent: 'שלחנו התראה לטלפון הזה עכשיו, ותוך כמה דקות תגיע עוד אחת מהשרת.',
+    sentLocalOnly:
+      'שלחנו התראה לטלפון הזה עכשיו. את ההתראה מהשרת לא הצלחנו לבקש כרגע, כדאי לנסות שוב כשיש אינטרנט.',
+    sentServerOnly:
+      'לא הצלחנו להציג התראה בטלפון הזה עכשיו, אבל תוך כמה דקות אמורה להגיע אחת מהשרת.',
+    failed: 'לא הצלחנו לשלוח התראת בדיקה. כדאי לנסות שוב בעוד רגע.',
+    /** The first one did not appear: notifications are blocked on the phone. */
+    noFirst: 'הראשונה לא הופיעה? כנראה שההתראות חסומות בטלפון. כך מאפשרים אותן:',
+    stepsApp: 'באפליקציה: לחיצה ארוכה על הסמל של HomeCare ← "פרטי האפליקציה" ← "התראות" ← לאפשר',
+    stepsChrome: `בכרום: ⋮ ← "הגדרות" ← "הגדרות אתר" ← "התראות" ← ${SITE} ← לאפשר`,
+    /** The first appeared, the second did not: tell us (the notifier side needs a look). */
+    noSecond: gendered(
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספרי לנו ונבדוק.',
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספר לנו ונבדוק.',
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספרו לנו ונבדוק.'
+    )
+  },
+
+  /**
+   * The installed app (Android) has no notification permission of its own although they were
+   * allowed in the browser, or this is its first launch: Home's banner, and Settings.
+   */
+  app: {
+    body: 'כדי שההתראות יגיעו גם לאפליקציה המותקנת, צריך לאשר אותן כאן פעם אחת',
+    action: 'אישור התראות',
+    /** Refused in the installed app: Android's app info is the way back. */
+    blocked: 'ההתראות חסומות באפליקציה המותקנת. כך מאפשרים אותן:',
+    blockedSteps: 'לחיצה ארוכה על הסמל של HomeCare ← "פרטי האפליקציה" ← "התראות" ← לאפשר',
+    dismiss: 'לא עכשיו'
+  }
 } as const;

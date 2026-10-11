@@ -1,12 +1,19 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Repository } from '$lib/data/repository';
+import { RepoError, type Repository } from '$lib/data/repository';
 import type { StorageLike } from '$lib/data/select';
 import {
+  APP_LAUNCHED_KEY,
+  APP_PROMPT_SNOOZE_MS,
   DEVICE_ID_KEY,
+  PUSH_DROPPED_KEY,
   PUSH_REG_KEY,
+  TEST_LOCAL_TAG,
   appHash,
+  appPermissionMissing,
+  appPushPrompt,
   disablePush,
+  dismissAppPushPrompt,
   enablePush,
   forgetPushRegistration,
   getDeviceId,
@@ -15,6 +22,7 @@ import {
   pushStatus,
   pushSupport,
   refreshPush,
+  testPush,
   watchPushPermission,
   type PushDeps
 } from './push';
@@ -59,7 +67,8 @@ function fakeRepo() {
     kind: 'firebase',
     app: { name: 'app' },
     registerDevice: vi.fn(async () => {}),
-    unregisterDevice: vi.fn(async () => {})
+    unregisterDevice: vi.fn(async () => {}),
+    requestTestPush: vi.fn(async (_deviceId: string) => {})
   };
 }
 
@@ -71,12 +80,38 @@ function fakeMessaging(token: string | null = 'tok-1') {
   };
 }
 
+const SCOPE = 'https://eladcdr-del.github.io/tasks-management-app/';
+
+/** Our SW registration: it shows notifications and lists them by tag, like the browser's. */
+function fakeRegistration() {
+  const shown: { title: string; options: NotificationOptions; close: () => void }[] = [];
+  const registration = {
+    scope: SCOPE,
+    shown,
+    showNotification: vi.fn(async (title: string, options: NotificationOptions = {}) => {
+      const n = {
+        title,
+        options,
+        close: vi.fn(() => void shown.splice(shown.indexOf(n), 1))
+      };
+      shown.push(n);
+    }),
+    getNotifications: vi.fn(async (filter?: { tag?: string }) =>
+      shown.filter((n) => !filter?.tag || n.options.tag === filter.tag)
+    )
+  };
+  return registration as unknown as ServiceWorkerRegistration & {
+    shown: typeof shown;
+    showNotification: ReturnType<typeof vi.fn>;
+  };
+}
+
 function deps(over: Partial<PushDeps> & { permission?: NotificationPermission } = {}) {
   const { permission = 'granted', ...rest } = over;
   const { win, Notification } = fakeWin(permission);
   const repo = fakeRepo();
   const messaging = fakeMessaging();
-  const registration = { scope: '/tasks-management-app/' } as ServiceWorkerRegistration;
+  const registration = fakeRegistration();
   const storage = memStorage({ [DEVICE_ID_KEY]: 'device-1' });
   const d: PushDeps = {
     mode: 'firebase',
@@ -90,6 +125,7 @@ function deps(over: Partial<PushDeps> & { permission?: NotificationPermission } 
     swReady: vi.fn(async () => registration),
     now: () => 1_000_000,
     onForeground: vi.fn(),
+    standalone: () => false,
     ...rest
   };
   return { d, repo, messaging, registration, storage, Notification };
@@ -447,5 +483,237 @@ describe('appHash', () => {
     expect(appHash(undefined, base)).toBeNull();
     expect(appHash('https://evil.example/#/task/a', base)).toBeNull();
     expect(appHash('https://eladcdr-del.github.io/other/#/x', base)).toBeNull();
+  });
+});
+
+describe('testPush ("בדיקת התראות")', () => {
+  const registered = (over: Parameters<typeof deps>[0] = {}) => {
+    const x = deps(over);
+    x.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+    return x;
+  };
+
+  it('shows a notification at once, the way the SW shows a push, and asks the notifier for one', async () => {
+    const { d, repo, registration } = registered();
+    await expect(testPush(d)).resolves.toEqual({ local: true, server: true });
+    expect(registration.shown).toHaveLength(1);
+    expect(registration.shown[0]).toMatchObject({
+      title: 'בדיקה: כך נראית התראה מ-HomeCare',
+      options: {
+        body: 'אם רואים אותה, הטלפון מציג התראות של האפליקציה',
+        dir: 'rtl',
+        lang: 'he',
+        icon: `${SCOPE}icons/icon-192.png`,
+        badge: `${SCOPE}icons/badge-96.png`,
+        tag: TEST_LOCAL_TAG,
+        data: { url: `${SCOPE}#/settings` }
+      }
+    });
+    expect(TEST_LOCAL_TAG).toBe('homecare-test-local');
+    expect(repo.requestTestPush).toHaveBeenCalledWith('device-1');
+    expect(repo.registerDevice).not.toHaveBeenCalled();
+  });
+
+  it('a second tap shows a fresh notification instead of silently replacing the first', async () => {
+    const { d, registration } = registered();
+    await testPush(d);
+    const first = registration.shown[0]!;
+    await testPush(d);
+    expect(first.close).toHaveBeenCalledTimes(1);
+    expect(registration.shown).toHaveLength(1);
+    expect(registration.showNotification).toHaveBeenCalledTimes(2);
+  });
+
+  it('registers this device first when the permission is granted but it is not registered', async () => {
+    const { d, repo, storage } = deps();
+    const order: string[] = [];
+    repo.registerDevice.mockImplementation(async () => void order.push('register'));
+    repo.requestTestPush.mockImplementation(async () => void order.push('test'));
+    await expect(testPush(d)).resolves.toEqual({ local: true, server: true });
+    expect(order).toEqual(['register', 'test']);
+    expect(storage.map.get(PUSH_REG_KEY)).toBe('h1|tok-1|1000000');
+  });
+
+  it('registers again when the notifier dropped the device doc, then asks once more', async () => {
+    const { d, repo } = registered();
+    repo.requestTestPush.mockRejectedValueOnce(new RepoError('not-found'));
+    await expect(testPush(d)).resolves.toEqual({ local: true, server: true });
+    expect(repo.registerDevice).toHaveBeenCalledTimes(1);
+    expect(repo.requestTestPush).toHaveBeenCalledTimes(2);
+  });
+
+  it('says which half failed, and never rejects', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const offline = registered();
+    offline.repo.requestTestPush.mockRejectedValue(new RepoError('network'));
+    await expect(testPush(offline.d)).resolves.toEqual({ local: true, server: false });
+    expect(offline.repo.registerDevice).not.toHaveBeenCalled();
+
+    const blocked = registered();
+    blocked.registration.showNotification.mockRejectedValue(new TypeError('no permission'));
+    await expect(testPush(blocked.d)).resolves.toEqual({ local: false, server: true });
+
+    const noSw = registered();
+    vi.mocked(noSw.d.swReady).mockRejectedValue(new Error('no sw'));
+    await expect(testPush(noSw.d)).resolves.toEqual({ local: false, server: true });
+
+    const cannotRegister = deps();
+    cannotRegister.messaging.getPushToken.mockResolvedValue(null);
+    await expect(testPush(cannotRegister.d)).resolves.toEqual({ local: true, server: false });
+    expect(cannotRegister.repo.requestTestPush).not.toHaveBeenCalled();
+  });
+
+  it('asks the notifier for nothing while the permission is not granted, or in the demo', async () => {
+    const asking = registered({ permission: 'default' });
+    expect((await testPush(asking.d)).server).toBe(false);
+    expect(asking.repo.requestTestPush).not.toHaveBeenCalled();
+    const demo = registered({ mode: 'demo' });
+    expect((await testPush(demo.d)).server).toBe(false);
+    expect(demo.repo.requestTestPush).not.toHaveBeenCalled();
+  });
+
+  it('gives up on the local half when no service worker becomes active', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const { d } = registered({ swReady: () => new Promise<never>(() => {}) });
+      const result = testPush(d);
+      await vi.advanceTimersByTimeAsync(5000);
+      await expect(result).resolves.toEqual({ local: false, server: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('the installed app’s own permission', () => {
+  const installed = (over: Parameters<typeof deps>[0] = {}) =>
+    deps({ standalone: () => true, ...over });
+  /** The next launch of the app: the same localStorage, a new page. */
+  const relaunch = (x: ReturnType<typeof deps>, over: Parameters<typeof deps>[0] = {}) => {
+    const storage = memStorage(Object.fromEntries(x.storage.map));
+    return { ...installed({ storage, ...over }), storage };
+  };
+
+  describe('appPermissionMissing', () => {
+    it('asks when push was on for this household in the browser but not here', () => {
+      const x = installed({ permission: 'default' });
+      x.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+      expect(appPermissionMissing(x.d)).toBe('ask');
+      x.Notification.permission = 'denied';
+      expect(appPermissionMissing(x.d)).toBe('blocked');
+      x.Notification.permission = 'granted';
+      expect(appPermissionMissing(x.d)).toBeNull();
+    });
+
+    it('still knows after the app start dropped the registration (refreshPush)', async () => {
+      const x = installed({ permission: 'default' });
+      x.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+      await refreshPush(x.d);
+      expect(x.storage.map.has(PUSH_REG_KEY)).toBe(false);
+      expect(x.storage.map.get(PUSH_DROPPED_KEY)).toBe('h1');
+      expect(appPermissionMissing(x.d)).toBe('ask');
+
+      // allowed here: registered afresh, and nothing is missing any more
+      x.Notification.requestPermission.mockImplementation(async () => {
+        x.Notification.permission = 'granted';
+        return 'granted';
+      });
+      await expect(enablePush(x.d)).resolves.toBe('enabled');
+      expect(x.storage.map.has(PUSH_DROPPED_KEY)).toBe(false);
+      expect(appPermissionMissing(x.d)).toBeNull();
+    });
+
+    it('says nothing in a tab, for another household, without push before, or where push cannot work', () => {
+      const tab = deps({ permission: 'default' });
+      tab.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+      expect(appPermissionMissing(tab.d)).toBeNull();
+
+      const elsewhere = installed({ permission: 'default' });
+      elsewhere.storage.setItem(PUSH_REG_KEY, 'h0|tok-1|999000');
+      expect(appPermissionMissing(elsewhere.d)).toBeNull();
+      elsewhere.storage.setItem(PUSH_DROPPED_KEY, 'h0');
+      expect(appPermissionMissing(elsewhere.d)).toBeNull();
+
+      expect(appPermissionMissing(installed({ permission: 'default' }).d)).toBeNull();
+
+      const demo = installed({ mode: 'demo', permission: 'default' });
+      demo.storage.setItem(PUSH_REG_KEY, 'h1|tok-1|999000');
+      expect(appPermissionMissing(demo.d)).toBeNull();
+      const noHousehold = installed({ householdId: null, permission: 'default' });
+      noHousehold.storage.setItem(PUSH_DROPPED_KEY, 'h1');
+      expect(appPermissionMissing(noHousehold.d)).toBeNull();
+    });
+
+    it('leaving the household and signing out forget it', async () => {
+      const left = installed({ permission: 'default' });
+      left.storage.setItem(PUSH_DROPPED_KEY, 'h1');
+      forgetPushRegistration(left.storage);
+      expect(appPermissionMissing(left.d)).toBeNull();
+
+      const out = installed({ permission: 'default' });
+      out.storage.setItem(PUSH_DROPPED_KEY, 'h1');
+      await disablePush(out.d);
+      expect(out.storage.map.has(PUSH_DROPPED_KEY)).toBe(false);
+    });
+  });
+
+  describe('appPushPrompt (Home’s banner)', () => {
+    it('shows the missing permission, and stays away a few days once dismissed', () => {
+      let now = 1_000_000;
+      const x = installed({ permission: 'default', now: () => now });
+      x.storage.setItem(APP_LAUNCHED_KEY, '1'); // not the first launch
+      x.storage.setItem(PUSH_DROPPED_KEY, 'h1');
+      expect(appPushPrompt(x.d)).toBe('ask');
+      dismissAppPushPrompt(x.d);
+      expect(appPushPrompt(x.d)).toBeNull();
+      now += APP_PROMPT_SNOOZE_MS - 1;
+      expect(appPushPrompt(x.d)).toBeNull();
+      now += 1;
+      expect(appPushPrompt(x.d)).toBe('ask');
+      expect(APP_PROMPT_SNOOZE_MS).toBe(3 * 24 * 3600 * 1000);
+    });
+
+    it('on the app’s first launch, offers it even without push before; the next launch does not', () => {
+      const first = installed({ permission: 'default' });
+      expect(appPushPrompt(first.d)).toBe('ask');
+      expect(appPushPrompt(first.d)).toBe('ask'); // the whole first launch (Home mounts again)
+      expect(first.storage.map.has(APP_LAUNCHED_KEY)).toBe(true);
+      expect(appPushPrompt(relaunch(first, { permission: 'default' }).d)).toBeNull();
+
+      const blocked = installed({ permission: 'denied' });
+      expect(appPushPrompt(blocked.d)).toBe('blocked');
+    });
+
+    it('a first launch with notifications allowed uses up the chance', () => {
+      const first = installed({ permission: 'granted' });
+      expect(appPushPrompt(first.d)).toBeNull();
+      expect(appPushPrompt(relaunch(first, { permission: 'default' }).d)).toBeNull();
+    });
+
+    it('a browser tab, or no household yet, neither shows it nor uses up the first launch', () => {
+      const tab = deps({ permission: 'default' });
+      expect(appPushPrompt(tab.d)).toBeNull();
+      expect(tab.storage.map.has(APP_LAUNCHED_KEY)).toBe(false);
+      const signedOut = installed({ permission: 'default', householdId: null });
+      expect(appPushPrompt(signedOut.d)).toBeNull();
+      expect(signedOut.storage.map.has(APP_LAUNCHED_KEY)).toBe(false);
+    });
+
+    it('without working storage there is no first launch (it would come back every time)', () => {
+      const blocked: StorageLike = {
+        getItem: () => {
+          throw new Error('blocked');
+        },
+        setItem: () => {
+          throw new Error('blocked');
+        },
+        removeItem: () => {
+          throw new Error('blocked');
+        }
+      };
+      expect(appPushPrompt(installed({ permission: 'default', storage: blocked }).d)).toBeNull();
+      expect(appPushPrompt(installed({ permission: 'default', storage: null }).d)).toBeNull();
+    });
   });
 });
