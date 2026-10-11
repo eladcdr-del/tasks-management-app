@@ -15,7 +15,9 @@
 //                 platform/push.ts) receives the payload in Firebase's own envelope and shows a
 //                 snackbar; otherwise (no such window: closed, hidden, a screen before sign-in,
 //                 another site on this origin) we show the notification ourselves (RTL, Hebrew,
-//                 icon, badge, tag, deep link), so a push is never swallowed.
+//                 icon, badge, tag, deep link), so a push is never swallowed. A test push
+//                 (type 'test', "בדיקת התראות") checks the notification itself: it is always shown
+//                 as one, and as a fresh one (an earlier test with its tag is closed first).
 import {
   cleanupOutdatedCaches,
   createHandlerBoundToURL,
@@ -136,21 +138,29 @@ function isListening(client: WindowClient): Promise<boolean> {
   });
 }
 
-async function handlePush(event: PushEvent): Promise<void> {
-  const msg = readPush(event);
-  if (!msg) return;
+/** Hands the push to every visible app window whose `onMessage` is wired; false when there is none. */
+async function handToForeground(msg: { envelope: Record<string, unknown> }): Promise<boolean> {
   const visible = (await windowClients()).filter(
     (c) => c.visibilityState === 'visible' && inScope(c)
   );
   const answers = await Promise.all(visible.map(isListening));
   const listening = visible.filter((_, i) => answers[i]);
-  if (listening.length > 0) {
-    // Foreground: hand it to the page's Firebase SDK (`onMessage`), in the SDK's own envelope.
-    const payload = { ...msg.envelope, isFirebaseMessaging: true, messageType: 'push-received' };
-    for (const client of listening) client.postMessage(payload);
-    return;
-  }
+  if (listening.length === 0) return false;
+  // Foreground: hand it to the page's Firebase SDK (`onMessage`), in the SDK's own envelope.
+  const payload = { ...msg.envelope, isFirebaseMessaging: true, messageType: 'push-received' };
+  for (const client of listening) client.postMessage(payload);
+  return true;
+}
+
+async function handlePush(event: PushEvent): Promise<void> {
+  const msg = readPush(event);
+  if (!msg) return;
   const { title, body, url, tag, type } = msg.data;
+  const test = type === 'test';
+  if (!test && (await handToForeground(msg))) return;
+  if (test && tag) {
+    for (const n of await self.registration.getNotifications({ tag })) n.close();
+  }
   await self.registration.showNotification(title || 'HomeCare', {
     body: body ?? '',
     dir: 'rtl',

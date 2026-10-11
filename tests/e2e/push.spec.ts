@@ -3,7 +3,8 @@
 // visible but its foreground handler is not wired (the demo never registers push, just like the
 // welcome / onboarding screens or the boot splash), or while only another page on the origin is
 // visible, the system notification is shown. Only a window that answers the SW's PUSH_PING gets
-// the payload in Firebase's envelope (and shows its snackbar) instead.
+// the payload in Firebase's envelope (and shows its snackbar) instead. A test push ("בדיקת
+// התראות") is the exception: it is always shown as a notification, and a fresh one.
 
 import type { BrowserContext, Page } from '@playwright/test';
 import { test, expect, openApp } from './fixtures';
@@ -39,8 +40,8 @@ async function openWithServiceWorker(page: Page, context: BrowserContext): Promi
   await page.evaluate(() => navigator.serviceWorker.ready);
 }
 
-/** Delivers `PUSH` to the app's service worker, as FCM would. */
-async function deliverPush(page: Page): Promise<void> {
+/** Delivers `push` to the app's service worker, as FCM would. */
+async function deliverPush(page: Page, push: object = PUSH): Promise<void> {
   const cdp = await page.context().newCDPSession(page);
   const registrationId = new Promise<string>((resolve) => {
     cdp.on('ServiceWorker.workerRegistrationUpdated', ({ registrations }) => {
@@ -52,7 +53,7 @@ async function deliverPush(page: Page): Promise<void> {
   await cdp.send('ServiceWorker.deliverPushMessage', {
     origin: new URL(page.url()).origin,
     registrationId: await registrationId,
-    data: JSON.stringify(PUSH)
+    data: JSON.stringify(push)
   });
 }
 
@@ -97,12 +98,11 @@ test('a push shows a notification while only another page on the origin is visib
   await expect.poll(async () => (await shown(page)).length).toBe(1);
 });
 
-test('a listening app window gets the push in Firebase’s envelope, with no notification', async ({
-  page,
-  context
-}) => {
-  // Stands in for a page whose onMessage is wired: it answers the SW's PUSH_PING first (before the
-  // app's own "not listening" answer) and records what the SW hands over.
+/**
+ * Stands in for a page whose onMessage is wired: it answers the SW's PUSH_PING first (before the
+ * app's own "not listening" answer) and records what the SW hands over.
+ */
+async function listenLikeFirebase(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const w = window as unknown as { __received: unknown[] };
     w.__received = [];
@@ -116,10 +116,20 @@ test('a listening app window gets the push in Firebase’s envelope, with no not
       }
     });
   });
+}
+
+const received = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __received: unknown[] }).__received);
+
+test('a listening app window gets the push in Firebase’s envelope, with no notification', async ({
+  page,
+  context
+}) => {
+  await listenLikeFirebase(page);
   await openWithServiceWorker(page, context);
   await deliverPush(page);
   await expect
-    .poll(() => page.evaluate(() => (window as unknown as { __received: unknown[] }).__received))
+    .poll(() => received(page))
     .toEqual([
       expect.objectContaining({
         data: PUSH.data,
@@ -128,4 +138,36 @@ test('a listening app window gets the push in Firebase’s envelope, with no not
       })
     ]);
   expect(await shown(page)).toEqual([]);
+});
+
+test('a test push is shown as a notification even to a listening window, one at a time', async ({
+  page,
+  context
+}) => {
+  const TEST = {
+    data: {
+      type: 'test',
+      title: 'HomeCare: ההתראות מגיעות ✓',
+      body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.',
+      url: `${BASE}#/settings`,
+      tag: 'homecare-test'
+    },
+    from: '594233931298',
+    fcmMessageId: 'm-test'
+  };
+  await listenLikeFirebase(page);
+  await openWithServiceWorker(page, context);
+  await deliverPush(page, TEST);
+  const expected: Shown = {
+    title: TEST.data.title,
+    body: TEST.data.body,
+    tag: 'homecare-test',
+    url: new URL(`${BASE}#/settings`, page.url()).href
+  };
+  await expect.poll(() => shown(page)).toEqual([expected]);
+  expect(await received(page)).toEqual([]);
+
+  await deliverPush(page, { ...TEST, fcmMessageId: 'm-test-2' });
+  await page.waitForTimeout(300);
+  expect(await shown(page)).toEqual([expected]);
 });
