@@ -2105,6 +2105,21 @@ export function runRepositoryContract(
         await expect(repo.unregisterDevice(deviceId)).resolves.toBeUndefined();
       });
 
+      it('requestTestPush asks for a test push on a registered device only', async () => {
+        const { hid } = await solo();
+        const deviceId = `device-${runId}-${++seq}`;
+        await expectRepoError(repo.requestTestPush(deviceId), 'not-found');
+        await repo.registerDevice({ deviceId, householdId: hid, token: 't1', userAgent: 'vitest' });
+        await expect(repo.requestTestPush(deviceId)).resolves.toBeUndefined();
+        await expect(repo.requestTestPush(deviceId)).resolves.toBeUndefined(); // a second tap
+        // The token refresh (registerDevice) keeps working on a device that asked for a test.
+        await expect(
+          repo.registerDevice({ deviceId, householdId: hid, token: 't2', userAgent: 'vitest' })
+        ).resolves.toBeUndefined();
+        await repo.unregisterDevice(deviceId);
+        await expectRepoError(repo.requestTestPush(deviceId), 'not-found');
+      });
+
       it('watchSync emits a sync state', async () => {
         await solo();
         const s = await until<SyncState>((cb) => repo.watchSync(cb), any, 'sync state');

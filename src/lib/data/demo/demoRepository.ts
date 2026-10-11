@@ -1107,6 +1107,16 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
       });
     },
 
+    async requestTestPush(deviceId: string): Promise<void> {
+      // Nothing sends pushes in the demo; the request is stored like the Firebase adapter stores it.
+      store.mutate((st) => {
+        const device = ensureUser(st, requireUser(st)).devices[deviceId];
+        if (!device) throw new RepoError('not-found', 'this device is not registered');
+        device.testPushAt = now();
+        device.updatedAt = device.testPushAt;
+      });
+    },
+
     watchSync(cb: (s: SyncState) => void): Unsubscribe {
       return store.watch<SyncState>(() => ({ status: 'synced', pendingWrites: 0 }), cb);
     },

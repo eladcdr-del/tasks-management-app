@@ -473,6 +473,16 @@ describe('demo repository: other options', () => {
     expect(mem.saved?.users[MICHAL]?.devices.d1).toBeUndefined();
   });
 
+  it('stores a test push request on a registered device, like the notifier reads it', async () => {
+    const mem = memoryPersistence();
+    const repo = await make({ persistence: mem });
+    await expect(repo.requestTestPush('d1')).rejects.toMatchObject({ code: 'not-found' });
+    await repo.registerDevice({ deviceId: 'd1', householdId: HID, token: 't1', userAgent: 'x' });
+    await repo.requestTestPush('d1');
+    await repo.flush();
+    expect(mem.saved?.users[MICHAL]?.devices.d1).toMatchObject({ token: 't1', testPushAt: NOW });
+  });
+
   it('rejects promise-returning writes when signed out', async () => {
     const repo = await make({
       persistence: { ...memoryPersistence(), load: async () => emptyState() }

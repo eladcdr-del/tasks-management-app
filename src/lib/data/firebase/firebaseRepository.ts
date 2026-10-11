@@ -19,6 +19,8 @@
 //  - Household-level writes (create/join/invite/leave) resolve on the server acknowledgement.
 //    updateHousehold / updateMember / registerDevice / unregisterDevice resolve on the ack too, but
 //    no later than SOFT_ACK_MS (or at once when offline); a later failure goes to onWriteError.
+//    requestTestPush likewise, but it refuses to queue offline (RepoError('network')): a request
+//    that reaches the server late is refused by the rules, so the notifier would never see it.
 //
 // READS FOR WRITES (readDoc)
 //  - A document held by one of this repo's active listeners is fresh in the local cache: read the
@@ -1970,6 +1972,30 @@ export async function createFirebaseRepositoryImpl(
           const uid = requireUid();
           const b = newBatch();
           b.delete(doc(devicesCol(uid), deviceId));
+          return { ack: commit(b) };
+        });
+        await settle(ack);
+      } catch (e) {
+        throw toRepoError(e);
+      }
+    },
+
+    async requestTestPush(deviceId: string): Promise<void> {
+      try {
+        const { ack } = await enqueue(async () => {
+          const uid = requireUid();
+          // Queued offline, the request could reach the server too late for the rules (testPushAt
+          // must be close to the server's clock), and the notifier would never see it: say so now.
+          if (!online()) throw new RepoError('network', 'offline: the test push was not requested');
+          if (typeof deviceId !== 'string' || deviceId.length < 1 || deviceId.length > 64) {
+            invalid('deviceId must be 1-64 characters');
+          }
+          const ref = doc(devicesCol(uid), deviceId);
+          if (!(await readDoc(ref)).exists()) {
+            throw new RepoError('not-found', 'this device is not registered');
+          }
+          const b = newBatch();
+          b.update(ref, { testPushAt: Date.now(), updatedAt: serverTimestamp() });
           return { ack: commit(b) };
         });
         await settle(ack);

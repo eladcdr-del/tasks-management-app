@@ -55,7 +55,7 @@ export interface ActivityEvent {
 export interface EarnedTreat { id: string /* String(round) */; treat: string; target: number; filledAt: Millis; redeemedAt: Millis | null; mode?: JarMode; share?: number; counts?: Record<string, number> /* the round's jar at redeem: who took part (missing on older treats) */ }
 export interface Invite { code: string; householdId: string; householdName: string; inviterName: string; memberCount: number /* snapshot at creation: non-members cannot read the household */; createdBy: string; createdAt: Millis; expiresAt: Millis; revoked: boolean }
 export interface InvitePreview { householdName: string; inviterName: string; memberCount: number }
-export interface DeviceToken { deviceId: string; householdId: string; token: string; userAgent: string; createdAt: Millis; updatedAt: Millis }
+export interface DeviceToken { deviceId: string; householdId: string; token: string; userAgent: string; createdAt: Millis; updatedAt: Millis; testPushAt?: Millis /* "בדיקת התראות": the notifier sends this device one test push (requestTestPush) */ }
 export interface Photo { id: string; taskId: string; dataUrl: string /* jpeg ≤ ~270k chars */; thumbDataUrl: string /* ≤ 20k */; width: number; height: number; createdBy: string; createdAt: Millis }
 export interface EncodedPhoto { dataUrl: string /* jpeg data URL ≤ 300k chars */; thumbDataUrl: string /* ≤ 20k chars */; width: number; height: number } // produced by platform/image.ts (client-side canvas); adapters only store it
 export interface Category { id: CategoryId; label: string; short: string /* ≤ 8 chars, for card meta rows */; icon: string /* lucide name */; keywords: string[] }

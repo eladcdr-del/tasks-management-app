@@ -49,6 +49,7 @@ export interface Repository {
   watchRecentEvents(hid: string, limit: number, cb: (e: ActivityEvent[]) => void): Unsubscribe;
   registerDevice(d: Omit<DeviceToken,'createdAt'|'updatedAt'>): Promise<void>;
   unregisterDevice(deviceId: string): Promise<void>;
+  requestTestPush(deviceId: string): Promise<void>;             // "בדיקת התראות": testPushAt = now (client epoch ms) on users/{me}/devices/{deviceId}, so the notifier sends this device one test push on its next run. Resolves on the server ack; RepoError('not-found') when this device is not registered, 'network' offline (a late request would be refused)
   watchSync(cb: (s: SyncState) => void): Unsubscribe;
   onWriteError(cb: (e: RepoError) => void): Unsubscribe;          // async failures of queued writes
 }
