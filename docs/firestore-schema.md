@@ -310,7 +310,13 @@ the caller is a member of after this write. `createdAt`: create now; update unch
 
 `deviceId` is ≤ 64 chars (UUID). Fields: `{householdId: string (caller must be a member),
 token: 1..4096, userAgent: 0..512, createdAt: create now / update unchanged or now,
-updatedAt: now on every write}`. A full `set()` on refresh is fine.
+updatedAt: now on every write}`, plus the optional `testPushAt`. A full `set()` on refresh is fine.
+
+`testPushAt` ("בדיקת התראות", `requestTestPush`): client epoch millis (an integer), written as
+`update {testPushAt: Date.now(), updatedAt: now}`. It must lie between 10 minutes before and 2
+minutes after `request.time`, or be unchanged (a token refresh merges onto the doc and keeps it).
+The notifier sends that one device a single test push while the value is under 2 hours old (key
+`test:{deviceId}:{testPushAt}`), quiet hours or not.
 
 ## 3. Writes that must be atomic (one `writeBatch` or `runTransaction`)
 
@@ -367,7 +373,8 @@ household doc itself is unreadable to non-members.
 
 Automatic single-field indexes cover the rest: `watchOpenTasks` (`status == 'open'`, sorted on the
 client), `watchRecentEvents` (`orderBy('createdAt','desc').limit(n)`), `watchTreats`,
-`watchMembers` and the notifier (`events.push == 'pending'`, `sent.expireAt < now`). Combining a
+`watchMembers` and the notifier (`events.push == 'pending'`, `sent.expireAt < now`,
+`devices.testPushAt >= now − 2 h`, each on one collection). Combining a
 `where` with an `orderBy` on a different field anywhere else needs a new composite index.
 
 ## 5. Notes for the notifier (5.2, Admin SDK bypasses rules)

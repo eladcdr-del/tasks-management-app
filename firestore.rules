@@ -826,24 +826,40 @@ service cloud.firestore {
 
         allow create: if signedIn() && me() == uid
           && isDeviceDoc(incoming())
-          && incoming().createdAt == request.time;
+          && incoming().createdAt == request.time
+          && (!('testPushAt' in incoming()) || isFreshTestPush(incoming().testPushAt));
 
+        // testPushAt: unchanged (a token refresh merges onto the doc), or a fresh request.
         allow update: if signedIn() && me() == uid
           && isDeviceDoc(incoming())
-          && stampOk(incoming().createdAt, existing().createdAt) && incoming().createdAt != null;
+          && stampOk(incoming().createdAt, existing().createdAt) && incoming().createdAt != null
+          && (!('testPushAt' in incoming())
+            || ('testPushAt' in existing() && incoming().testPushAt == existing().testPushAt)
+            || isFreshTestPush(incoming().testPushAt));
 
         allow delete: if signedIn() && me() == uid;
 
         // A push target only for a household the caller belongs to (the notifier must still
-        // re-check current membership before sending).
+        // re-check current membership before sending). `testPushAt` is optional.
         function isDeviceDoc(d) {
           return isStr(deviceId, 1, 64)
-            && hasExactly(d, ['householdId', 'token', 'userAgent', 'createdAt', 'updatedAt'])
+            && d.keys().hasAll(['householdId', 'token', 'userAgent', 'createdAt', 'updatedAt'])
+            && d.keys().hasOnly(['householdId', 'token', 'userAgent', 'createdAt', 'updatedAt',
+                                 'testPushAt'])
             && isStr(d.token, 1, 4096)
             && isStr(d.userAgent, 0, 512)
             && d.updatedAt == request.time
             && isSafeId(d.householdId)
             && existsAfter(memberPath(d.householdId, me()));
+        }
+
+        // "בדיקת התראות": the notifier sends this device one test push on its next run. Client
+        // epoch millis (the notifier's dedupe key), so it must be close to the server's clock:
+        // from 10 minutes before request.time (a slow network) to 2 minutes after (clock skew).
+        function isFreshTestPush(v) {
+          return v is int
+            && v >= request.time.toMillis() - 600000
+            && v <= request.time.toMillis() + 120000;
         }
       }
     }

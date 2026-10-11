@@ -112,6 +112,93 @@ describe('users/{uid}/devices/{deviceId}', () => {
   });
 });
 
+describe('users/{uid}/devices/{deviceId}: testPushAt ("בדיקת התראות")', () => {
+  const MIN = 60_000;
+  const request = (testPushAt: unknown) => ({ testPushAt, updatedAt: serverTimestamp() });
+
+  it('allowed: asking for a test push on my own device, again later, and on create', async () => {
+    const db = as(env(), BOB);
+    const ref = doc(db, path.device(BOB, DEVICE));
+    await assertSucceeds(setDoc(ref, deviceDoc(HID)));
+    await assertSucceeds(updateDoc(ref, request(Date.now())));
+    await assertSucceeds(updateDoc(ref, request(Date.now() - 9 * MIN))); // a slow network
+    await assertSucceeds(updateDoc(ref, request(Date.now() + MIN))); // a clock a bit ahead
+    await assertSucceeds(
+      setDoc(doc(db, path.device(BOB, 'd2')), deviceDoc(HID, request(Date.now())))
+    );
+  });
+
+  it('allowed: the previous version’s writes on a doc that holds a stale request', async () => {
+    await seed(env(), (db) =>
+      setDoc(doc(db, path.device(BOB, DEVICE)), {
+        ...deviceDoc(HID),
+        testPushAt: Date.now() - 3 * 60 * MIN
+      })
+    );
+    const ref = doc(as(env(), BOB), path.device(BOB, DEVICE));
+    // Token refresh: a merge of the four fields it knows (testPushAt stays as it was).
+    await assertSucceeds(
+      setDoc(
+        ref,
+        {
+          householdId: HID,
+          token: 'fcm-token-rotated',
+          userAgent: 'UA',
+          updatedAt: serverTimestamp()
+        },
+        { merge: true }
+      )
+    );
+    await assertSucceeds(
+      updateDoc(ref, { token: 'fcm-token-rotated-2', updatedAt: serverTimestamp() })
+    );
+    // A full re-set drops it.
+    await assertSucceeds(setDoc(ref, deviceDoc(HID)));
+  });
+
+  it('denied: a time far from the server’s, or not epoch millis', async () => {
+    const ref = doc(as(env(), BOB), path.device(BOB, DEVICE));
+    await assertSucceeds(setDoc(ref, deviceDoc(HID)));
+    await assertFails(updateDoc(ref, request(Date.now() - 11 * MIN)));
+    await assertFails(updateDoc(ref, request(Date.now() + 3 * MIN)));
+    await assertFails(updateDoc(ref, request(Date.now() + 0.5)));
+    await assertFails(updateDoc(ref, request(String(Date.now()))));
+    await assertFails(updateDoc(ref, request(Timestamp.now())));
+    await assertFails(updateDoc(ref, request(serverTimestamp())));
+    await assertFails(updateDoc(ref, request(null)));
+    await assertFails(setDoc(ref, deviceDoc(HID, request(Date.now() - 60 * MIN))));
+  });
+
+  it('denied: changing a stale request to another stale one', async () => {
+    const stale = Date.now() - 3 * 60 * MIN;
+    await seed(env(), (db) =>
+      setDoc(doc(db, path.device(BOB, DEVICE)), { ...deviceDoc(HID), testPushAt: stale })
+    );
+    const ref = doc(as(env(), BOB), path.device(BOB, DEVICE));
+    await assertFails(updateDoc(ref, request(stale + 1)));
+  });
+
+  it('denied: without the updatedAt stamp, on someone else’s device, or for a stranger', async () => {
+    const ref = doc(as(env(), BOB), path.device(BOB, DEVICE));
+    await assertSucceeds(setDoc(ref, deviceDoc(HID)));
+    await assertFails(updateDoc(ref, { testPushAt: Date.now() }));
+
+    await seed(env(), (db) => setDoc(doc(db, path.device(ALICE, DEVICE)), deviceDoc(HID)));
+    await assertFails(
+      updateDoc(doc(as(env(), BOB), path.device(ALICE, DEVICE)), request(Date.now()))
+    );
+    await assertFails(
+      updateDoc(doc(as(env(), EVE), path.device(ALICE, DEVICE)), request(Date.now()))
+    );
+  });
+
+  it('denied: other extra keys are still refused next to it', async () => {
+    const ref = doc(as(env(), BOB), path.device(BOB, DEVICE));
+    await assertSucceeds(setDoc(ref, deviceDoc(HID)));
+    await assertFails(updateDoc(ref, { ...request(Date.now()), testPushCount: 1 }));
+  });
+});
+
 describe('households/{hid}/sent/{key}: no client access', () => {
   beforeEach(async () => {
     await seed(env(), (db) =>
