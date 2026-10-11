@@ -3,6 +3,8 @@
    * Home (step 3.2; feature "home": calm with many tasks). "A clear picture in one second", and a
    * list that stays short however many tasks the family adds.
    *   header      greeting + name (clock.wall), today's date, sync pill, the household's avatars
+   *   app note    the installed app without its own notification permission (AppPushBanner): a
+   *               gentle, dismissible "אישור התראות" (only in the installed app, see platform/push)
    *   pulse       attention / today / waiting numerals, then one line: the "ביקשו ממך" link and the
    *               balance. Tap: attention / requests scroll to their block; today shows tab "היום"
    *               (chip "הכל"); waiting shows tab "הכל" with chip "פנויות"
@@ -40,6 +42,7 @@
   } from '$components/ui';
   import { EmptyHome } from '$components/illustrations';
   import JarMini from '$components/jar/JarMini.svelte';
+  import AppPushBanner from '$components/settings/AppPushBanner.svelte';
   import TaskList from '$components/task/TaskList.svelte';
   import Seat from '$components/task/Seat.svelte';
   import { acceptRequest, declineRequest } from '$components/task/actions';
@@ -399,6 +402,8 @@
   </Header>
 
   <div class="content">
+    <AppPushBanner />
+
     <PulseCard
       pulse={tasks.pulse}
       members={household.members}
