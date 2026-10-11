@@ -142,4 +142,6 @@ export interface DeviceToken {
   userAgent: string;
   createdAt: Millis;
   updatedAt: Millis;
+  /** "בדיקת התראות": the app asked for one test push to this device (client epoch ms). */
+  testPushAt?: Millis | null;
 }

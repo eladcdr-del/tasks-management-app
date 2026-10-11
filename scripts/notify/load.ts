@@ -199,7 +199,8 @@ export function normalizeDevice(deviceId: string, raw: DocumentData): DeviceToke
     token: str(d.token).trim(),
     userAgent: str(d.userAgent),
     createdAt: num(d.createdAt),
-    updatedAt: num(d.updatedAt)
+    updatedAt: num(d.updatedAt),
+    testPushAt: numOrNull(d.testPushAt)
   };
 }
 
@@ -225,6 +226,10 @@ export async function loadOpenTasks(db: Firestore, hid: string): Promise<Task[]>
   return snap.docs.map((doc) => normalizeTask(doc.id, doc.data()));
 }
 
+/** A push target for `hid`: a token, and not registered for a DIFFERENT household. */
+const targetsHousehold = (d: DeviceToken, hid: string): boolean =>
+  d.token !== '' && (d.householdId === '' || d.householdId === hid);
+
 /**
  * `users/{uid}/devices` for each member. A device registered for a DIFFERENT household (the user
  * moved homes from another phone) is ignored; one without a householdId is kept. Empty tokens are
@@ -240,9 +245,36 @@ export async function loadDevices(
       const snap = await db.collection(`users/${uid}/devices`).get();
       const devices = snap.docs
         .map((doc) => normalizeDevice(doc.id, doc.data()))
-        .filter((d) => d.token !== '' && (d.householdId === '' || d.householdId === hid));
+        .filter((d) => targetsHousehold(d, hid));
       return [uid, devices] as const;
     })
   );
   return Object.fromEntries(entries);
+}
+
+/**
+ * Only the devices that asked for a test push at or after `sinceMs` ("בדיקת התראות"), for a run
+ * that reads no devices otherwise (quiet hours, nothing due): one query per member on the
+ * automatic single-field index, which costs one read while nobody asked. Same filters as
+ * loadDevices; members without such a device are left out.
+ */
+export async function loadTestDevices(
+  db: Firestore,
+  hid: string,
+  uids: string[],
+  sinceMs: number
+): Promise<Record<string, DeviceToken[]>> {
+  const entries = await Promise.all(
+    uids.map(async (uid) => {
+      const snap = await db
+        .collection(`users/${uid}/devices`)
+        .where('testPushAt', '>=', sinceMs)
+        .get();
+      const devices = snap.docs
+        .map((doc) => normalizeDevice(doc.id, doc.data()))
+        .filter((d) => targetsHousehold(d, hid));
+      return [uid, devices] as const;
+    })
+  );
+  return Object.fromEntries(entries.filter(([, devices]) => devices.length > 0));
 }

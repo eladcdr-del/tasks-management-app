@@ -1,6 +1,6 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
-import { normalizeHousehold, normalizeRecurrence, normalizeTask } from './load.ts';
+import { normalizeDevice, normalizeHousehold, normalizeRecurrence, normalizeTask } from './load.ts';
 import { jarIsFull } from './jar.ts';
 
 describe('normalizeRecurrence (the app rule, read defensively)', () => {
@@ -105,5 +105,32 @@ describe('the jar (goal modes)', () => {
     expect(jarIsFull(each, ['a'])).toBe(true);
     expect(jarIsFull(each, [])).toBe(false);
     expect(jarIsFull({ ...each, counts: { a: 9, b: 1 }, count: 10 }, ['a', 'b'])).toBe(false);
+  });
+});
+
+describe('a device ("בדיקת התראות")', () => {
+  const doc = {
+    householdId: 'hh',
+    token: ' tok ',
+    userAgent: 'Android',
+    createdAt: Timestamp.fromMillis(1_000),
+    updatedAt: Timestamp.fromMillis(2_000)
+  };
+
+  it('reads testPushAt as epoch millis, and as null when missing or malformed', () => {
+    expect(normalizeDevice('d1', { ...doc, testPushAt: 1_791_000_000_000 })).toEqual({
+      deviceId: 'd1',
+      householdId: 'hh',
+      token: 'tok',
+      userAgent: 'Android',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      testPushAt: 1_791_000_000_000
+    });
+    expect(normalizeDevice('d1', doc).testPushAt).toBeNull();
+    expect(normalizeDevice('d1', { ...doc, testPushAt: 'soon' }).testPushAt).toBeNull();
+    expect(
+      normalizeDevice('d1', { ...doc, testPushAt: Timestamp.fromMillis(5_000) }).testPushAt
+    ).toBe(5_000);
   });
 });

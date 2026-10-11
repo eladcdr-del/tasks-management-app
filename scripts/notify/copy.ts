@@ -11,6 +11,7 @@ export const APP_URL = 'https://eladcdr-del.github.io/tasks-management-app/';
 export const homeUrl = (): string => `${APP_URL}#/`;
 export const taskUrl = (taskId: string): string => `${APP_URL}#/task/${encodeURIComponent(taskId)}`;
 export const jarUrl = (): string => `${APP_URL}#/jar`;
+export const settingsUrl = (): string => `${APP_URL}#/settings`;
 
 export interface Actor {
   displayName: string;
@@ -176,5 +177,16 @@ export function weekly(taskTitles: string[]): Copy {
   return {
     title: n === 1 ? 'יש משימה אחת שמחכה כבר זמן מה' : `יש ${n} משימות שמחכות כבר זמן מה`,
     body: titleList(taskTitles)
+  };
+}
+
+/**
+ * "בדיקת התראות": the one push a member asked for from Settings, to that phone only. It proves the
+ * whole path (notifier → FCM → phone → notification) works, so it says so plainly.
+ */
+export function testPush(): Copy {
+  return {
+    title: 'HomeCare: ההתראות מגיעות ✓',
+    body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.'
   };
 }

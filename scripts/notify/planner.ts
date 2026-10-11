@@ -16,12 +16,21 @@
 //               the dueDate, or today's scheduledFor for a timed plan (no dueDate, a dueTime)
 //   eve         eve:{taskId}:{dueDate}:{uid} for every task in the per-recipient summary
 //   weekly      wk:{YYYY-Www}:{uid}
+//   test        test:{deviceId}:{testPushAt}                (one device; see planTests)
 // The I/O layer creates every key of a Send and pushes ONCE if at least one key was new. A summary
 // that grows inside its window (a second task due today appears at 09:00) is therefore re-sent as
 // the new, complete summary; it carries the same `tag`, so the phone replaces the earlier
 // notification instead of stacking a second one.
 
-import type { ActivityEvent, DeviceToken, Household, Member, NotifyPrefs, Task } from './types.ts';
+import type {
+  ActivityEvent,
+  DeviceToken,
+  Household,
+  Member,
+  Millis,
+  NotifyPrefs,
+  Task
+} from './types.ts';
 import {
   addDaysISO,
   diffDays,
@@ -37,13 +46,23 @@ import * as copy from './copy.ts';
 import { jarIsFull } from './jar.ts';
 
 export type SendType =
-  'requested' | 'accepted' | 'declined' | 'completed' | 'jar_filled' | 'due' | 'eve' | 'weekly';
+  | 'requested'
+  | 'accepted'
+  | 'declined'
+  | 'completed'
+  | 'jar_filled'
+  | 'due'
+  | 'eve'
+  | 'weekly'
+  | 'test';
 
 export interface Send {
   /** Dedupe keys, at least one (see the header). */
   keys: string[];
-  /** Recipient member uid; the push goes to all of their device tokens. */
+  /** Recipient member uid; the push goes to all of their device tokens (unless `deviceId`). */
   uid: string;
+  /** Only this one device of theirs gets the push (a test push asked for from that phone). */
+  deviceId?: string;
   type: SendType;
   title: string;
   body: string;
@@ -101,6 +120,10 @@ export const COMPLETED_STALE_MS = 24 * 3_600_000;
 export const REQUEST_STALE_MS = 7 * 86_400_000;
 export const STUCK_AGE_DAYS = 21;
 export const STUCK_SNOOZE_COUNT = 3;
+/** A test push request ("בדיקת התראות") older than this is not answered any more. */
+export const TEST_PUSH_WINDOW_MS = 2 * 3_600_000;
+/** A request this far in the future still counts (the phone's clock may run a little ahead). */
+export const TEST_PUSH_SKEW_MS = 10 * 60_000;
 
 export interface ActiveWindows {
   /** Event-driven pushes may go out (outside quiet hours 22:00-07:30). */
@@ -170,7 +193,8 @@ const TYPE_ORDER: Record<SendType, number> = {
   jar_filled: 4,
   due: 5,
   eve: 6,
-  weekly: 7
+  weekly: 7,
+  test: 8
 };
 
 const byCreated = (a: ActivityEvent, b: ActivityEvent): number =>
@@ -178,6 +202,55 @@ const byCreated = (a: ActivityEvent, b: ActivityEvent): number =>
 
 const byId = <T extends { id: string }>(a: T, b: T): number =>
   a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+
+/** The order of a plan's sends: by recipient, then type, then first key. */
+const bySend = (a: Send, b: Send): number =>
+  (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0) ||
+  TYPE_ORDER[a.type] - TYPE_ORDER[b.type] ||
+  ((a.keys[0] ?? '') < (b.keys[0] ?? '') ? -1 : (a.keys[0] ?? '') > (b.keys[0] ?? '') ? 1 : 0);
+
+/** A request still to answer at `nowMs`: within the last TEST_PUSH_WINDOW_MS (or a bit ahead). */
+export function isFreshTestPush(testPushAt: Millis | null | undefined, nowMs: number): boolean {
+  return (
+    typeof testPushAt === 'number' &&
+    testPushAt >= nowMs - TEST_PUSH_WINDOW_MS &&
+    testPushAt <= nowMs + TEST_PUSH_SKEW_MS
+  );
+}
+
+/**
+ * Test pushes ("בדיקת התראות" in Settings): each device of a current member whose testPushAt is
+ * fresh gets one push, to its own token only. A person asked for it just now, so neither quiet
+ * hours nor their notification switches apply. Its key carries the request's own time, so every
+ * tap is answered once however many runs see it (and a later tap is a new request).
+ */
+export function planTests(
+  input: Pick<PlanInput, 'now' | 'household' | 'devicesByUid'> & { members?: Member[] }
+): Send[] {
+  const nowMs = input.now.getTime();
+  const current = new Set([
+    ...input.household.memberIds,
+    ...(input.members ?? []).map((m) => m.uid)
+  ]);
+  const sends: Send[] = [];
+  for (const [uid, devices] of Object.entries(input.devicesByUid)) {
+    if (!current.has(uid)) continue;
+    for (const d of devices) {
+      if (d.token.length === 0 || !isFreshTestPush(d.testPushAt, nowMs)) continue;
+      sends.push({
+        keys: [`test:${d.deviceId}:${d.testPushAt}`],
+        uid,
+        deviceId: d.deviceId,
+        type: 'test',
+        ...copy.testPush(),
+        url: copy.settingsUrl(),
+        tag: 'homecare-test',
+        eventIds: []
+      });
+    }
+  }
+  return sends.sort(bySend);
+}
 
 export function plan(input: PlanInput): Plan {
   const parts = localParts(input.now);
@@ -450,11 +523,9 @@ export function plan(input: PlanInput): Plan {
     }
   }
 
-  sends.sort(
-    (a, b) =>
-      (a.uid < b.uid ? -1 : a.uid > b.uid ? 1 : 0) ||
-      TYPE_ORDER[a.type] - TYPE_ORDER[b.type] ||
-      ((a.keys[0] ?? '') < (b.keys[0] ?? '') ? -1 : (a.keys[0] ?? '') > (b.keys[0] ?? '') ? 1 : 0)
-  );
+  // ── Test pushes: any time (see planTests).
+  sends.push(...planTests(input));
+
+  sends.sort(bySend);
   return { sends, eventMarks };
 }

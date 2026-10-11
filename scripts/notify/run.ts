@@ -10,11 +10,23 @@
 // Multi-key Sends (coalesced summaries): every key is created; the push goes out once if at least
 // one key was new. Only the keys THIS run created are rolled back on a transient failure.
 //
+// Test pushes ("בדיקת התראות"): a Send with a deviceId goes to that one device. A run that would
+// otherwise read no devices (quiet hours, nothing due) still looks for fresh test requests, with
+// one cheap indexed query per member, because the person who asked is waiting for it.
+//
 // Logs are PUBLIC (Actions logs of a public repo): a real run prints counts only, never names,
 // titles or tokens. `--dry` (local use) prints the full plan.
 
 import { Timestamp, type Firestore } from 'firebase-admin/firestore';
-import { activeWindows, anyReminderWindow, plan, type Plan, type Send } from './planner.ts';
+import {
+  activeWindows,
+  anyReminderWindow,
+  plan,
+  planTests,
+  TEST_PUSH_WINDOW_MS,
+  type Plan,
+  type Send
+} from './planner.ts';
 import { inWindow, localParts, type LocalParts } from './time.ts';
 import type { Sender } from './sender.ts';
 import type { DeviceToken, Household, Member } from './types.ts';
@@ -23,7 +35,8 @@ import {
   loadDevices,
   loadMembers,
   loadOpenTasks,
-  loadPendingEvents
+  loadPendingEvents,
+  loadTestDevices
 } from './load.ts';
 
 export const SENT_TTL_DAYS = 45;
@@ -155,10 +168,11 @@ async function deliver(
   errors: string[]
 ): Promise<{ outcome: SendOutcome; devicesRemoved: number }> {
   const devices = devicesByUid[send.uid] ?? [];
-  const tokens = [...new Set(devices.map((d) => d.token).filter(Boolean))];
+  const targets = send.deviceId ? devices.filter((d) => d.deviceId === send.deviceId) : devices;
+  const tokens = [...new Set(targets.map((d) => d.token).filter(Boolean))];
   const base = { send, tokens: tokens.length, invalidTokens: 0, errorCodes: [] as string[] };
-  // Every device of this member died earlier in this run: claim nothing, so a phone registered
-  // later today still gets the push.
+  // Every device of this member (or the one device asked for) died earlier in this run: claim
+  // nothing, so a phone registered later today still gets the push.
   if (tokens.length === 0) {
     return { outcome: { ...base, status: 'undeliverable', newKeys: [] }, devicesRemoved: 0 };
   }
@@ -237,16 +251,30 @@ async function runHousehold(
   // Cheap first read: pending events. Members, devices and tasks are read only when something can
   // actually go out now: pending events outside quiet hours, or 08:00-22:00 for the reminders. At
   // 288 runs/day that is about 168 x (open tasks + 6) reads, well inside the Spark quota (50k/day).
+  // The other runs look only for fresh test requests: about one read per member.
   const events = await loadPendingEvents(db, hid);
   const eventsActionable = windows.events && events.length > 0;
+  let result: Plan | null = null;
+  let devicesByUid: Record<string, DeviceToken[]> = {};
   if (!eventsActionable && !anyReminderWindow(windows)) {
-    report.skipped =
-      events.length > 0
-        ? `quiet hours: ${events.length} event(s) wait for 07:30`
-        : 'nothing due now';
+    // Nothing else can go out now; a test push someone just asked for still can.
+    devicesByUid = await loadTestDevices(
+      db,
+      hid,
+      household.memberIds,
+      now.getTime() - TEST_PUSH_WINDOW_MS
+    );
+    const tests = planTests({ now, household, devicesByUid });
+    if (tests.length > 0) result = { sends: tests, eventMarks: [] };
+    else {
+      report.skipped =
+        events.length > 0
+          ? `quiet hours: ${events.length} event(s) wait for 07:30`
+          : 'nothing due now';
+    }
   } else {
     const members = await loadMembers(db, hid);
-    const [devicesByUid, tasks] = await Promise.all([
+    const [devices, tasks] = await Promise.all([
       loadDevices(
         db,
         hid,
@@ -254,10 +282,13 @@ async function runHousehold(
       ),
       loadOpenTasks(db, hid)
     ]);
-    const result = plan({ now, household, members, tasks, events, devicesByUid });
-    report.plan = result;
+    devicesByUid = devices;
+    result = plan({ now, household, members, tasks, events, devicesByUid });
     report.members = members;
+  }
 
+  if (result) {
+    report.plan = result;
     if (!dry) {
       const sender = opts.sender;
       if (!sender) throw new Error('run(): a Sender is required unless dry');
@@ -357,7 +388,8 @@ export function formatSummary(r: RunReport): string[] {
       `  #${i + 1}: planned ${h.plan?.sends.length ?? 0} · delivered ${count('delivered')} · ` +
         `duplicate ${count('duplicate')} · retry ${count('retry')} · undeliverable ${count('undeliverable')} · ` +
         `events marked ${h.eventsMarked}, left pending ${h.eventsLeftPending} · ` +
-        `dead devices removed ${h.devicesRemoved} · pruned ${h.pruned}` +
+        `dead devices removed ${h.devicesRemoved} · pruned ${h.pruned} · ` +
+        `tests ${h.outcomes.filter((o) => o.send.type === 'test' && o.status === 'delivered').length}` +
         (codes.length ? ` · fcm errors: ${codes.join(', ')}` : '')
     );
   });

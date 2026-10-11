@@ -415,6 +415,105 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     expect(await sentKeys()).toEqual(['fresh', 'prune:2026-10-05', 'prune:2026-10-06']);
   });
 
+  describe('test pushes ("בדיקת התראות")', () => {
+    const NIGHT = new Date('2026-10-04T23:30:00+03:00'); // quiet hours, no reminder window
+    const TEST_TITLE = 'HomeCare: ההתראות מגיעות ✓';
+    const ask = (d: { uid: string; deviceId: string }, at: number) =>
+      db.doc(`users/${d.uid}/devices/${d.deviceId}`).update({ testPushAt: at });
+    const at = (date: Date, minutes: number) => new Date(date.getTime() + minutes * MIN);
+
+    it('reaches only the asking phone, once, even at night; a stale request is ignored', async () => {
+      await seedDemo(db, NIGHT);
+      const asked = NIGHT.getTime() - 3 * MIN;
+      await ask(tok.michalPhone, asked);
+      await ask(tok.daniPhone, NIGHT.getTime() - 3 * 60 * MIN); // older than 2 hours
+      const sender = new FakeSender();
+      const lines: string[] = [];
+
+      const r1 = await run({ db, sender, now: NIGHT, log: (l) => lines.push(l) });
+      expect(r1.errors).toEqual([]);
+      expect(summary(sender.calls)).toEqual([
+        {
+          tokens: [tok.michalPhone.token],
+          title: TEST_TITLE,
+          body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.',
+          url: 'https://eladcdr-del.github.io/tasks-management-app/#/settings'
+        }
+      ]);
+      expect(sender.calls[0]?.msg).toMatchObject({ type: 'test', tag: 'homecare-test' });
+      expect(r1.households[0]?.skipped).toBeUndefined();
+      expect(r1.households[0]?.outcomes.map((o) => o.status)).toEqual(['delivered']);
+      expect(await sentKeys()).toEqual([`test:${tok.michalPhone.deviceId}:${asked}`]);
+      expect(await push('ev-req')).toBe('pending'); // the request itself still waits for 07:30
+      expect(lines.join('\n')).toContain('tests 1');
+      expect(lines.join('\n')).not.toMatch(/[֐-׿]/);
+
+      // the next runs see the same request: nothing more
+      const r2 = await run({ db, sender, now: at(NIGHT, 5) });
+      expect(r2.households[0]?.outcomes.map((o) => o.status)).toEqual(['duplicate']);
+      await run({ db, sender, now: at(NIGHT, 10) });
+      expect(sender.calls).toHaveLength(1);
+
+      // two hours on, the request has expired: the run is quiet again
+      const r3 = await run({ db, sender, now: new Date(asked + 2 * 60 * MIN + MIN) });
+      expect(r3.households[0]?.skipped).toMatch(/quiet hours/);
+
+      // a new tap is a new request
+      await ask(tok.michalPhone, at(NIGHT, 20).getTime());
+      await run({ db, sender, now: at(NIGHT, 21) });
+      expect(sender.calls).toHaveLength(2);
+    });
+
+    it('in a daytime run it goes to that one phone, next to the usual pushes', async () => {
+      await seedDemo(db, NOW);
+      await ask(tok.michalPhone, NOW.getTime() - MIN);
+      const sender = new FakeSender();
+      const r1 = await run({ db, sender, now: NOW });
+      expect(r1.errors).toEqual([]);
+      const tests = sender.calls.filter((c) => c.msg.type === 'test');
+      expect(tests.map((c) => c.tokens)).toEqual([[tok.michalPhone.token]]);
+      expect(sender.calls.filter((c) => c.msg.type !== 'test').map((c) => c.msg.title)).toEqual(
+        FIRST_RUN.map((c) => c.title)
+      );
+      // Michal's other pushes still go to both of her devices
+      expect(sender.calls.find((c) => c.msg.type === 'requested')?.tokens).toEqual(
+        [tok.michalOld.token, tok.michalPhone.token].sort()
+      );
+    });
+
+    it('a dead token is handled as before: the device doc goes, nothing is retried', async () => {
+      await seedDemo(db, NIGHT);
+      await ask(tok.michalOld, NIGHT.getTime() - MIN);
+      const sender = new FakeSender();
+      sender.invalid.add(tok.michalOld.token);
+      const r1 = await run({ db, sender, now: NIGHT });
+      expect(r1.errors).toEqual([]);
+      expect(r1.households[0]?.outcomes.map((o) => o.status)).toEqual(['undeliverable']);
+      expect(r1.households[0]?.devicesRemoved).toBe(1);
+      expect(await exists(`users/${DEMO.michal}/devices/${tok.michalOld.deviceId}`)).toBe(false);
+      expect(await exists(`users/${DEMO.michal}/devices/${tok.michalPhone.deviceId}`)).toBe(true);
+      await run({ db, sender, now: at(NIGHT, 5) });
+      expect(sender.calls).toHaveLength(1);
+    });
+
+    it('a transient failure is retried on the next run', async () => {
+      await seedDemo(db, NIGHT);
+      await ask(tok.daniPhone, NIGHT.getTime() - MIN);
+      const sender = new FakeSender();
+      sender.transient.add(tok.daniPhone.token);
+      const r1 = await run({ db, sender, now: NIGHT });
+      expect(r1.households[0]?.outcomes.map((o) => o.status)).toEqual(['retry']);
+      expect(await sentKeys()).toEqual([]);
+      sender.transient.clear();
+      const r2 = await run({ db, sender, now: at(NIGHT, 5) });
+      expect(r2.households[0]?.outcomes.map((o) => o.status)).toEqual(['delivered']);
+      expect(sender.calls.map((c) => c.tokens)).toEqual([
+        [tok.daniPhone.token],
+        [tok.daniPhone.token]
+      ]);
+    });
+  });
+
   it('--dry plans without writing or sending', async () => {
     await seedDemo(db, NOW);
     const lines: string[] = [];

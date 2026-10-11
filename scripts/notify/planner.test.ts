@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { activeWindows, ageStart, isStuck, plan, type PlanInput, type Send } from './planner.ts';
+import {
+  activeWindows,
+  ageStart,
+  isStuck,
+  plan,
+  planTests,
+  TEST_PUSH_WINDOW_MS,
+  type PlanInput,
+  type Send
+} from './planner.ts';
 import { isQuietHours } from './time.ts';
 import type { ActivityEvent, AddressAs, DeviceToken, Member, NotifyPrefs, Task } from './types.ts';
 
@@ -618,6 +627,113 @@ describe('event housekeeping', () => {
     );
     expect(out.sends).toEqual([]);
     expect(out.eventMarks).toEqual([{ eventId: 'x1', push: 'skipped' }]);
+  });
+});
+
+// ── test pushes ("בדיקת התראות") ───────────────────────────────────────────────────────────────────
+
+describe('test pushes ("בדיקת התראות")', () => {
+  const NIGHT = SUN('23:30'); // quiet hours, no reminder window
+  const asked = (uid: string, n: number, at: number): DeviceToken => ({
+    ...device(uid, n),
+    testPushAt: at
+  });
+  const TEST = {
+    type: 'test',
+    title: 'HomeCare: ההתראות מגיעות ✓',
+    body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.',
+    url: `${APP}#/settings`,
+    tag: 'homecare-test',
+    eventIds: []
+  } as const;
+
+  it('goes to the asking device only, at night and with every switch off', () => {
+    const at = NIGHT.getTime() - 3 * MIN;
+    const off = { requests: false, reminders: false, partnerDone: false, weekly: false };
+    const out = plan(
+      input({
+        now: NIGHT,
+        members: [member('u-michal', 'מיכל', 'f', off), DANI],
+        devicesByUid: {
+          'u-michal': [device('u-michal', 1), asked('u-michal', 2, at)],
+          'u-dani': [device('u-dani')]
+        },
+        events: [ev('e1', 'requested', 'u-dani', NIGHT.getTime() - MIN, { targetId: 'u-michal' })]
+      })
+    );
+    expect(out.sends).toEqual([
+      {
+        keys: [`test:u-michal-d2:${at}`],
+        uid: 'u-michal',
+        deviceId: 'u-michal-d2',
+        ...TEST
+      }
+    ]);
+    expect(out.eventMarks).toEqual([]); // the request still waits for 07:30
+  });
+
+  it('answers each request it sees while fresh: up to 2 hours old, or a little ahead', () => {
+    const now = NIGHT.getTime();
+    const keysAt = (at: number) =>
+      planTests({
+        now: NIGHT,
+        household: input().household,
+        devicesByUid: { 'u-michal': [asked('u-michal', 1, at)] }
+      }).map((s) => s.keys[0]);
+    expect(keysAt(now - TEST_PUSH_WINDOW_MS)).toEqual([
+      `test:u-michal-d1:${now - TEST_PUSH_WINDOW_MS}`
+    ]);
+    expect(keysAt(now - TEST_PUSH_WINDOW_MS - 1)).toEqual([]);
+    expect(keysAt(now + 5 * MIN)).toHaveLength(1);
+    expect(keysAt(now + 11 * MIN)).toEqual([]);
+    expect(keysAt(Number.NaN)).toEqual([]);
+  });
+
+  it('a later tap is a new request (its own key); one per device', () => {
+    const t1 = NIGHT.getTime() - 30 * MIN;
+    const t2 = NIGHT.getTime() - MIN;
+    const sends = planTests({
+      now: NIGHT,
+      household: input().household,
+      devicesByUid: {
+        'u-dani': [asked('u-dani', 1, t2)],
+        'u-michal': [asked('u-michal', 1, t1), asked('u-michal', 2, t2)]
+      }
+    });
+    expect(sends.map((s) => [s.uid, s.deviceId, s.keys])).toEqual([
+      ['u-dani', 'u-dani-d1', [`test:u-dani-d1:${t2}`]],
+      ['u-michal', 'u-michal-d1', [`test:u-michal-d1:${t1}`]],
+      ['u-michal', 'u-michal-d2', [`test:u-michal-d2:${t2}`]]
+    ]);
+  });
+
+  it('never for someone who is not a member any more, or a device without a token', () => {
+    const at = NIGHT.getTime() - MIN;
+    const out = plan(
+      input({
+        now: NIGHT,
+        devicesByUid: {
+          'u-gone': [asked('u-gone', 1, at)],
+          'u-dani': [{ ...asked('u-dani', 1, at), token: '' }]
+        }
+      })
+    );
+    expect(out.sends).toEqual([]);
+  });
+
+  it('comes after the member’s other pushes in a daytime plan', () => {
+    const at = SUN('09:00').getTime() - MIN;
+    const out = plan(
+      input({
+        tasks: [task('t1', { dueDate: TODAY, ownerId: 'u-michal' })],
+        devicesByUid: { 'u-michal': [asked('u-michal', 1, at)], 'u-dani': [device('u-dani')] }
+      })
+    );
+    expect(out.sends.map((s) => [s.uid, s.type])).toEqual([
+      ['u-michal', 'due'],
+      ['u-michal', 'test']
+    ]);
+    expect(out.sends[0]?.deviceId).toBeUndefined(); // everything else still goes to every device
   });
 });
 

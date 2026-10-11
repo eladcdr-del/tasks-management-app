@@ -302,8 +302,10 @@ async function main(): Promise<number> {
               }
             }
             const where = hid === hh.id ? 'this house' : hid === '' ? 'no house' : 'OTHER house';
+            const tested = millis(data.testPushAt);
             rows.push(
-              `${platform}, ${where}, ${tokenState}, updated ${age(millis(data.updatedAt))}`
+              `${platform}, ${where}, ${tokenState}, updated ${age(millis(data.updatedAt))}` +
+                (tested !== null ? `, test asked ${age(tested)}` : '')
             );
           }
           console.log(
@@ -328,13 +330,17 @@ async function main(): Promise<number> {
         );
         const sent = await hh.ref.collection('sent').get();
         let sentWeek = 0;
+        let testsWeek = 0;
         let lastSent: number | null = null;
         for (const s of sent.docs) {
           const at = millis(s.data().at);
           if (at !== null && at >= week) sentWeek += 1;
+          if (at !== null && at >= week && s.id.startsWith('test:')) testsWeek += 1;
           if (at !== null && (lastSent === null || at > lastSent)) lastSent = at;
         }
-        console.log(`    pushes sent last 7 days: ${sentWeek}; newest ${age(lastSent)}`);
+        console.log(
+          `    pushes sent last 7 days: ${sentWeek} (test pushes ${testsWeek}); newest ${age(lastSent)}`
+        );
       }
       report('ok', 'Notification health', 'details above');
       await db.terminate();
