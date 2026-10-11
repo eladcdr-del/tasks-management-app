@@ -30,7 +30,6 @@
    * household the seat takes a task at once (nobody to ask): a new undated task is found the same way.
    */
   import { tick, untrack } from 'svelte';
-  import Plus from '@lucide/svelte/icons/plus';
   import Header from '$components/shell/Header.svelte';
   import {
     AvatarStack,
@@ -421,13 +420,9 @@
       </div>
     {:else if nothingOpen}
       <div class="all-clear">
+        <!-- No button of its own: the FAB ("משימה חדשה") is always just below. -->
         <EmptyState title={t.empty.all.title} body={t.empty.all.body} compact>
           {#snippet illustration()}<EmptyHome />{/snippet}
-          {#snippet action()}
-            <Button icon={Plus} onclick={() => router.openSheet({ name: 'quickAdd' })}
-              >{t.newTask}</Button
-            >
-          {/snippet}
         </EmptyState>
       </div>
     {:else}
