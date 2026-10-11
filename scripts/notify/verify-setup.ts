@@ -8,7 +8,7 @@
 
 import { readFileSync } from 'node:fs';
 import { cert, initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { firebaseConfig } from '../../firebase-config.ts';
 import { parseServiceAccount } from './guard.ts';
@@ -249,6 +249,94 @@ async function main(): Promise<number> {
         'Data',
         `${households.size} household(s), ${members} member(s), ${devices} device(s) with notifications`
       );
+    },
+    'warn'
+  );
+
+  // 9. Notification health, per household and member (anonymised labels, counts and codes only).
+  await check(
+    'Notification health',
+    async () => {
+      const db = getFirestore(app);
+      const messaging = getMessaging(app);
+      const now = Date.now();
+      const week = now - 7 * 86_400_000;
+      const millis = (v: unknown): number | null =>
+        v instanceof Timestamp ? v.toMillis() : typeof v === 'number' ? v : null;
+      const age = (ms: number | null) =>
+        ms === null ? 'never' : `${Math.round((now - ms) / 3_600_000)}h ago`;
+      const households = await db.collection('households').get();
+      let h = 0;
+      for (const hh of households.docs) {
+        h += 1;
+        const memberDocs = await hh.ref.collection('members').get();
+        console.log(`  household #${h}: ${memberDocs.size} member(s)`);
+        let m = 0;
+        for (const md of memberDocs.docs) {
+          m += 1;
+          const prefs = (md.data().notify ?? {}) as Record<string, unknown>;
+          const off = Object.entries(prefs)
+            .filter(([, v]) => v === false)
+            .map(([k]) => k);
+          const devices = await db.collection('users').doc(md.id).collection('devices').get();
+          const rows: string[] = [];
+          for (const d of devices.docs) {
+            const data = d.data();
+            const token = typeof data.token === 'string' ? data.token : '';
+            const hid = typeof data.householdId === 'string' ? data.householdId : '';
+            const ua = typeof data.userAgent === 'string' ? data.userAgent : '';
+            const platform = /Android/.test(ua)
+              ? 'Android'
+              : /iPhone|iPad/.test(ua)
+                ? 'iOS'
+                : /Windows|Macintosh|Linux/.test(ua)
+                  ? 'desktop'
+                  : 'other';
+            let tokenState = 'no token';
+            if (token) {
+              try {
+                await messaging.send({ token, data: { kind: 'check' } }, true);
+                tokenState = 'token valid';
+              } catch (err) {
+                tokenState = `token rejected (${(err as { code?: string }).code ?? 'unknown'})`;
+              }
+            }
+            const where = hid === hh.id ? 'this house' : hid === '' ? 'no house' : 'OTHER house';
+            rows.push(
+              `${platform}, ${where}, ${tokenState}, updated ${age(millis(data.updatedAt))}`
+            );
+          }
+          console.log(
+            `    member ${String.fromCharCode(64 + m)}: ${devices.size} device(s)${off.length ? `, turned off: ${off.join(',')}` : ''}`
+          );
+          for (const r of rows) console.log(`      - ${r}`);
+        }
+        const events = await hh.ref.collection('events').get();
+        const tally = new Map<string, number>();
+        let lastPushable: number | null = null;
+        for (const e of events.docs) {
+          const data = e.data();
+          const at = millis(data.createdAt);
+          if (at === null || at < week) continue;
+          const key = `${String(data.type)}/${String(data.push)}`;
+          tally.set(key, (tally.get(key) ?? 0) + 1);
+          if (data.push !== 'none' && (lastPushable === null || at > lastPushable))
+            lastPushable = at;
+        }
+        console.log(
+          `    events last 7 days (type/push): ${[...tally].map(([k, n]) => `${k}=${n}`).join(' ') || 'none'}; newest pushable ${age(lastPushable)}`
+        );
+        const sent = await hh.ref.collection('sent').get();
+        let sentWeek = 0;
+        let lastSent: number | null = null;
+        for (const s of sent.docs) {
+          const at = millis(s.data().at);
+          if (at !== null && at >= week) sentWeek += 1;
+          if (at !== null && (lastSent === null || at > lastSent)) lastSent = at;
+        }
+        console.log(`    pushes sent last 7 days: ${sentWeek}; newest ${age(lastSent)}`);
+      }
+      report('ok', 'Notification health', 'details above');
       await db.terminate();
     },
     'warn'
