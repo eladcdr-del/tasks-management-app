@@ -18,6 +18,8 @@ vi.hoisted(() => {
 const push = vi.hoisted(() => ({
   enablePush: vi.fn(),
   pushStatus: vi.fn(),
+  testPush: vi.fn(),
+  appPermissionMissing: vi.fn((): 'ask' | 'blocked' | null => null),
   onPushRegistrationChange: vi.fn((_cb: () => void) => () => {})
 }));
 const install = vi.hoisted(() => ({
@@ -27,7 +29,10 @@ vi.mock('$lib/platform/push', () => push);
 vi.mock('$lib/platform/install', () => install);
 vi.mock('$lib/state/household.svelte', () => ({
   household: {
-    me: { notify: { requests: true, reminders: true, partnerDone: true, weekly: true } },
+    me: {
+      addressAs: 'f',
+      notify: { requests: true, reminders: true, partnerDone: true, weekly: true }
+    },
     updateMember: vi.fn()
   }
 }));
@@ -35,11 +40,18 @@ vi.mock('$lib/state/household.svelte', () => ({
 import NotificationSettings from './NotificationSettings.svelte';
 
 const status = () => document.querySelector('[data-push-status]')?.textContent;
+/** Each settings path in `el` (StepPath) as its label and steps. */
+const paths = (el: Element) =>
+  [...el.querySelectorAll('.path')].map((p) => [
+    p.querySelector('.label')?.textContent ?? '',
+    ...[...p.querySelectorAll('bdi')].map((b) => b.textContent)
+  ]);
 
 beforeEach(() => {
   vi.clearAllMocks();
   ui.queue = [];
   install.installState.mockReturnValue({ installed: false, canPrompt: false });
+  push.appPermissionMissing.mockReturnValue(null);
 });
 
 describe('NotificationSettings', () => {
@@ -102,5 +114,92 @@ describe('NotificationSettings', () => {
     render(NotificationSettings);
     expect(screen.getByText('בבוקר של יום היעד, וערב לפני מועד אחרון')).toBeInTheDocument();
     expect(screen.getByText('כשמישהו אחר בבית מסיים משימה')).toBeInTheDocument();
+  });
+});
+
+describe('בדיקת התראות', () => {
+  const testButton = () => screen.queryByRole('button', { name: 'בדיקת התראות' });
+  const result = () => document.querySelector('[data-test-result]');
+
+  it('sends one from the phone and asks for one from the server, then says what to expect', async () => {
+    push.pushStatus.mockReturnValue('granted');
+    push.testPush.mockResolvedValue({ local: true, server: true });
+    render(NotificationSettings);
+    expect(result()).toBeNull();
+    await fireEvent.click(testButton()!);
+    expect(push.testPush).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(result()).not.toBeNull());
+    const panel = result()!;
+    expect(panel.closest('[role="status"]')).not.toBeNull();
+    expect(panel).toHaveTextContent(
+      'שלחנו התראה לטלפון הזה עכשיו, ותוך כמה דקות תגיע עוד אחת מהשרת.'
+    );
+    expect(panel).toHaveTextContent('הראשונה לא הופיעה? כנראה שההתראות חסומות בטלפון');
+    expect(paths(panel)).toEqual([
+      ['באפליקציה:', 'לחיצה ארוכה על הסמל של HomeCare', '"פרטי האפליקציה"', '"התראות"', 'לאפשר'],
+      ['בכרום:', '⋮', '"הגדרות"', '"הגדרות אתר"', '"התראות"', 'eladcdr-del.github.io', 'לאפשר']
+    ]);
+    // the arrows are decoration; a screen reader hears commas between the steps
+    for (const arrow of panel.querySelectorAll('.path [aria-hidden="true"]')) {
+      expect(arrow.textContent?.trim()).toBe('←');
+    }
+    // addressed to her ("ספרי לנו"), from household.me
+    expect(panel).toHaveTextContent(
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספרי לנו ונבדוק.'
+    );
+  });
+
+  it('is there while allowed but not registered too, next to the retry', () => {
+    push.pushStatus.mockReturnValue('unregistered');
+    render(NotificationSettings);
+    expect(screen.getByRole('button', { name: 'הפעלה מחדש' })).toBeInTheDocument();
+    expect(testButton()).toBeInTheDocument();
+  });
+
+  it.each(['default', 'denied', 'unsupported', 'not-configured', 'demo'])(
+    'is not offered while notifications are %s',
+    (state) => {
+      push.pushStatus.mockReturnValue(state);
+      render(NotificationSettings);
+      expect(testButton()).toBeNull();
+    }
+  );
+
+  it('says so when the server could not be asked (no "tell us" line then)', async () => {
+    push.pushStatus.mockReturnValue('granted');
+    push.testPush.mockResolvedValue({ local: true, server: false });
+    render(NotificationSettings);
+    await fireEvent.click(testButton()!);
+    await vi.waitFor(() => expect(result()).not.toBeNull());
+    expect(result()).toHaveTextContent('את ההתראה מהשרת לא הצלחנו לבקש כרגע');
+    expect(result()).not.toHaveTextContent('ספרי לנו');
+  });
+
+  it('when the phone could not show one, goes straight to allowing notifications', async () => {
+    push.pushStatus.mockReturnValue('granted');
+    push.testPush.mockResolvedValue({ local: false, server: true });
+    render(NotificationSettings);
+    await fireEvent.click(testButton()!);
+    await vi.waitFor(() => expect(result()).not.toBeNull());
+    expect(result()).toHaveTextContent('לא הצלחנו להציג התראה בטלפון הזה עכשיו');
+    expect(result()).toHaveTextContent('כנראה שההתראות חסומות בטלפון. כך מאפשרים אותן:');
+    expect(result()).not.toHaveTextContent('הראשונה לא הופיעה');
+  });
+});
+
+describe('the installed app without its own permission', () => {
+  it('says it must be allowed here once, with "אישור התראות"', async () => {
+    push.pushStatus.mockReturnValue('default');
+    push.appPermissionMissing.mockReturnValue('ask');
+    push.enablePush.mockImplementation(async () => {
+      push.pushStatus.mockReturnValue('granted');
+      push.appPermissionMissing.mockReturnValue(null);
+      return 'enabled';
+    });
+    render(NotificationSettings);
+    expect(status()).toBe('כדי שההתראות יגיעו גם לאפליקציה המותקנת, צריך לאשר אותן כאן פעם אחת');
+    await fireEvent.click(screen.getByRole('button', { name: 'אישור התראות' }));
+    await vi.waitFor(() => expect(status()).toBe('ההתראות פעילות במכשיר הזה'));
+    expect(screen.getByRole('button', { name: 'בדיקת התראות' })).toBeInTheDocument();
   });
 });

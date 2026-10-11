@@ -4,8 +4,10 @@
 
 import { gendered } from '../gender';
 
-/** The site as Chrome lists it under its notification settings (isolated: an LTR run). */
-const SITE = '⁨eladcdr-del.github.io⁩';
+/** Allowing notifications again, as steps through the phone's settings (shown with ← between). */
+const APP_PATH = ['לחיצה ארוכה על הסמל של HomeCare', '"פרטי האפליקציה"', '"התראות"', 'לאפשר'];
+/** The site as Chrome lists it under Settings → Site settings → Notifications. */
+const CHROME_PATH = ['⋮', '"הגדרות"', '"הגדרות אתר"', '"התראות"', 'eladcdr-del.github.io', 'לאפשר'];
 
 export const notifications = {
   title: 'התראות',
@@ -62,13 +64,18 @@ export const notifications = {
     failed: 'לא הצלחנו לשלוח התראת בדיקה. כדאי לנסות שוב בעוד רגע.',
     /** The first one did not appear: notifications are blocked on the phone. */
     noFirst: 'הראשונה לא הופיעה? כנראה שההתראות חסומות בטלפון. כך מאפשרים אותן:',
-    stepsApp: 'באפליקציה: לחיצה ארוכה על הסמל של HomeCare ← "פרטי האפליקציה" ← "התראות" ← לאפשר',
-    stepsChrome: `בכרום: ⋮ ← "הגדרות" ← "הגדרות אתר" ← "התראות" ← ${SITE} ← לאפשר`,
+    /** The local one could not be shown at all. */
+    blocked: 'כנראה שההתראות חסומות בטלפון. כך מאפשרים אותן:',
+    /** In the installed app (Android's app info), and in Chrome (the site's permission). */
+    paths: [
+      { label: 'באפליקציה', steps: APP_PATH },
+      { label: 'בכרום', steps: CHROME_PATH }
+    ],
     /** The first appeared, the second did not: tell us (the notifier side needs a look). */
     noSecond: gendered(
-      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספרי לנו ונבדוק.',
-      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספר לנו ונבדוק.',
-      'הראשונה הופיעה והשנייה לא הגיעה תוך 10 דקות? ספרו לנו ונבדוק.'
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10\u00a0דקות? ספרי לנו ונבדוק.',
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10\u00a0דקות? ספר לנו ונבדוק.',
+      'הראשונה הופיעה והשנייה לא הגיעה תוך 10\u00a0דקות? ספרו לנו ונבדוק.'
     )
   },
 
@@ -81,7 +88,7 @@ export const notifications = {
     action: 'אישור התראות',
     /** Refused in the installed app: Android's app info is the way back. */
     blocked: 'ההתראות חסומות באפליקציה המותקנת. כך מאפשרים אותן:',
-    blockedSteps: 'לחיצה ארוכה על הסמל של HomeCare ← "פרטי האפליקציה" ← "התראות" ← לאפשר',
+    blockedSteps: APP_PATH,
     dismiss: 'לא עכשיו'
   }
 } as const;
