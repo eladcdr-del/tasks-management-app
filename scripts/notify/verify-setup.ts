@@ -14,6 +14,12 @@ import { firebaseConfig } from '../../firebase-config.ts';
 import { parseServiceAccount } from './guard.ts';
 
 const SITE_DOMAIN = 'eladcdr-del.github.io';
+/**
+ * Key prefixes of households/{hid}/sent, one per push kind (planner.ts): ev = requests, answers,
+ * completions and the jar; due (with late: overdue) = the morning summary; eve = the day before a
+ * deadline; wk = the Sunday nudge; soon = before the time; new = new tasks; test = "בדיקת התראות".
+ */
+const SENT_KINDS = ['ev', 'due', 'eve', 'wk', 'soon', 'late', 'new', 'test'] as const;
 const ROOT = new URL('../../', import.meta.url);
 
 type Level = 'ok' | 'fail' | 'warn';
@@ -328,18 +334,25 @@ async function main(): Promise<number> {
         console.log(
           `    events last 7 days (type/push): ${[...tally].map(([k, n]) => `${k}=${n}`).join(' ') || 'none'}; newest pushable ${age(lastPushable)}`
         );
+        // Each sent doc is one dedupe key, named {kind}:… (planner.ts); a summary push claims one
+        // per task it lists. prune:{date} is the daily prune marker, not a push, so it is left out.
         const sent = await hh.ref.collection('sent').get();
+        const perKind = new Map<string, number>(SENT_KINDS.map((k) => [k, 0]));
         let sentWeek = 0;
-        let testsWeek = 0;
         let lastSent: number | null = null;
         for (const s of sent.docs) {
+          const kind = s.id.split(':')[0] ?? '';
           const at = millis(s.data().at);
-          if (at !== null && at >= week) sentWeek += 1;
-          if (at !== null && at >= week && s.id.startsWith('test:')) testsWeek += 1;
-          if (at !== null && (lastSent === null || at > lastSent)) lastSent = at;
+          if (kind === 'prune' || at === null) continue;
+          if (lastSent === null || at > lastSent) lastSent = at;
+          if (at < week) continue;
+          sentWeek += 1;
+          const k = perKind.has(kind) ? kind : 'other';
+          perKind.set(k, (perKind.get(k) ?? 0) + 1);
         }
+        const kinds = [...perKind].filter(([k, n]) => k !== 'other' || n > 0);
         console.log(
-          `    pushes sent last 7 days: ${sentWeek} (test pushes ${testsWeek}); newest ${age(lastSent)}`
+          `    sent keys last 7 days: ${sentWeek} (${kinds.map(([k, n]) => `${k}=${n}`).join(' ')}); newest ${age(lastSent)}`
         );
       }
       report('ok', 'Notification health', 'details above');
