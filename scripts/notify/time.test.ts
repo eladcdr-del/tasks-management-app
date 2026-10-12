@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   addDaysISO,
   diffDays,
+  hhmmOf,
+  instantAt,
   inWindow,
   isBeforeLocal,
   isoDateOf,
   isoWeekOf,
   isQuietHours,
   isValidISO,
-  localParts
+  localParts,
+  minutesOf
 } from './time.ts';
 
 const at = (iso: string) => localParts(new Date(iso));
@@ -159,5 +162,22 @@ describe('date-only helpers', () => {
     expect(isValidISO('2026-02-29')).toBe(false);
     expect(isValidISO('2026-2-28')).toBe(false);
     expect(isValidISO(null)).toBe(false);
+  });
+});
+
+describe('wall-clock instants', () => {
+  it('instantAt finds the instant the local clock reads HH:mm, in summer and in winter time', () => {
+    expect(instantAt('2026-10-04', '08:00')).toBe(Date.parse('2026-10-04T08:00:00+03:00'));
+    expect(instantAt('2026-10-26', '08:00')).toBe(Date.parse('2026-10-26T08:00:00+02:00'));
+    expect(instantAt('2026-03-27', '08:00')).toBe(Date.parse('2026-03-27T08:00:00+03:00'));
+    expect(instantAt('2026-12-31', '23:59')).toBe(Date.parse('2026-12-31T23:59:00+02:00'));
+    expect(instantAt('2026-10-25', '00:00')).toBe(Date.parse('2026-10-25T00:00:00+03:00'));
+  });
+
+  it('minutesOf and hhmmOf are inverses', () => {
+    expect(minutesOf('07:30')).toBe(450);
+    expect(hhmmOf(450)).toBe('07:30');
+    expect(hhmmOf(0)).toBe('00:00');
+    expect(hhmmOf(1439)).toBe('23:59');
   });
 });

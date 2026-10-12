@@ -28,6 +28,7 @@ export const FALLBACK_ACTOR: Actor = { displayName: 'מישהו מהבית', add
 
 const VERBS = {
   asked: { f: 'ביקשה', m: 'ביקש', n: 'ביקש/ה' },
+  added: { f: 'הוסיפה', m: 'הוסיף', n: 'הוסיף/ה' },
   finished: { f: 'סיימה', m: 'סיים', n: 'סיים/ה' },
   took: { f: 'לקחה', m: 'לקח', n: 'לקח/ה' },
   cannot: { f: 'לא יכולה', m: 'לא יכול', n: 'לא יכול/ה' },
@@ -120,6 +121,25 @@ export function jarFilled(treat: string | null | undefined, mode?: JarMode): Cop
   };
 }
 
+/**
+ * "משימות חדשות", one task: "אמא הוסיפה משימה חדשה" + the title. A plain announcement: who added it,
+ * never who should do it.
+ */
+export function newTaskOne(actor: Actor, taskTitle: string | null): Copy {
+  return {
+    title: `${actorName(actor)} ${actorVerb('added', actor.addressAs)} משימה חדשה`,
+    body: cleanTitle(taskTitle)
+  };
+}
+
+/** "משימות חדשות", one burst of several: "אמא הוסיפה 3 משימות חדשות"; body lists the titles. */
+export function newTasksMany(actor: Actor, taskTitles: (string | null)[]): Copy {
+  return {
+    title: `${actorName(actor)} ${actorVerb('added', actor.addressAs)} ${taskTitles.length} משימות חדשות`,
+    body: titleList(taskTitles.map(cleanTitle))
+  };
+}
+
 interface ReminderTask {
   title: string;
   dueTime: string | null;
@@ -153,6 +173,46 @@ export function planOne(task: ReminderTask & { dueTime: string }): Copy {
 /** Due-day morning, coalesced: "3 משימות להיום". */
 export function dueMany(taskTitles: string[]): Copy {
   return { title: `${taskTitles.length} משימות להיום`, body: titleList(taskTitles) };
+}
+
+/** A missed due date `days` (1 or more) calendar days ago, in words. */
+function dueWas(days: number): string {
+  if (days === 1) return 'המועד היה אתמול';
+  if (days === 2) return 'המועד היה לפני יומיים';
+  return `המועד היה לפני ${days} ימים`;
+}
+
+/** Morning, one overdue task and nothing due today: "באיחור: {title}" + "המועד היה אתמול". */
+export function lateOne(task: Pick<ReminderTask, 'title'>, daysLate: number): Copy {
+  return { title: `באיחור: ${cleanTitle(task.title)}`, body: dueWas(daysLate) };
+}
+
+/** Morning, several overdue tasks and nothing due today: "3 משימות באיחור". */
+export function lateMany(taskTitles: string[]): Copy {
+  return { title: `${taskTitles.length} משימות באיחור`, body: titleList(taskTitles) };
+}
+
+/**
+ * Morning, tasks for today AND overdue ones in one summary: "2 משימות להיום ו-3 באיחור",
+ * "משימה אחת להיום ואחת באיחור". The body lists today's titles first, then the overdue ones.
+ */
+export function dueAndLate(todayTitles: string[], lateTitles: string[]): Copy {
+  const n = todayTitles.length;
+  const m = lateTitles.length;
+  const today = n === 1 ? 'משימה אחת להיום' : `${n} משימות להיום`;
+  const late = m === 1 ? 'ואחת באיחור' : `ו-${m} באיחור`;
+  return { title: `${today} ${late}`, body: titleList([...todayTitles, ...lateTitles]) };
+}
+
+/**
+ * "לפני השעה", half an hour before a task's time today: "ב-17:30: {title}" + "בעוד 25 דקות", then
+ * "מועד אחרון" for a hard deadline and "עוד לא נלקחה" when nobody holds it.
+ */
+export function soon(task: ReminderTask & { dueTime: string }, minutesLeft: number): Copy {
+  const details = [`בעוד ${minutesLeft} דקות`];
+  if (task.hardDeadline) details.push('מועד אחרון');
+  if (task.ownerId === null) details.push('עוד לא נלקחה');
+  return { title: `ב-${task.dueTime}: ${cleanTitle(task.title)}`, body: details.join(' · ') };
 }
 
 /** Evening before a hard deadline, one task: "מחר המועד האחרון: {title}". */

@@ -73,10 +73,32 @@ export function isoDateOf(instant: Date | number): string {
   return localParts(instant).iso;
 }
 
-function minutesOf(hhmm: string): number {
+/** Minutes since midnight of a wall-clock 'HH:mm'. */
+export function minutesOf(hhmm: string): number {
   const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
   if (!m) throw new RangeError(`Invalid HH:mm: ${hhmm}`);
   return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** 'HH:mm' of a minute of the day (0 … 1439). */
+export function hhmmOf(minutes: number): string {
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+}
+
+/**
+ * The instant (epoch ms) at which the Asia/Jerusalem wall clock reads `hhmm` on the day `iso`.
+ * Found by correcting a first guess with the clock's own reading, so DST needs no table. A time
+ * the DST change skips or repeats (around 02:00) has no single answer; the notifier never asks
+ * for one (it asks for 08:00).
+ */
+export function instantAt(iso: string, hhmm: string): number {
+  const wall = utcOf(iso) + minutesOf(hhmm) * 60_000;
+  let t = wall - 2 * 3_600_000; // Israel is UTC+2 or UTC+3
+  for (let i = 0; i < 2; i++) {
+    const p = localParts(t);
+    t += wall - (utcOf(p.iso) + (p.hour * 60 + p.minute) * 60_000);
+  }
+  return t;
 }
 
 /**
