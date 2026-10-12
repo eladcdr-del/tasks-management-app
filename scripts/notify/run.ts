@@ -249,9 +249,11 @@ async function runHousehold(
   const windows = activeWindows(parts);
 
   // Cheap first read: pending events. Members, devices and tasks are read only when something can
-  // actually go out now: pending events outside quiet hours, or 08:00-22:00 for the reminders. At
-  // 288 runs/day that is about 168 x (open tasks + 6) reads, well inside the Spark quota (50k/day).
-  // The other runs look only for fresh test requests: about one read per member.
+  // actually go out now: pending events outside quiet hours, or while a window that reads tasks is
+  // open, 07:30-22:00 (anyReminderWindow: "before the time" opens at 07:30; new tasks and the
+  // morning summary at 08:00). At 288 runs/day that is 174 runs x (open tasks + 6) reads, so about
+  // 9.7k reads a day with 50 open tasks, well inside the Spark quota (50k/day). The other 114 runs
+  // look only for fresh test requests: about one read per member.
   const events = await loadPendingEvents(db, hid);
   const eventsActionable = windows.events && events.length > 0;
   let result: Plan | null = null;
@@ -401,9 +403,11 @@ export function formatSummary(r: RunReport): string[] {
 export function formatPlan(r: RunReport): string[] {
   const lines = [`DRY RUN: nothing is written or sent`, `now: ${r.now} = ${localLabel(r.local)}`];
   const w = activeWindows(r.local);
+  const state = (open: boolean) => (open ? 'open' : 'closed');
   lines.push(
-    `windows: events ${w.events ? 'open' : 'closed (quiet hours)'} · due-day ${w.due ? 'open' : 'closed'} · ` +
-      `day-before ${w.eve ? 'open' : 'closed'} · weekly ${w.weekly ? 'open' : 'closed'}`
+    `windows: events ${w.events ? 'open' : 'closed (quiet hours)'} · new tasks ${state(w.newTasks)} · ` +
+      `before the time ${state(w.soon)} · due-day ${state(w.due)} · ` +
+      `day-before ${state(w.eve)} · weekly ${state(w.weekly)}`
   );
   for (const h of r.households) {
     lines.push('', `household ${h.householdId}`);

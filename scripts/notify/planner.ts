@@ -12,8 +12,11 @@
 //   declined    ev:{eventId}:{uid}
 //   completed   ev:{eventId}:{uid} for every coalesced event of the same actor
 //   jar_filled  ev:{eventId}:{uid}
+//   new_tasks   new:{taskId}:{uid} for every task of one creator's burst that the recipient gets
+//   soon        soon:{taskId}:{date}:{HHmm}:{uid}       (one task; a changed time re-arms it)
 //   due         due:{taskId}:{date}:{uid} for every task in the per-recipient summary, where date is
-//               the dueDate, or today's scheduledFor for a timed plan (no dueDate, a dueTime)
+//               the dueDate, or today's scheduledFor for a timed plan (no dueDate, a dueTime), and
+//               late:{taskId}:{today}:{uid} for every overdue task in the same morning summary
 //   eve         eve:{taskId}:{dueDate}:{uid} for every task in the per-recipient summary
 //   weekly      wk:{YYYY-Www}:{uid}
 //   test        test:{deviceId}:{testPushAt}                (one device; see planTests)
@@ -21,6 +24,12 @@
 // that grows inside its window (a second task due today appears at 09:00) is therefore re-sent as
 // the new, complete summary; it carries the same `tag`, so the phone replaces the earlier
 // notification instead of stacking a second one.
+//
+// New tasks are coalesced in time instead: one creator's additions form a burst while each comes
+// within NEW_SETTLE_MS of the one before, and a burst goes out once it has been quiet that long, so
+// a bulk add of 21 tasks is ONE push about 10-15 minutes after the last. A burst never grows after
+// it went out (a later task is more than NEW_SETTLE_MS after its last one, so it starts a new
+// burst), and later runs re-plan sent bursts only to find every key taken.
 
 import type {
   ActivityEvent,
@@ -34,12 +43,15 @@ import type {
 import {
   addDaysISO,
   diffDays,
+  hhmmOf,
+  instantAt,
   inWindow,
   isBeforeLocal,
   isQuietHours,
   isValidISO,
   isoDateOf,
   localParts,
+  minutesOf,
   type LocalParts
 } from './time.ts';
 import * as copy from './copy.ts';
@@ -51,6 +63,8 @@ export type SendType =
   | 'declined'
   | 'completed'
   | 'jar_filled'
+  | 'new_tasks'
+  | 'soon'
   | 'due'
   | 'eve'
   | 'weekly'
@@ -103,6 +117,14 @@ export interface Plan {
  */
 export const WINDOWS = {
   due: ['08:00', '22:00'],
+  /** New tasks: a settled burst goes out in the day; additions at night wait for 08:00. */
+  newTasks: ['08:00', '22:00'],
+  /**
+   * Before the time: each task has its own half hour [time − 30, time) inside this window, with no
+   * catch-up once its time has come. The window starts when quiet hours end, so a task at 07:45 is
+   * reminded at 07:30, one at 07:00 not at all.
+   */
+  soon: ['07:30', '22:00'],
   eve: ['18:00', '22:00'],
   /** Sundays only. */
   weekly: ['10:00', '22:00']
@@ -120,6 +142,22 @@ export const COMPLETED_STALE_MS = 24 * 3_600_000;
 export const REQUEST_STALE_MS = 7 * 86_400_000;
 export const STUCK_AGE_DAYS = 21;
 export const STUCK_SNOOZE_COUNT = 3;
+/**
+ * "משימות חדשות" launched here: tasks created before it are never announced, so the first deploy
+ * does not announce the backlog of tasks already in the house.
+ */
+export const NEW_TASKS_FROM_MS = Date.parse('2026-10-12T18:00:00+03:00');
+/** A task added longer ago than this is old news: never announced (also bounds the scan). */
+export const NEW_MAX_AGE_MS = 18 * 3_600_000;
+/**
+ * One creator's additions closer together than this are one burst, and a burst goes out once this
+ * long has passed since its last addition.
+ */
+export const NEW_SETTLE_MS = 10 * 60_000;
+/** "לפני השעה": how long before a task's time the reminder goes out. */
+export const SOON_BEFORE_MIN = 30;
+/** A due date missed by more days than this leaves the morning summary (the Sunday nudge remains). */
+export const OVERDUE_MAX_DAYS = 7;
 /** A test push request ("בדיקת התראות") older than this is not answered any more. */
 export const TEST_PUSH_WINDOW_MS = 2 * 3_600_000;
 /** A request this far in the future still counts (the phone's clock may run a little ahead). */
@@ -128,7 +166,10 @@ export const TEST_PUSH_SKEW_MS = 10 * 60_000;
 export interface ActiveWindows {
   /** Event-driven pushes may go out (outside quiet hours 22:00-07:30). */
   events: boolean;
+  /** The morning summary: due today, timed plans for today, and overdue tasks. */
   due: boolean;
+  newTasks: boolean;
+  soon: boolean;
   eve: boolean;
   weekly: boolean;
 }
@@ -137,14 +178,19 @@ export function activeWindows(parts: LocalParts): ActiveWindows {
   return {
     events: !isQuietHours(parts),
     due: inWindow(parts, ...WINDOWS.due),
+    newTasks: inWindow(parts, ...WINDOWS.newTasks),
+    soon: inWindow(parts, ...WINDOWS.soon),
     eve: inWindow(parts, ...WINDOWS.eve),
     weekly: parts.weekday === 0 && inWindow(parts, ...WINDOWS.weekly)
   };
 }
 
-/** True when a time-based reminder window is open (the run loads tasks/members only when needed). */
+/**
+ * True when a window that reads tasks is open (the run loads tasks/members only when needed):
+ * 07:30-22:00 every day, through `soon`.
+ */
 export function anyReminderWindow(w: ActiveWindows): boolean {
-  return w.due || w.eve || w.weekly;
+  return w.due || w.newTasks || w.soon || w.eve || w.weekly;
 }
 
 // ── Stuck (mirror of src/lib/domain/age.ts, Blueprint §3 amendments) ──────────────────────────────
@@ -191,10 +237,12 @@ const TYPE_ORDER: Record<SendType, number> = {
   declined: 2,
   completed: 3,
   jar_filled: 4,
-  due: 5,
-  eve: 6,
-  weekly: 7,
-  test: 8
+  new_tasks: 5,
+  soon: 6,
+  due: 7,
+  eve: 8,
+  weekly: 9,
+  test: 10
 };
 
 const byCreated = (a: ActivityEvent, b: ActivityEvent): number =>
@@ -252,6 +300,57 @@ export function planTests(
   return sends.sort(bySend);
 }
 
+// ── New tasks ("משימות חדשות") ────────────────────────────────────────────────────────────────────
+
+/**
+ * When a task counts as added: its createdAt, except that one added at night (22:00-08:00 local)
+ * counts as added at the next 08:00, so the night's additions settle into one morning burst.
+ */
+export function newTaskTime(createdAt: Millis): Millis {
+  const p = localParts(createdAt);
+  const [from, to] = WINDOWS.newTasks;
+  if (inWindow(p, from, to)) return createdAt;
+  const day = p.hour * 60 + p.minute >= minutesOf(to) ? addDaysISO(p.iso, 1) : p.iso;
+  return instantAt(day, from);
+}
+
+export interface NewTasksBurst {
+  /** Who added them (the tasks' createdBy). */
+  creatorId: string;
+  /** In the order they count as added. */
+  tasks: Task[];
+  /** When the last one counts as added (newTaskTime). */
+  last: Millis;
+}
+
+/**
+ * One creator's recent additions, as bursts. A candidate is an open task a person added: not the
+ * next instance a recurring task's completion creates (it has a seriesId; the completion push is
+ * the news there), at or after NEW_TASKS_FROM_MS and less than NEW_MAX_AGE_MS ago. In the order
+ * they count as added (newTaskTime), a gap of more than NEW_SETTLE_MS starts a new burst.
+ */
+export function newTaskBursts(tasks: Task[], nowMs: number): NewTasksBurst[] {
+  const since = Math.max(NEW_TASKS_FROM_MS, nowMs - NEW_MAX_AGE_MS);
+  const added = tasks
+    .filter((t) => t.status === 'open' && t.seriesId === null && t.createdAt >= since)
+    .map((t) => ({ t, at: newTaskTime(t.createdAt) }))
+    .sort((a, b) => a.at - b.at || a.t.createdAt - b.t.createdAt || byId(a.t, b.t));
+  const latest = new Map<string, NewTasksBurst>();
+  const bursts: NewTasksBurst[] = [];
+  for (const { t, at } of added) {
+    const burst = latest.get(t.createdBy);
+    if (burst && at - burst.last <= NEW_SETTLE_MS) {
+      burst.tasks.push(t);
+      burst.last = at;
+      continue;
+    }
+    const next = { creatorId: t.createdBy, tasks: [t], last: at };
+    latest.set(t.createdBy, next);
+    bursts.push(next);
+  }
+  return bursts;
+}
+
 export function plan(input: PlanInput): Plan {
   const parts = localParts(input.now);
   const nowMs = input.now.getTime();
@@ -267,6 +366,7 @@ export function plan(input: PlanInput): Plan {
     return m !== undefined && m.notify[pref] === true && hasDevices(uid);
   };
   const actorOf = (uid: string): copy.Actor => memberByUid.get(uid) ?? copy.FALLBACK_ACTOR;
+  const titles = (tasks: Task[]): string[] => tasks.map((t) => t.title);
 
   const openTasks = input.tasks.filter((t) => t.status === 'open').sort(byId);
   const openById = new Map(openTasks.map((t) => [t.id, t]));
@@ -422,6 +522,34 @@ export function plan(input: PlanInput): Plan {
     }
   }
 
+  // ── New tasks: each settled burst goes to every other member with newTasks on, one push per
+  //    burst. Left out for them: a task that is theirs or asked of them (the request push covers
+  //    it), and one they have acted on themselves (took, released, declined, edited: they know it).
+  if (windows.newTasks) {
+    for (const burst of newTaskBursts(openTasks, nowMs)) {
+      const first = burst.tasks[0];
+      if (!first || nowMs - burst.last < NEW_SETTLE_MS) continue; // still settling
+      const actor = actorOf(burst.creatorId);
+      for (const m of members) {
+        if (m.uid === burst.creatorId || !canReceive(m.uid, 'newTasks')) continue;
+        const news = burst.tasks.filter(
+          (t) => t.ownerId !== m.uid && t.requestedOf !== m.uid && t.updatedBy !== m.uid
+        );
+        if (news.length === 0) continue;
+        const only = news.length === 1 ? news[0] : undefined;
+        sends.push({
+          keys: news.map((t) => `new:${t.id}:${m.uid}`),
+          uid: m.uid,
+          type: 'new_tasks',
+          ...(only ? copy.newTaskOne(actor, only.title) : copy.newTasksMany(actor, titles(news))),
+          url: only ? copy.taskUrl(only.id) : copy.homeUrl(),
+          tag: `new:${burst.creatorId}:${first.id}`,
+          eventIds: []
+        });
+      }
+    }
+  }
+
   // ── Time-based reminders: owner, or every member when unassigned; coalesced per recipient.
   /** The owner, or null when nobody owns it or the owner left the household (no member doc). */
   const ownerOf = (t: Task): string | null =>
@@ -430,70 +558,140 @@ export function plan(input: PlanInput): Plan {
     const owner = ownerOf(t);
     return owner !== null ? [owner] : members.map((m) => m.uid);
   };
+  /** The task as the copy shows it: a former member's task reads as unassigned. */
+  const asShown = <T extends Task>(t: T): T => ({ ...t, ownerId: ownerOf(t) });
   /** A soft plan for today with a time and no due date ("היום ב-17:30"). Never a week plan. */
   const isTimedPlanToday = (t: Task): t is Task & { dueTime: string } =>
     t.dueDate === null && t.dueTime !== null && t.scheduledFor === parts.iso && !t.weekPlan;
-
-  const reminderSummaries = (tasks: Task[], kind: 'due' | 'eve', date: string): void => {
+  const byTime = (a: Task, b: Task): number =>
+    (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') ||
+    a.title.localeCompare(b.title, 'he') ||
+    byId(a, b);
+  /** Each recipient of `tasks` who has `pref` on, with their tasks in `order`. */
+  const perRecipient = (
+    tasks: Task[],
+    pref: keyof NotifyPrefs,
+    order: (a: Task, b: Task) => number
+  ): Map<string, Task[]> => {
     const perUid = new Map<string, Task[]>();
     for (const t of tasks) {
       for (const uid of recipientsOf(t)) {
-        if (!canReceive(uid, 'reminders')) continue;
-        perUid.set(uid, [...(perUid.get(uid) ?? []), t]);
+        if (canReceive(uid, pref)) perUid.set(uid, [...(perUid.get(uid) ?? []), t]);
       }
     }
-    for (const [uid, list] of perUid) {
-      list.sort(
-        (a, b) =>
-          (a.dueTime ?? '99:99').localeCompare(b.dueTime ?? '99:99') ||
-          a.title.localeCompare(b.title, 'he') ||
-          byId(a, b)
-      );
-      const first = list.length === 1 ? list[0] : undefined;
-      const only = first && { ...first, ownerId: ownerOf(first) }; // a former member's: unassigned
-      const text = only
-        ? kind === 'eve'
-          ? copy.eveOne(only)
-          : isTimedPlanToday(only)
-            ? copy.planOne(only)
-            : copy.dueOne(only)
-        : kind === 'due'
-          ? copy.dueMany(list.map((t) => t.title))
-          : copy.eveMany(list.map((t) => t.title));
+    for (const list of perUid.values()) list.sort(order);
+    return perUid;
+  };
+
+  // ── Before the time: in the half hour before a task's time today, one push per task and
+  //    recipient with `soon` on, except to whoever added it themselves after that half hour began
+  //    (they have just written it). The key carries the time, so a changed time re-arms it.
+  if (windows.soon) {
+    const nowMin = parts.hour * 60 + parts.minute;
+    for (const t of openTasks) {
+      const time = t.dueDate === parts.iso || isTimedPlanToday(t) ? t.dueTime : null;
+      if (time === null) continue;
+      const at = minutesOf(time);
+      const left = at - nowMin;
+      if (left <= 0 || left > SOON_BEFORE_MIN) continue;
+      const from = hhmmOf(at - SOON_BEFORE_MIN);
+      const shown = {
+        ...asShown(t),
+        dueTime: time,
+        hardDeadline: t.hardDeadline && t.dueDate === parts.iso
+      };
+      for (const uid of recipientsOf(t)) {
+        if (!canReceive(uid, 'soon')) continue;
+        if (t.createdBy === uid && !isBeforeLocal(t.createdAt, parts.iso, from)) continue;
+        sends.push({
+          keys: [`soon:${t.id}:${parts.iso}:${time.replace(':', '')}:${uid}`],
+          uid,
+          type: 'soon',
+          ...copy.soon(shown, Math.max(5, Math.round(left / 5) * 5)),
+          url: copy.taskUrl(t.id),
+          tag: `soon:${t.id}`,
+          eventIds: []
+        });
+      }
+    }
+  }
+
+  // ── The morning summary, one push per recipient: what is due today (a due date today, a
+  //    deadline even on a week-planned task, or a timed plan for today) under `reminders`, and
+  //    what is overdue under `overdue`. Overdue = a due date 1 to 7 days ago, unless the task was
+  //    re-planned to a later day (scheduledFor after today); a soft plan alone is never overdue.
+  //    After 12:00 only tasks that existed by then: a catch-up for a morning with no run.
+  if (windows.due) {
+    const joining = inWindow(parts, WINDOWS.due[0], DUE_JOIN_UNTIL);
+    const joins = (t: Task): boolean =>
+      joining || isBeforeLocal(t.createdAt, parts.iso, DUE_JOIN_UNTIL);
+    const oldest = addDaysISO(parts.iso, -OVERDUE_MAX_DAYS);
+    const isOverdue = (t: Task): t is Task & { dueDate: string } =>
+      t.dueDate !== null &&
+      t.dueDate >= oldest &&
+      t.dueDate < parts.iso &&
+      !(t.scheduledFor !== null && t.scheduledFor > parts.iso);
+    const today = perRecipient(
+      openTasks.filter((t) => (t.dueDate === parts.iso || isTimedPlanToday(t)) && joins(t)),
+      'reminders',
+      byTime
+    );
+    const late = perRecipient(
+      openTasks.filter((t) => isOverdue(t) && joins(t)),
+      'overdue',
+      (a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? '') || byTime(a, b)
+    );
+    for (const uid of new Set([...today.keys(), ...late.keys()])) {
+      const due = today.get(uid) ?? [];
+      const missed = late.get(uid) ?? [];
+      const all = [...due, ...missed];
+      const only = all.length === 1 && all[0] ? asShown(all[0]) : undefined;
+      const text =
+        missed.length === 0
+          ? only
+            ? isTimedPlanToday(only)
+              ? copy.planOne(only)
+              : copy.dueOne(only)
+            : copy.dueMany(titles(due))
+          : due.length === 0
+            ? only && isOverdue(only)
+              ? copy.lateOne(only, diffDays(parts.iso, only.dueDate))
+              : copy.lateMany(titles(missed))
+            : copy.dueAndLate(titles(due), titles(missed));
       sends.push({
-        keys: list.map((t) => `${kind}:${t.id}:${t.dueDate ?? t.scheduledFor}:${uid}`),
+        keys: [
+          ...due.map((t) => `due:${t.id}:${t.dueDate ?? t.scheduledFor}:${uid}`),
+          ...missed.map((t) => `late:${t.id}:${parts.iso}:${uid}`)
+        ],
         uid,
-        type: kind,
+        type: 'due',
         ...text,
         url: only ? copy.taskUrl(only.id) : copy.homeUrl(),
-        tag: `${kind}:${date}`,
+        tag: `due:${parts.iso}`,
         eventIds: []
       });
     }
-  };
-
-  if (windows.due) {
-    // A due date today (a deadline: reminded even on a week-planned task), or a timed plan for today.
-    // After 12:00 only tasks that existed by then: a catch-up for a morning with no run.
-    const joining = inWindow(parts, WINDOWS.due[0], DUE_JOIN_UNTIL);
-    reminderSummaries(
-      openTasks.filter(
-        (t) =>
-          (t.dueDate === parts.iso || isTimedPlanToday(t)) &&
-          (joining || isBeforeLocal(t.createdAt, parts.iso, DUE_JOIN_UNTIL))
-      ),
-      'due',
-      parts.iso
-    );
   }
 
   if (windows.eve) {
     const tomorrow = addDaysISO(parts.iso, 1);
-    reminderSummaries(
+    const due = perRecipient(
       openTasks.filter((t) => t.hardDeadline && t.dueDate === tomorrow),
-      'eve',
-      tomorrow
+      'reminders',
+      byTime
     );
+    for (const [uid, list] of due) {
+      const only = list.length === 1 && list[0] ? asShown(list[0]) : undefined;
+      sends.push({
+        keys: list.map((t) => `eve:${t.id}:${t.dueDate}:${uid}`),
+        uid,
+        type: 'eve',
+        ...(only ? copy.eveOne(only) : copy.eveMany(titles(list))),
+        url: only ? copy.taskUrl(only.id) : copy.homeUrl(),
+        tag: `eve:${tomorrow}`,
+        eventIds: []
+      });
+    }
   }
 
   if (windows.weekly) {

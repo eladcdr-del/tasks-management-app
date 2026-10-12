@@ -514,6 +514,161 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
     });
   });
 
+  describe('new tasks, before the time, overdue', () => {
+    // A week after "משימות חדשות" launched: Tuesday 20 Oct 2026 (UTC+3).
+    const TUE = (hhmm: string) => new Date(`2026-10-20T${hhmm}:00+03:00`);
+    /** A task document shaped as the app writes it (createdAt a server Timestamp). */
+    const addTask = (
+      id: string,
+      fields: { title: string; createdBy: string; createdAt: Date } & Partial<{
+        ownerId: string | null;
+        dueDate: string | null;
+        dueTime: string | null;
+      }>
+    ) =>
+      db.doc(`households/${HID}/tasks/${id}`).set({
+        title: fields.title,
+        notes: '',
+        categoryId: null,
+        priority: 'normal',
+        ownerId: fields.ownerId ?? null,
+        requestedBy: null,
+        requestedAt: null,
+        createdBy: fields.createdBy,
+        createdAt: Timestamp.fromDate(fields.createdAt),
+        updatedBy: fields.createdBy,
+        updatedAt: Timestamp.fromDate(fields.createdAt),
+        scheduledFor: null,
+        weekPlan: false,
+        dueDate: fields.dueDate ?? null,
+        dueTime: fields.dueTime ?? null,
+        hardDeadline: false,
+        recurrence: null,
+        seriesId: null,
+        status: 'open',
+        snoozeCount: 0,
+        lastSnoozedAt: null,
+        completedAt: null,
+        completedBy: null,
+        completion: null
+      });
+    const ofType = (calls: FakeSender['calls'], type: string) =>
+      calls.filter((c) => c.msg.type === type);
+
+    it('three tasks added by דני are one push to מיכל once they settle, and never again', async () => {
+      await seedDemo(db, TUE('09:00'));
+      const sender = new FakeSender();
+      await run({ db, sender, now: TUE('09:00') }); // the seeded pushes; nothing new yet
+      expect(ofType(sender.calls, 'new_tasks')).toEqual([]);
+
+      const titles = ['לקנות נורות', 'לתקן מדף', 'להזמין טכנאי'];
+      for (const [i, title] of titles.entries()) {
+        await addTask(`new-${i}`, { title, createdBy: DEMO.dani, createdAt: TUE(`10:0${i}`) });
+      }
+      await run({ db, sender, now: TUE('10:05') }); // still settling
+      expect(ofType(sender.calls, 'new_tasks')).toEqual([]);
+
+      const r = await run({ db, sender, now: TUE('10:12') });
+      expect(r.errors).toEqual([]);
+      expect(ofType(sender.calls, 'new_tasks')).toEqual([
+        {
+          tokens: [tok.michalOld.token, tok.michalPhone.token].sort(),
+          msg: {
+            type: 'new_tasks',
+            title: 'דני הוסיף 3 משימות חדשות',
+            body: 'לקנות נורות, לתקן מדף, להזמין טכנאי',
+            url: 'https://eladcdr-del.github.io/tasks-management-app/#/',
+            tag: `new:${DEMO.dani}:new-0`
+          }
+        }
+      ]);
+      expect((await sentKeys()).filter((k) => k.startsWith('new:'))).toEqual([
+        `new:new-0:${DEMO.michal}`,
+        `new:new-1:${DEMO.michal}`,
+        `new:new-2:${DEMO.michal}`
+      ]);
+
+      // the next runs plan it again and find every key taken
+      const r2 = await run({ db, sender, now: TUE('10:17') });
+      expect(r2.households[0]?.outcomes.find((o) => o.send.type === 'new_tasks')?.status).toBe(
+        'duplicate'
+      );
+      await run({ db, sender, now: TUE('13:00') });
+      expect(ofType(sender.calls, 'new_tasks')).toHaveLength(1);
+    });
+
+    it('half an hour before a task’s time: one push to its owner (an old member doc), re-armed by a new time', async () => {
+      await seedDemo(db, TUE('17:00'));
+      // דני's member doc has only the four original switches: `soon` reads as on
+      await addTask('t-call', {
+        title: 'להתקשר לבנק',
+        createdBy: DEMO.michal,
+        createdAt: TUE('09:00'),
+        ownerId: DEMO.dani,
+        dueDate: '2026-10-20',
+        dueTime: '17:30'
+      });
+      const sender = new FakeSender();
+      await run({ db, sender, now: TUE('16:59') });
+      expect(ofType(sender.calls, 'soon')).toEqual([]);
+
+      const r = await run({ db, sender, now: TUE('17:02') });
+      expect(r.errors).toEqual([]);
+      expect(ofType(sender.calls, 'soon')).toEqual([
+        {
+          tokens: [tok.daniPhone.token],
+          msg: {
+            type: 'soon',
+            title: 'ב-17:30: להתקשר לבנק',
+            body: 'בעוד 30 דקות',
+            url: 'https://eladcdr-del.github.io/tasks-management-app/#/task/t-call',
+            tag: 'soon:t-call'
+          }
+        }
+      ]);
+      await run({ db, sender, now: TUE('17:07') });
+      await run({ db, sender, now: TUE('17:29') });
+      expect(ofType(sender.calls, 'soon')).toHaveLength(1);
+      expect((await sentKeys()).filter((k) => k.startsWith('soon:'))).toEqual([
+        `soon:t-call:2026-10-20:1730:${DEMO.dani}`
+      ]);
+
+      // moved to 18:00: reminded again at the new time
+      await db.doc(`households/${HID}/tasks/t-call`).update({ dueTime: '18:00' });
+      await run({ db, sender, now: TUE('17:41') });
+      expect(ofType(sender.calls, 'soon').map((c) => [c.msg.title, c.msg.body])).toEqual([
+        ['ב-17:30: להתקשר לבנק', 'בעוד 30 דקות'],
+        ['ב-18:00: להתקשר לבנק', 'בעוד 20 דקות']
+      ]);
+    });
+
+    it('an overdue task joins the morning summary as one push, sent once', async () => {
+      await seedDemo(db, NOW);
+      await addTask('t-gift', {
+        title: 'לקנות מתנה',
+        createdBy: DEMO.michal,
+        createdAt: new Date(NOW.getTime() - 3 * DAY),
+        ownerId: DEMO.michal,
+        dueDate: '2026-10-02'
+      });
+      const sender = new FakeSender();
+      await run({ db, sender, now: NOW });
+      const due = ofType(sender.calls, 'due').filter((c) =>
+        c.tokens.includes(tok.michalPhone.token)
+      );
+      expect(due.map((c) => [c.msg.title, c.msg.body, c.msg.tag])).toEqual([
+        [
+          '2 משימות להיום ואחת באיחור',
+          'לקבוע תור לרופא שיניים, לשלם ארנונה, לקנות מתנה',
+          'due:2026-10-04'
+        ]
+      ]);
+      expect(await sentKeys()).toContain(`late:t-gift:2026-10-04:${DEMO.michal}`);
+      await run({ db, sender, now: later(5) });
+      expect(ofType(sender.calls, 'due')).toHaveLength(2); // Michal's and Dani's, once each
+    });
+  });
+
   it('--dry plans without writing or sending', async () => {
     await seedDemo(db, NOW);
     const lines: string[] = [];

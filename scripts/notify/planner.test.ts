@@ -3,13 +3,16 @@ import {
   activeWindows,
   ageStart,
   isStuck,
+  NEW_TASKS_FROM_MS,
+  newTaskBursts,
+  newTaskTime,
   plan,
   planTests,
   TEST_PUSH_WINDOW_MS,
   type PlanInput,
   type Send
 } from './planner.ts';
-import { isQuietHours } from './time.ts';
+import { addDaysISO, isQuietHours } from './time.ts';
 import type { ActivityEvent, AddressAs, DeviceToken, Member, NotifyPrefs, Task } from './types.ts';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────────────────────────
@@ -1197,6 +1200,534 @@ describe('weekly nudge (Sunday 10:00–22:00)', () => {
   });
 });
 
+// ── new tasks ─────────────────────────────────────────────────────────────────────────────────────
+
+describe('new tasks ("משימות חדשות")', () => {
+  // A week after the kind launched (NEW_TASKS_FROM_MS): Monday evening and Tuesday 20 Oct (UTC+3).
+  const MON19 = (hhmm: string) => new Date(`2026-10-19T${hhmm}:00+03:00`);
+  const TUE = (hhmm: string) => new Date(`2026-10-20T${hhmm}:00+03:00`);
+  const at = (hhmm: string, seconds = 0) => TUE(hhmm).getTime() + seconds * 1000;
+  /** Added by מיכל at `createdAt`, unassigned and untouched since. */
+  const added = (id: string, createdAt: number, fields: Partial<Task> = {}) =>
+    task(id, {
+      title: `משימה ${id}`,
+      createdBy: 'u-michal',
+      createdAt,
+      updatedBy: fields.createdBy ?? 'u-michal',
+      updatedAt: createdAt,
+      ...fields
+    });
+  const news = (now: Date, tasks: Task[], over: Partial<PlanInput> = {}) =>
+    ofType(plan(input({ now, tasks, ...over })).sends, 'new_tasks');
+
+  it('a bulk add of 21 is ONE push, about 10 minutes after the last one', () => {
+    const bulk = Array.from({ length: 21 }, (_, i) =>
+      added(`b${String(i + 1).padStart(2, '0')}`, at('10:00', i * 5), {
+        title: `פריט ${i + 1}`
+      })
+    );
+    // the last one was added at 10:01:40
+    expect(news(TUE('10:05'), bulk)).toEqual([]);
+    expect(news(TUE('10:11'), bulk)).toEqual([]);
+    const out = news(TUE('10:12'), bulk);
+    expect(out).toEqual([
+      {
+        keys: bulk.map((t) => `new:${t.id}:u-dani`),
+        uid: 'u-dani',
+        type: 'new_tasks',
+        title: 'מיכל הוסיפה 21 משימות חדשות',
+        body: 'פריט 1, פריט 2, פריט 3 ועוד 18',
+        url: `${APP}#/`,
+        tag: 'new:u-michal:b01',
+        eventIds: []
+      }
+    ]);
+    // later runs plan the very same send: every key is taken, so the I/O layer sends nothing more
+    expect(news(TUE('10:17'), bulk)).toEqual(out);
+  });
+
+  it('one task: who added it, the title, and a link to the task', () => {
+    const one = added('t-oil', at('09:00'), { title: '  להחליף   שמן ברכב ' });
+    expect(news(TUE('09:10'), [one])).toEqual([
+      {
+        keys: ['new:t-oil:u-dani'],
+        uid: 'u-dani',
+        type: 'new_tasks',
+        title: 'מיכל הוסיפה משימה חדשה',
+        body: 'להחליף שמן ברכב',
+        url: `${APP}#/task/t-oil`,
+        tag: 'new:u-michal:t-oil',
+        eventIds: []
+      }
+    ]);
+  });
+
+  it('in the creator’s own form, and never to the creator', () => {
+    const members = [MICHAL, DANI, NOAM];
+    const byDani = added('t1', at('09:00'), { createdBy: 'u-dani' });
+    expect(news(TUE('09:10'), [byDani], { members }).map((s) => [s.uid, s.title])).toEqual([
+      ['u-michal', 'דני הוסיף משימה חדשה'],
+      ['u-noam', 'דני הוסיף משימה חדשה']
+    ]);
+    const byNoam = added('t2', at('09:00'), { createdBy: 'u-noam' });
+    expect(news(TUE('09:10'), [byNoam], { members }).map((s) => [s.uid, s.title])).toEqual([
+      ['u-dani', 'נועם הוסיף/ה משימה חדשה'],
+      ['u-michal', 'נועם הוסיף/ה משימה חדשה']
+    ]);
+  });
+
+  it('waits until 10 minutes have passed since the last addition', () => {
+    const tasks = [added('a', at('10:00')), added('b', at('10:06'))];
+    expect(news(TUE('10:15'), tasks)).toEqual([]);
+    expect(news(TUE('10:16'), tasks).map((s) => s.keys)).toEqual([
+      ['new:a:u-dani', 'new:b:u-dani']
+    ]);
+  });
+
+  it('a gap of more than 10 minutes starts a second burst (exactly 10 does not)', () => {
+    const first = [added('a', at('10:00')), added('b', at('10:05'))];
+    const later = added('c', at('10:16')); // 11 minutes after b
+    expect(news(TUE('10:15'), first).map((s) => [s.title, s.tag])).toEqual([
+      ['מיכל הוסיפה 2 משימות חדשות', 'new:u-michal:a']
+    ]);
+    const both = news(TUE('10:26'), [...first, later]);
+    expect(both.map((s) => [s.keys, s.title, s.tag])).toEqual([
+      [['new:a:u-dani', 'new:b:u-dani'], 'מיכל הוסיפה 2 משימות חדשות', 'new:u-michal:a'],
+      [['new:c:u-dani'], 'מיכל הוסיפה משימה חדשה', 'new:u-michal:c']
+    ]);
+    const tenApart = [added('a', at('10:00')), added('b', at('10:10'))];
+    expect(news(TUE('10:20'), tenApart).map((s) => s.keys)).toEqual([
+      ['new:a:u-dani', 'new:b:u-dani']
+    ]);
+  });
+
+  it('each creator has their own bursts', () => {
+    const members = [MICHAL, DANI, NOAM];
+    const tasks = [
+      added('m1', at('10:00')),
+      added('d1', at('10:02'), { createdBy: 'u-dani' }),
+      added('m2', at('10:04'))
+    ];
+    const out = news(TUE('10:20'), tasks, { members });
+    expect(out.map((s) => [s.uid, s.keys])).toEqual([
+      ['u-dani', ['new:m1:u-dani', 'new:m2:u-dani']],
+      ['u-michal', ['new:d1:u-michal']],
+      ['u-noam', ['new:d1:u-noam']],
+      ['u-noam', ['new:m1:u-noam', 'new:m2:u-noam']]
+    ]);
+  });
+
+  it('leaves out what is theirs, asked of them, or already touched by them', () => {
+    const members = [MICHAL, DANI, NOAM];
+    const tasks = [
+      added('t-open', at('10:00')),
+      added('t-his', at('10:01'), { ownerId: 'u-dani' }),
+      added('t-asked', at('10:02'), { requestedOf: 'u-dani', requestedBy: 'u-michal' }),
+      added('t-released', at('10:03'), { updatedBy: 'u-dani', updatedAt: at('10:05') })
+    ];
+    const out = news(TUE('10:20'), tasks, { members });
+    expect(out.map((s) => [s.uid, s.keys, s.title])).toEqual([
+      ['u-dani', ['new:t-open:u-dani'], 'מיכל הוסיפה משימה חדשה'],
+      [
+        'u-noam',
+        ['new:t-open:u-noam', 'new:t-his:u-noam', 'new:t-asked:u-noam', 'new:t-released:u-noam'],
+        'מיכל הוסיפה 4 משימות חדשות'
+      ]
+    ]);
+    // nothing at all when every task of the burst is his
+    expect(news(TUE('10:20'), [tasks[1]!, tasks[2]!])).toEqual([]);
+  });
+
+  it('a request is announced by the request push only, exactly as before', () => {
+    const parcel = added('t-parcel', at('10:00'), {
+      title: 'לאסוף חבילה',
+      requestedOf: 'u-dani',
+      requestedBy: 'u-michal'
+    });
+    const asked = ev('e-req', 'requested', 'u-michal', at('10:00'), {
+      taskId: 't-parcel',
+      taskTitle: 'לאסוף חבילה',
+      targetId: 'u-dani'
+    });
+    const out = plan(input({ now: TUE('10:20'), tasks: [parcel], events: [asked] }));
+    expect(out.sends.map((s) => [s.uid, s.type, s.title])).toEqual([
+      ['u-dani', 'requested', 'מיכל ביקשה ממך משימה']
+    ]);
+    expect(out.eventMarks).toEqual([{ eventId: 'e-req', push: 'sent' }]);
+  });
+
+  it('additions overnight count as made at 08:00: one push at about 08:10', () => {
+    const night = [
+      added('n1', MON19('22:30').getTime()),
+      added('n2', at('01:00')),
+      added('n3', at('07:55'))
+    ];
+    for (const hhmm of ['22:45', '23:30', '07:30', '08:00', '08:09']) {
+      const now = hhmm >= '22:00' ? MON19(hhmm) : TUE(hhmm);
+      expect(news(now, night)).toEqual([]);
+    }
+    expect(news(TUE('08:10'), night).map((s) => [s.keys, s.title])).toEqual([
+      [['new:n1:u-dani', 'new:n2:u-dani', 'new:n3:u-dani'], 'מיכל הוסיפה 3 משימות חדשות']
+    ]);
+    // one added at 08:05 still joins the same morning burst (and moves it to 08:15)
+    const more = [...night, added('n4', at('08:05'))];
+    expect(news(TUE('08:14'), more)).toEqual([]);
+    expect(news(TUE('08:15'), more).map((s) => s.keys.length)).toEqual([4]);
+  });
+
+  it('a burst that settles in quiet hours goes out at 08:00', () => {
+    const late = [added('l1', MON19('21:50').getTime())];
+    expect(news(MON19('21:59'), late)).toEqual([]);
+    expect(news(MON19('22:00'), late)).toEqual([]);
+    expect(news(TUE('07:59'), late)).toEqual([]);
+    expect(news(TUE('08:00'), late).map((s) => s.keys)).toEqual([['new:l1:u-dani']]);
+  });
+
+  it('nothing added more than 18 hours ago, or before the kind launched', () => {
+    const old = [
+      added('h18', MON19('14:00').getTime()), // exactly 18 hours before Tuesday 08:00
+      added('h18-1', MON19('13:59').getTime())
+    ];
+    expect(news(TUE('08:00'), old).map((s) => s.keys)).toEqual([['new:h18:u-dani']]);
+    const launch = [
+      added('before', NEW_TASKS_FROM_MS - MIN),
+      added('after', NEW_TASKS_FROM_MS + MIN)
+    ];
+    expect(news(new Date(NEW_TASKS_FROM_MS + 15 * MIN), launch).map((s) => s.keys)).toEqual([
+      ['new:after:u-dani']
+    ]);
+  });
+
+  it('nothing for a recurring task’s next instance, or a task already done', () => {
+    const tasks = [
+      added('t-next', at('10:00'), { seriesId: 't-first' }),
+      added('t-done', at('10:00'), { status: 'done' })
+    ];
+    expect(news(TUE('10:20'), tasks)).toEqual([]);
+  });
+
+  it('respects newTasks=off and members without a device', () => {
+    const tasks = [added('t1', at('10:00'))];
+    const off = [MICHAL, member('u-dani', 'דני', 'm', { newTasks: false }), NOAM];
+    expect(news(TUE('10:20'), tasks, { members: off }).map((s) => s.uid)).toEqual(['u-noam']);
+    const members = [MICHAL, DANI, NOAM];
+    const devicesByUid = { 'u-noam': [device('u-noam')] };
+    expect(news(TUE('10:20'), tasks, { members, devicesByUid }).map((s) => s.uid)).toEqual([
+      'u-noam'
+    ]);
+  });
+
+  it('a creator who has left the household is "מישהו מהבית", to every current member', () => {
+    const orphan = added('t1', at('10:00'), { createdBy: 'u-gone', updatedBy: 'u-gone' });
+    expect(news(TUE('10:20'), [orphan]).map((s) => [s.uid, s.title, s.tag])).toEqual([
+      ['u-dani', 'מישהו מהבית הוסיף משימה חדשה', 'new:u-gone:t1'],
+      ['u-michal', 'מישהו מהבית הוסיף משימה חדשה', 'new:u-gone:t1']
+    ]);
+  });
+
+  it('newTaskBursts: groups per creator by the time a task counts as added', () => {
+    expect(newTaskTime(at('10:00'))).toBe(at('10:00'));
+    expect(newTaskTime(at('21:59'))).toBe(at('21:59'));
+    expect(newTaskTime(MON19('22:00').getTime())).toBe(at('08:00'));
+    expect(newTaskTime(at('07:59'))).toBe(at('08:00'));
+    const bursts = newTaskBursts(
+      [added('a', at('10:00')), added('b', at('10:09')), added('c', at('10:30'))],
+      at('11:00')
+    );
+    expect(bursts.map((b) => [b.creatorId, b.tasks.map((t) => t.id), b.last])).toEqual([
+      ['u-michal', ['a', 'b'], at('10:09')],
+      ['u-michal', ['c'], at('10:30')]
+    ]);
+  });
+});
+
+// ── before the time ───────────────────────────────────────────────────────────────────────────────
+
+describe('before the time ("לפני השעה")', () => {
+  const call = task('t-call', {
+    title: 'להתקשר לבנק',
+    ownerId: 'u-michal',
+    dueDate: TODAY,
+    dueTime: '17:30'
+  });
+  const soon = (now: Date, tasks: Task[], over: Partial<PlanInput> = {}) =>
+    ofType(plan(input({ now, tasks, ...over })).sends, 'soon');
+
+  it('goes to the owner half an hour before, with the minutes left', () => {
+    expect(soon(SUN('17:03'), [call])).toEqual([
+      {
+        keys: [`soon:t-call:${TODAY}:1730:u-michal`],
+        uid: 'u-michal',
+        type: 'soon',
+        title: 'ב-17:30: להתקשר לבנק',
+        body: 'בעוד 25 דקות',
+        url: `${APP}#/task/t-call`,
+        tag: 'soon:t-call',
+        eventIds: []
+      }
+    ]);
+  });
+
+  it.each([
+    ['16:59', null],
+    ['17:00', 'בעוד 30 דקות'],
+    ['17:02', 'בעוד 30 דקות'], // 28 left
+    ['17:03', 'בעוד 25 דקות'], // 27 left
+    ['17:08', 'בעוד 20 דקות'], // 22 left
+    ['17:27', 'בעוד 5 דקות'], // 3 left
+    ['17:29', 'בעוד 5 דקות'], // 1 left: never "0"
+    ['17:30', null],
+    ['18:00', null]
+  ])('at %s: %s', (hhmm, body) => {
+    expect(soon(SUN(hhmm), [call]).map((s) => s.body)).toEqual(body === null ? [] : [body]);
+  });
+
+  it('the same task and time keep one key on every run of the half hour', () => {
+    const keys = ['17:00', '17:10', '17:29'].map((h) => soon(SUN(h), [call])[0]?.keys);
+    expect(new Set(keys.map((k) => k?.join()))).toEqual(
+      new Set([`soon:t-call:${TODAY}:1730:u-michal`])
+    );
+  });
+
+  it('a changed time re-arms it under a new key', () => {
+    const moved = { ...call, dueTime: '18:00' };
+    expect(soon(SUN('17:35'), [moved]).map((s) => [s.keys, s.title])).toEqual([
+      [[`soon:t-call:${TODAY}:1800:u-michal`], 'ב-18:00: להתקשר לבנק']
+    ]);
+  });
+
+  it('nothing in quiet hours: a task at 07:00 or at 22:30 is never reminded', () => {
+    const early = { ...call, id: 't-early', dueTime: '07:00' };
+    const night = { ...call, id: 't-night', dueTime: '22:30' };
+    for (let m = 0; m < 24 * 60; m += 1) {
+      const hhmm = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+      expect(soon(SUN(hhmm), [early, night])).toEqual([]);
+    }
+  });
+
+  it('a task at 07:45 is reminded when quiet hours end; one at 22:15 at 21:45', () => {
+    const early = { ...call, dueTime: '07:45' };
+    expect(soon(SUN('07:29'), [early])).toEqual([]);
+    expect(soon(SUN('07:30'), [early]).map((s) => s.body)).toEqual(['בעוד 15 דקות']);
+    const late = { ...call, dueTime: '22:15' };
+    expect(soon(SUN('21:44'), [late])).toEqual([]);
+    expect(soon(SUN('21:45'), [late]).map((s) => s.body)).toEqual(['בעוד 30 דקות']);
+    expect(soon(SUN('22:00'), [late])).toEqual([]);
+  });
+
+  it('unassigned (or a former member’s): every member, as "עוד לא נלקחה"', () => {
+    for (const ownerId of [null, 'u-gone']) {
+      const open = { ...call, ownerId };
+      expect(soon(SUN('17:10'), [open]).map((s) => [s.uid, s.body, s.keys[0]])).toEqual([
+        ['u-dani', 'בעוד 20 דקות · עוד לא נלקחה', `soon:t-call:${TODAY}:1730:u-dani`],
+        ['u-michal', 'בעוד 20 דקות · עוד לא נלקחה', `soon:t-call:${TODAY}:1730:u-michal`]
+      ]);
+    }
+  });
+
+  it('says so for a hard deadline', () => {
+    const hard = { ...call, hardDeadline: true };
+    expect(soon(SUN('17:10'), [hard]).map((s) => s.body)).toEqual(['בעוד 20 דקות · מועד אחרון']);
+  });
+
+  it('covers a timed plan for today too, but not a week plan, another day or a done task', () => {
+    const plan17 = task('t-plan', {
+      title: 'לאסוף את נועה מחוג',
+      ownerId: 'u-dani',
+      scheduledFor: TODAY,
+      dueTime: '17:30'
+    });
+    expect(soon(SUN('17:10'), [plan17]).map((s) => [s.uid, s.title])).toEqual([
+      ['u-dani', 'ב-17:30: לאסוף את נועה מחוג']
+    ]);
+    const none = [
+      { ...plan17, id: 'week', weekPlan: true },
+      { ...plan17, id: 'tomorrow', scheduledFor: TOMORROW },
+      { ...call, id: 'due-tomorrow', dueDate: TOMORROW },
+      { ...call, id: 'done', status: 'done' as const },
+      { ...call, id: 'no-time', dueTime: null }
+    ];
+    expect(soon(SUN('17:10'), none)).toEqual([]);
+  });
+
+  it('skips whoever added it themselves after the half hour began (they just wrote it)', () => {
+    const at = (hhmm: string) => SUN(hhmm).getTime();
+    const mine = { ...call, createdBy: 'u-michal', createdAt: at('17:00') };
+    expect(soon(SUN('17:05'), [mine])).toEqual([]);
+    const earlier = { ...mine, createdAt: at('16:59') };
+    expect(soon(SUN('17:05'), [earlier]).map((s) => s.uid)).toEqual(['u-michal']);
+    // unassigned and added late by her: the others still get it
+    const open = { ...mine, ownerId: null };
+    expect(soon(SUN('17:05'), [open]).map((s) => s.uid)).toEqual(['u-dani']);
+    // added late by someone else for her: she gets it
+    const forHer = { ...mine, createdBy: 'u-dani' };
+    expect(soon(SUN('17:05'), [forHer]).map((s) => s.uid)).toEqual(['u-michal']);
+  });
+
+  it('respects soon=off and members without a device', () => {
+    const open = { ...call, ownerId: null };
+    const members = [member('u-michal', 'מיכל', 'f', { soon: false }), DANI];
+    expect(soon(SUN('17:10'), [open], { members }).map((s) => s.uid)).toEqual(['u-dani']);
+    const devicesByUid = { 'u-michal': [device('u-michal')] };
+    expect(soon(SUN('17:10'), [open], { devicesByUid }).map((s) => s.uid)).toEqual(['u-michal']);
+  });
+
+  it('two tasks in the same half hour are two pushes', () => {
+    const other = { ...call, id: 't-gas', title: 'להזמין גז', dueTime: '17:45' };
+    expect(soon(SUN('17:20'), [call, other]).map((s) => [s.title, s.body])).toEqual([
+      ['ב-17:30: להתקשר לבנק', 'בעוד 10 דקות'],
+      ['ב-17:45: להזמין גז', 'בעוד 25 דקות']
+    ]);
+  });
+});
+
+// ── overdue, in the morning summary ───────────────────────────────────────────────────────────────
+
+describe('overdue tasks in the morning summary', () => {
+  const ago = (n: number) => addDaysISO(TODAY, -n);
+  const late = (id: string, days: number, fields: Partial<Task> = {}) =>
+    task(id, { title: `באיחור ${id}`, ownerId: 'u-michal', dueDate: ago(days), ...fields });
+  const today = (id: string, fields: Partial<Task> = {}) =>
+    task(id, { title: `היום ${id}`, ownerId: 'u-michal', dueDate: TODAY, ...fields });
+  const morning = (tasks: Task[], over: Partial<PlanInput> = {}) =>
+    ofType(plan(input({ now: SUN('09:00'), tasks, ...over })).sends, 'due');
+
+  it('one overdue task: "באיחור: {title}" and when it was due', () => {
+    expect(morning([late('t1', 1, { title: 'לשלם ארנונה' })])).toEqual([
+      {
+        keys: [`late:t1:${TODAY}:u-michal`],
+        uid: 'u-michal',
+        type: 'due',
+        title: 'באיחור: לשלם ארנונה',
+        body: 'המועד היה אתמול',
+        url: `${APP}#/task/t1`,
+        tag: `due:${TODAY}`,
+        eventIds: []
+      }
+    ]);
+    expect(morning([late('t2', 2)]).map((s) => s.body)).toEqual(['המועד היה לפני יומיים']);
+    expect(morning([late('t5', 5)]).map((s) => s.body)).toEqual(['המועד היה לפני 5 ימים']);
+  });
+
+  it('1 to 7 days overdue are in, 8 days is not; several read "N משימות באיחור"', () => {
+    const tasks = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => late(`d${n}`, n));
+    expect(morning(tasks)).toEqual([
+      {
+        keys: [7, 6, 5, 4, 3, 2, 1].map((n) => `late:d${n}:${TODAY}:u-michal`),
+        uid: 'u-michal',
+        type: 'due',
+        title: '7 משימות באיחור',
+        body: 'באיחור d7, באיחור d6, באיחור d5 ועוד 4',
+        url: `${APP}#/`,
+        tag: `due:${TODAY}`,
+        eventIds: []
+      }
+    ]);
+  });
+
+  it('merges with what is due today into ONE push, keys of both parts', () => {
+    const out = morning([today('a'), late('x', 1)]);
+    expect(out).toEqual([
+      {
+        keys: [`due:a:${TODAY}:u-michal`, `late:x:${TODAY}:u-michal`],
+        uid: 'u-michal',
+        type: 'due',
+        title: 'משימה אחת להיום ואחת באיחור',
+        body: 'היום a, באיחור x',
+        url: `${APP}#/`,
+        tag: `due:${TODAY}`,
+        eventIds: []
+      }
+    ]);
+  });
+
+  it.each([
+    [1, 2, 'משימה אחת להיום ו-2 באיחור'],
+    [2, 1, '2 משימות להיום ואחת באיחור'],
+    [2, 3, '2 משימות להיום ו-3 באיחור']
+  ])('%i today and %i overdue: "%s", today’s titles first', (n, m, title) => {
+    const tasks = [
+      ...Array.from({ length: n }, (_, i) => today(`a${i}`)),
+      ...Array.from({ length: m }, (_, i) => late(`x${i}`, 1))
+    ];
+    const [send, ...rest] = morning(tasks);
+    expect(rest).toEqual([]);
+    expect(send?.title).toBe(title);
+    expect(send?.keys).toHaveLength(n + m);
+    expect(send?.body.startsWith('היום a0')).toBe(true);
+  });
+
+  it('only today, unchanged: "להיום: {title}" and "N משימות להיום"', () => {
+    expect(morning([today('a', { title: 'לשלם ארנונה' })]).map((s) => s.title)).toEqual([
+      'להיום: לשלם ארנונה'
+    ]);
+    expect(morning([today('a'), today('b')]).map((s) => s.title)).toEqual(['2 משימות להיום']);
+  });
+
+  it('a task snoozed or re-planned to a later day is not overdue', () => {
+    expect(morning([late('t1', 1, { scheduledFor: TOMORROW })])).toEqual([]);
+    expect(morning([late('t1', 1, { scheduledFor: '2026-10-10', weekPlan: true })])).toEqual([]);
+    // a snooze moves a missed due date along with the plan, so it is simply not overdue any more
+    expect(morning([late('t1', 1, { dueDate: TOMORROW, scheduledFor: TOMORROW })])).toEqual([]);
+    // planned for today (or a day already gone) still counts
+    expect(morning([late('t1', 1, { scheduledFor: TODAY })]).map((s) => s.title)).toEqual([
+      'באיחור: באיחור t1'
+    ]);
+    expect(morning([late('t1', 2, { scheduledFor: ago(1) })])).toHaveLength(1);
+  });
+
+  it('a missed soft plan alone (no due date) is never overdue', () => {
+    expect(morning([task('p', { ownerId: 'u-michal', scheduledFor: ago(1) })])).toEqual([]);
+  });
+
+  it('goes to the owner, or to everyone when unassigned or the owner left', () => {
+    expect(morning([late('t1', 1, { ownerId: 'u-dani' })]).map((s) => s.uid)).toEqual(['u-dani']);
+    for (const ownerId of [null, 'u-gone']) {
+      expect(morning([late('t1', 1, { ownerId })]).map((s) => s.uid)).toEqual([
+        'u-dani',
+        'u-michal'
+      ]);
+    }
+  });
+
+  it('follows the due window, and after 12:00 catches up only on tasks that existed by then', () => {
+    const at = (hhmm: string) => SUN(hhmm).getTime();
+    const old = late('t-old', 1);
+    const fresh = late('t-1300', 2, { createdAt: at('13:00') });
+    const keys = (hhmm: string, tasks: Task[]) =>
+      ofType(plan(input({ now: SUN(hhmm), tasks })).sends, 'due').map((s) => s.keys);
+    expect(keys('07:59', [old])).toEqual([]);
+    expect(keys('08:00', [old])).toEqual([[`late:t-old:${TODAY}:u-michal`]]);
+    expect(keys('14:00', [old, fresh])).toEqual([[`late:t-old:${TODAY}:u-michal`]]);
+    expect(keys('14:00', [fresh])).toEqual([]);
+    expect(keys('11:00', [late('t-1030', 2, { createdAt: at('10:30') })])).toEqual([
+      [`late:t-1030:${TODAY}:u-michal`]
+    ]);
+    expect(keys('22:00', [old])).toEqual([]);
+  });
+
+  it('each part follows its own switch', () => {
+    const tasks = [today('a', { title: 'לשלם ארנונה' }), late('x', 1, { title: 'לקנות מתנה' })];
+    const as = (notify: Partial<NotifyPrefs>) =>
+      morning(tasks, { members: [member('u-michal', 'מיכל', 'f', notify), DANI] }).map((s) => [
+        s.title,
+        s.keys
+      ]);
+    expect(as({ reminders: false })).toEqual([
+      ['באיחור: לקנות מתנה', [`late:x:${TODAY}:u-michal`]]
+    ]);
+    expect(as({ overdue: false })).toEqual([['להיום: לשלם ארנונה', [`due:a:${TODAY}:u-michal`]]]);
+    expect(as({ reminders: false, overdue: false })).toEqual([]);
+  });
+
+  it('a new day is a new key while it stays overdue', () => {
+    const t = late('t1', 1); // due Saturday
+    const key = (now: Date) => ofType(plan(input({ now, tasks: [t] })).sends, 'due')[0]?.keys;
+    expect(key(SUN('09:00'))).toEqual([`late:t1:${TODAY}:u-michal`]);
+    expect(key(MON('09:00'))).toEqual([`late:t1:${TOMORROW}:u-michal`]);
+  });
+});
+
 // ── catch-up: GitHub's schedule can leave hours between runs ─────────────────────────────────────
 
 describe('catch-up after a run-less stretch', () => {
@@ -1301,7 +1832,9 @@ describe('catch-up after a run-less stretch', () => {
           isoWeek: ''
         };
         const w = activeWindows(parts);
-        if (isQuietHours(parts)) expect([w.due, w.eve, w.weekly]).toEqual([false, false, false]);
+        if (isQuietHours(parts)) {
+          expect([w.due, w.newTasks, w.soon, w.eve, w.weekly]).toEqual(Array(5).fill(false));
+        }
       }
     }
   });
@@ -1364,7 +1897,9 @@ describe('cross-cutting rules', () => {
         task('t-req', { ownerId: 'u-noam' }),
         task('t-due', { ownerId: null, dueDate: TODAY }),
         task('t-ac', { ownerId: 'u-dani', createdAt: daysAgo(50) }),
-        task('t-x', { ownerId: 'u-michal', snoozeCount: 3 })
+        task('t-x', { ownerId: 'u-michal', snoozeCount: 3 }),
+        task('t-late', { ownerId: 'u-dani', dueDate: '2026-10-02' }),
+        task('t-soon', { ownerId: 'u-noam', dueDate: TODAY, dueTime: '10:45' })
       ],
       events: [
         ev('e-req', 'requested', 'u-michal', at, {
@@ -1411,11 +1946,13 @@ describe('cross-cutting rules', () => {
     const keys = plan(busy()).sends.flatMap((s) => s.keys);
     for (const k of keys) {
       expect(k).toMatch(
-        /^(ev:[^:]+:u-\w+|due:[^:]+:\d{4}-\d{2}-\d{2}:u-\w+|eve:[^:]+:\d{4}-\d{2}-\d{2}:u-\w+|wk:\d{4}-W\d{2}:u-\w+)$/
+        /^(ev:[^:]+:u-\w+|(due|eve|late):[^:]+:\d{4}-\d{2}-\d{2}:u-\w+|soon:[^:]+:\d{4}-\d{2}-\d{2}:\d{4}:u-\w+|wk:\d{4}-W\d{2}:u-\w+)$/
       );
       expect(k).not.toContain('/'); // valid Firestore document id
     }
     expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).toContain(`late:t-late:${TODAY}:u-dani`);
+    expect(keys).toContain(`soon:t-soon:${TODAY}:1045:u-noam`);
   });
 
   it('does not mutate its input', () => {
