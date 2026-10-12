@@ -26,7 +26,15 @@ const DAY = 24 * HOUR;
 /** Epoch ms of local noon, n days before Sunday 2026-10-04. */
 const daysAgo = (n: number) => SUN('12:00').getTime() - n * DAY;
 
-const ALL_ON: NotifyPrefs = { requests: true, reminders: true, partnerDone: true, weekly: true };
+const ALL_ON: NotifyPrefs = {
+  requests: true,
+  reminders: true,
+  partnerDone: true,
+  weekly: true,
+  newTasks: true,
+  soon: true,
+  overdue: true
+};
 
 function member(
   uid: string,

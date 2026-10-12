@@ -61,7 +61,10 @@ export const ALL_NOTIFY_ON: NotifyPrefs = {
   requests: true,
   reminders: true,
   partnerDone: true,
-  weekly: true
+  weekly: true,
+  newTasks: true,
+  soon: true,
+  overdue: true
 };
 
 /** A 120×160 photo of a receipt (1.8 KB JPEG), attached to "החלפת מצבר". */

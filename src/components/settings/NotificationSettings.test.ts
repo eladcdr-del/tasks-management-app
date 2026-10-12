@@ -31,7 +31,15 @@ vi.mock('$lib/state/household.svelte', () => ({
   household: {
     me: {
       addressAs: 'f',
-      notify: { requests: true, reminders: true, partnerDone: true, weekly: true }
+      notify: {
+        requests: true,
+        reminders: true,
+        partnerDone: true,
+        weekly: true,
+        newTasks: true,
+        soon: true,
+        overdue: true
+      }
     },
     updateMember: vi.fn()
   }

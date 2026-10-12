@@ -178,7 +178,10 @@ const ALL_NOTIFY_ON: NotifyPrefs = {
   requests: true,
   reminders: true,
   partnerDone: true,
-  weekly: true
+  weekly: true,
+  newTasks: true,
+  soon: true,
+  overdue: true
 };
 
 const TASK_PATCH_KEYS = [

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DocumentData, DocumentSnapshot } from 'firebase/firestore';
 import type { Task } from '../../domain/types';
-import { householdFromSnap, recurrenceDoc, taskFromSnap } from './converters';
+import { householdFromSnap, memberFromSnap, recurrenceDoc, taskFromSnap } from './converters';
 
 /** A minimal synced snapshot of a task document holding `recurrence`. */
 function snapWith(recurrence: unknown): DocumentSnapshot<DocumentData> {
@@ -126,5 +126,44 @@ describe('householdFromSnap: a deleted jar', () => {
       treat: 'גלידה',
       round: 3
     });
+  });
+});
+
+/** A minimal synced snapshot of a member document holding `notify`. */
+function memberSnap(notify: unknown): DocumentSnapshot<DocumentData> {
+  const doc = { displayName: 'דני', color: 'slate', addressAs: 'm', role: 'member', notify };
+  return {
+    id: 'u1',
+    metadata: { hasPendingWrites: false },
+    data: () => doc,
+    get: (k: string) => (doc as Record<string, unknown>)[k]
+  } as unknown as DocumentSnapshot<DocumentData>;
+}
+
+describe('memberFromSnap: the push switches', () => {
+  it('a doc with only the four original keys reads the three later ones as on', () => {
+    const old = { requests: false, reminders: true, partnerDone: false, weekly: true };
+    expect(memberFromSnap(memberSnap(old)).notify).toEqual({
+      ...old,
+      newTasks: true,
+      soon: true,
+      overdue: true
+    });
+  });
+
+  it('only an explicit false turns a switch off', () => {
+    const all = {
+      requests: true,
+      reminders: true,
+      partnerDone: true,
+      weekly: true,
+      newTasks: false,
+      soon: true,
+      overdue: false
+    };
+    expect(memberFromSnap(memberSnap(all)).notify).toEqual(all);
+    expect(Object.values(memberFromSnap(memberSnap(undefined)).notify)).toEqual(
+      Array(7).fill(true)
+    );
   });
 });

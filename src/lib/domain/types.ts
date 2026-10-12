@@ -11,7 +11,8 @@ export type RecurrenceFreq = 'daily'|'weekly'|'monthly'|'yearly';
 export interface Recurrence { freq: RecurrenceFreq; interval?: number; weekdays?: number[]; anchor?: ISODate }
 export type Bucket = 'overdue'|'today'|'week'|'later';
 
-export interface NotifyPrefs { requests: boolean; reminders: boolean; partnerDone: boolean; weekly: boolean }
+/** One switch per push kind (Settings → התראות). newTasks, soon and overdue came later: a member doc without one of them reads it as on (adapters), and the notifier treats any missing key as on. */
+export interface NotifyPrefs { requests: boolean; reminders: boolean; partnerDone: boolean; weekly: boolean; newTasks: boolean; soon: boolean; overdue: boolean }
 /** The jar's goal: 'together' = `target` tasks in total by anyone; 'each' = every member closes their `share` (domain/jar.ts). */
 export type JarMode = 'together'|'each';
 /** mode missing = 'together' (jars set up before goal modes). share: 'each' only, 1..20. counts: completions per member uid this round (missing = none recorded yet); in 'each' mode `count` = Σ min(counts, share) and `target` = share × members for the previous app version. */

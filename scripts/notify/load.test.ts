@@ -1,6 +1,12 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { describe, expect, it } from 'vitest';
-import { normalizeDevice, normalizeHousehold, normalizeRecurrence, normalizeTask } from './load.ts';
+import {
+  normalizeDevice,
+  normalizeHousehold,
+  normalizeMember,
+  normalizeRecurrence,
+  normalizeTask
+} from './load.ts';
 import { jarIsFull } from './jar.ts';
 
 describe('normalizeRecurrence (the app rule, read defensively)', () => {
@@ -132,5 +138,37 @@ describe('a device ("בדיקת התראות")', () => {
     expect(
       normalizeDevice('d1', { ...doc, testPushAt: Timestamp.fromMillis(5_000) }).testPushAt
     ).toBe(5_000);
+  });
+});
+
+describe('a member’s push switches', () => {
+  const member = (notify: unknown) =>
+    normalizeMember('u1', { displayName: 'דני', addressAs: 'm', notify }).notify;
+
+  it('reads newTasks, soon and overdue as on when the doc has only the original four', () => {
+    expect(member({ requests: false, reminders: true, partnerDone: false, weekly: true })).toEqual({
+      requests: false,
+      reminders: true,
+      partnerDone: false,
+      weekly: true,
+      newTasks: true,
+      soon: true,
+      overdue: true
+    });
+  });
+
+  it('only an explicit false turns one off; no notify at all is all on', () => {
+    expect(
+      member({
+        requests: true,
+        reminders: true,
+        partnerDone: true,
+        weekly: true,
+        newTasks: false,
+        soon: 'no',
+        overdue: false
+      })
+    ).toMatchObject({ newTasks: false, soon: true, overdue: false });
+    expect(Object.values(member(undefined))).toEqual(Array(7).fill(true));
   });
 });

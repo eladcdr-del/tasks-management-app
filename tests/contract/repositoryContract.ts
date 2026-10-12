@@ -97,7 +97,15 @@ const PROFILES = {
 } satisfies Record<string, NewMemberProfile>;
 
 const NO_DOCS = { note: '', cost: null, place: '', contact: '' };
-const ALL_NOTIFY = { requests: true, reminders: true, partnerDone: true, weekly: true };
+const ALL_NOTIFY = {
+  requests: true,
+  reminders: true,
+  partnerDone: true,
+  weekly: true,
+  newTasks: true,
+  soon: true,
+  overdue: true
+};
 const PUSH_PENDING: ReadonlySet<EventType> = new Set([
   'requested',
   'accepted',
@@ -417,7 +425,15 @@ export function runRepositoryContract(
       it('updateMember changes only my own member profile', async () => {
         const { hid, A, B } = await pair();
         await env.asUser(B);
-        const notify = { requests: false, reminders: true, partnerDone: false, weekly: false };
+        const notify = {
+          requests: false,
+          reminders: true,
+          partnerDone: false,
+          weekly: false,
+          newTasks: false,
+          soon: true,
+          overdue: false
+        };
         await repo.updateMember(hid, {
           displayName: 'דניאל',
           color: 'teal',

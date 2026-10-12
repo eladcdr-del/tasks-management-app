@@ -14,7 +14,15 @@ const member = (uid: string, displayName: string, color: Member['color']): Membe
   addressAs: 'f',
   role: 'member',
   joinedAt: 0,
-  notify: { requests: true, reminders: true, partnerDone: true, weekly: true },
+  notify: {
+    requests: true,
+    reminders: true,
+    partnerDone: true,
+    weekly: true,
+    newTasks: true,
+    soon: true,
+    overdue: true
+  },
   inviteCode: null
 });
 const MEMBERS = new Map([

@@ -150,10 +150,18 @@ service cloud.firestore {
 
     // ───────────────────────────── Domain shapes ─────────────────────────────
 
+    // member.notify, one switch per push kind. The first four are required; newTasks, soon and
+    // overdue came later and are optional, so the previous app version (which writes only the
+    // four) stays valid. A missing key means on (the notifier and the app read it that way).
     function isNotifyPrefs(n) {
       return n is map
-        && hasExactly(n, ['requests', 'reminders', 'partnerDone', 'weekly'])
-        && n.requests is bool && n.reminders is bool && n.partnerDone is bool && n.weekly is bool;
+        && n.keys().hasAll(['requests', 'reminders', 'partnerDone', 'weekly'])
+        && n.keys().hasOnly(['requests', 'reminders', 'partnerDone', 'weekly',
+                             'newTasks', 'soon', 'overdue'])
+        && n.requests is bool && n.reminders is bool && n.partnerDone is bool && n.weekly is bool
+        && (!('newTasks' in n) || n.newTasks is bool)
+        && (!('soon' in n) || n.soon is bool)
+        && (!('overdue' in n) || n.overdue is bool);
     }
 
     // Google account photo (lh3.googleusercontent.com etc.) or null. Restricting the host stops a

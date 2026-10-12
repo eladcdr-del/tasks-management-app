@@ -360,6 +360,26 @@ describe('demo repository: persistence', () => {
     b.createTask(HID, { title: 'בלי שמירה' });
     await expect(b.flush()).resolves.toBeUndefined();
   });
+
+  it('a demo saved before the newTasks, soon and overdue switches reads them as on', async () => {
+    const mem = memoryPersistence();
+    const a = await make({ persistence: mem });
+    await a.flush();
+    const saved = structuredClone(mem.saved!);
+    const old = { requests: true, reminders: false, partnerDone: true, weekly: false };
+    for (const m of Object.values(saved.households[HID]!.members)) m.notify = { ...old } as never;
+    await mem.save(saved);
+    const b = await make({ persistence: mem });
+    const notify = (await members(b)).map((m) => m.notify);
+    expect(notify).toEqual(Array(2).fill({ ...old, newTasks: true, soon: true, overdue: true }));
+    await b.updateMember(HID, { notify: { ...notify[0]!, soon: false } });
+    expect((await members(b))[0]!.notify).toEqual({
+      ...old,
+      newTasks: true,
+      soon: false,
+      overdue: true
+    });
+  });
 });
 
 describe('demo repository: resetDemo', () => {

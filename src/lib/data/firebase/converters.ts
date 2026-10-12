@@ -175,13 +175,22 @@ export function householdFromSnap(snap: Snap, writeTime?: number): Household {
 
 // ── members ───────────────────────────────────────────────────────────────────
 
+/**
+ * A member's push switches. Only an explicit `false` turns one off: a key the doc lacks reads as on,
+ * like the notifier reads it (scripts/notify/load.ts). Docs written before newTasks, soon and
+ * overdue existed have only the first four keys, and so does every write of the previous app version.
+ */
 function notifyFrom(v: unknown): NotifyPrefs {
   const n = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const on = (x: unknown): boolean => x !== false;
   return {
-    requests: bool(n.requests),
-    reminders: bool(n.reminders),
-    partnerDone: bool(n.partnerDone),
-    weekly: bool(n.weekly)
+    requests: on(n.requests),
+    reminders: on(n.reminders),
+    partnerDone: on(n.partnerDone),
+    weekly: on(n.weekly),
+    newTasks: on(n.newTasks),
+    soon: on(n.soon),
+    overdue: on(n.overdue)
   };
 }
 

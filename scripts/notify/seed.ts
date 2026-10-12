@@ -39,7 +39,17 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
     invite: null
   });
 
-  const allOn = { requests: true, reminders: true, partnerDone: true, weekly: true };
+  const allOn = {
+    requests: true,
+    reminders: true,
+    partnerDone: true,
+    weekly: true,
+    newTasks: true,
+    soon: true,
+    overdue: true
+  };
+  // דני's doc was written by the previous app version: only the first four switches (missing = on).
+  const oldAllOn = { requests: true, reminders: true, partnerDone: true, weekly: true };
   batch.set(db.doc(`households/${hid}/members/${michal}`), {
     uid: michal,
     displayName: 'מיכל',
@@ -59,7 +69,7 @@ export async function seedDemo(db: Firestore, now: Date): Promise<void> {
     addressAs: 'm',
     role: 'member',
     joinedAt: ts(t0 - 89 * DAY),
-    notify: allOn,
+    notify: oldAllOn,
     inviteCode: 'x'.repeat(24)
   });
 

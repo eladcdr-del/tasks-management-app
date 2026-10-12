@@ -20,11 +20,15 @@ export interface Recurrence {
   anchor?: ISODate;
 }
 
+/** One switch per push kind; load.ts reads a missing key (older member docs) as on. */
 export interface NotifyPrefs {
   requests: boolean;
   reminders: boolean;
   partnerDone: boolean;
   weekly: boolean;
+  newTasks: boolean;
+  soon: boolean;
+  overdue: boolean;
 }
 
 /** The jar's goal (src/lib/domain/jar.ts): missing mode = 'together'. */

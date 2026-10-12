@@ -68,7 +68,15 @@ describe('createSeed: household and people', () => {
       createdBy: MICHAL,
       invite: null
     });
-    const all = { requests: true, reminders: true, partnerDone: true, weekly: true };
+    const all = {
+      requests: true,
+      reminders: true,
+      partnerDone: true,
+      weekly: true,
+      newTasks: true,
+      soon: true,
+      overdue: true
+    };
     expect(rec.members[MICHAL]).toMatchObject({
       displayName: 'מיכל',
       color: 'terracotta',

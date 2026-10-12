@@ -123,20 +123,28 @@ invalidates every other code at once.
 
 ### `households/{hid}/members/{uid}`: read M · create Self (founder or joiner batch) · update Self · delete Self or owner
 
-| field       | type                                         | constraints                                                            |
-| ----------- | -------------------------------------------- | ---------------------------------------------------------------------- |
-| displayName | string                                       | 1..40                                                                  |
-| photoURL    | string \| null                               | Google account photo: `https://<host>.googleusercontent.com/…`, ≤ 2048 |
-| color       | MemberColor                                  | enum                                                                   |
-| addressAs   | AddressAs                                    | enum                                                                   |
-| role        | `'owner'` \| `'member'`                      | founder `'owner'`, joiner `'member'`; immutable                        |
-| joinedAt    | Timestamp                                    | create now; immutable                                                  |
-| notify      | `{requests, reminders, partnerDone, weekly}` | exactly these 4 keys, all bool                                         |
-| inviteCode  | string \| null                               | founder `null`; joiner the code used; immutable                        |
+| field       | type                                                                     | constraints                                                             |
+| ----------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| displayName | string                                                                   | 1..40                                                                   |
+| photoURL    | string \| null                                                           | Google account photo: `https://<host>.googleusercontent.com/…`, ≤ 2048  |
+| color       | MemberColor                                                              | enum                                                                    |
+| addressAs   | AddressAs                                                                | enum                                                                    |
+| role        | `'owner'` \| `'member'`                                                  | founder `'owner'`, joiner `'member'`; immutable                         |
+| joinedAt    | Timestamp                                                                | create now; immutable                                                   |
+| notify      | `{requests, reminders, partnerDone, weekly, newTasks?, soon?, overdue?}` | the first 4 keys required, the other 3 optional; all bool. Missing = on |
+| inviteCode  | string \| null                                                           | founder `null`; joiner the code used; immutable                         |
 
 Self-update may change only `displayName`, `photoURL`, `color`, `addressAs`, `notify`. Delete only
 in a leave/removal batch (§3). The owner is the member with `role == 'owner'`. If the owner leaves,
 nobody can remove others.
+
+`notify` holds one switch per push kind (Settings → התראות): `requests` (בקשות), `newTasks`
+(משימות חדשות), `reminders` (תזכורות), `soon` (לפני השעה), `overdue` (משימות באיחור),
+`partnerDone` (משימות שהושלמו), `weekly` (סיכום שבועי). `newTasks`, `soon` and `overdue` came
+later: the app writes all seven, but docs written before them, and every write of the previous app
+version, have only the first four. Both the app and the notifier read a missing key as on; only an
+explicit `false` turns a kind off. What each kind sends is in
+[scripts/notify/README.md](../scripts/notify/README.md).
 
 ### `households/{hid}/tasks/{taskId}`: read M · create/update/delete M
 

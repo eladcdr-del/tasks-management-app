@@ -125,9 +125,12 @@ export function cleanNotify(n: NotifyPrefs): NotifyPrefs {
     requests: n?.requests,
     reminders: n?.reminders,
     partnerDone: n?.partnerDone,
-    weekly: n?.weekly
+    weekly: n?.weekly,
+    newTasks: n?.newTasks,
+    soon: n?.soon,
+    overdue: n?.overdue
   };
-  if (Object.values(out).some((v) => typeof v !== 'boolean')) invalid('notify must be 4 booleans');
+  if (Object.values(out).some((v) => typeof v !== 'boolean')) invalid('notify must be 7 booleans');
   return out as NotifyPrefs;
 }
 

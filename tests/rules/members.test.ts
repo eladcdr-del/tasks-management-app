@@ -13,6 +13,7 @@ import {
   OLGA,
   OTHER_HID,
   as,
+  founderBatch,
   memberDoc,
   notifyPrefs,
   path,
@@ -99,4 +100,61 @@ describe('self update', () => {
       await assertFails(updateDoc(mine(), patch));
     });
   }
+});
+
+// member.notify: the four original switches are required, newTasks / soon / overdue are optional
+// bools (the previous app version writes only the four).
+describe('notify switches', () => {
+  const mine = () => doc(as(env(), BOB), path.member(BOB));
+  const seven = (overrides: Record<string, unknown> = {}) =>
+    notifyPrefs({ newTasks: true, soon: true, overdue: true, ...overrides });
+
+  it('allowed: the four original keys (the previous app version)', async () => {
+    await assertSucceeds(updateDoc(mine(), { notify: notifyPrefs({ reminders: false }) }));
+  });
+  it('allowed: all seven keys', async () => {
+    await assertSucceeds(updateDoc(mine(), { notify: seven({ soon: false }) }));
+  });
+  it('allowed: the four plus only some of the new ones', async () => {
+    await assertSucceeds(updateDoc(mine(), { notify: notifyPrefs({ overdue: false }) }));
+  });
+  it('allowed: an update that toggles only a new key', async () => {
+    await assertSucceeds(updateDoc(mine(), { notify: seven() }));
+    await assertSucceeds(updateDoc(mine(), { notify: seven({ newTasks: false }) }));
+    await assertSucceeds(updateDoc(mine(), { 'notify.overdue': false }));
+  });
+  it('allowed: a founder creates their member doc with all seven', async () => {
+    const NEW_HID = 'hhNew000000000000004';
+    await assertSucceeds(
+      founderBatch(as(env(), EVE), EVE, NEW_HID, {
+        member: memberDoc('owner', null, { notify: seven() })
+      }).commit()
+    );
+  });
+
+  const denied: Array<[string, Record<string, unknown>]> = [
+    ['a non-bool newTasks', seven({ newTasks: 'yes' })],
+    ['a non-bool soon', notifyPrefs({ soon: 1 })],
+    ['a null overdue', seven({ overdue: null })],
+    ['an unknown extra key next to the seven', seven({ marketing: true })],
+    [
+      'the new keys without an original one',
+      {
+        reminders: true,
+        partnerDone: true,
+        weekly: true,
+        newTasks: true,
+        soon: true,
+        overdue: true
+      }
+    ]
+  ];
+  for (const [label, notify] of denied) {
+    it(`denied: ${label}`, async () => {
+      await assertFails(updateDoc(mine(), { notify }));
+    });
+  }
+  it('denied: a non-bool new key set on its own', async () => {
+    await assertFails(updateDoc(mine(), { 'notify.soon': 'later' }));
+  });
 });

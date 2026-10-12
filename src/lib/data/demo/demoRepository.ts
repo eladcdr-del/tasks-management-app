@@ -61,6 +61,7 @@ import type {
   ISODate,
   Member,
   Millis,
+  NotifyPrefs,
   Photo,
   SyncState,
   Task,
@@ -155,6 +156,14 @@ export async function createDemoRepository(
   const store = new DemoStore(state, persistence, options.persistDelayMs);
   if (fresh) store.markDirty();
   return buildDemoRepository(store, now);
+}
+
+/**
+ * A member's switches as the Firebase adapter reads them: a key missing from a demo saved before it
+ * existed (newTasks, soon, overdue) reads as on.
+ */
+function withAllNotify(n: Partial<NotifyPrefs> | undefined): NotifyPrefs {
+  return { ...ALL_NOTIFY_ON, ...n };
 }
 
 function resolvePersistence(o: DemoRepositoryOptions): Persistence | null {
@@ -670,9 +679,9 @@ function buildDemoRepository(store: DemoStore, now: () => Millis): DemoRepositor
         const rec = visible(hid);
         if (!rec) return undefined;
         const order = rec.household.memberIds;
-        return Object.values(rec.members).sort(
-          (a, b) => a.joinedAt - b.joinedAt || order.indexOf(a.uid) - order.indexOf(b.uid)
-        );
+        return Object.values(rec.members)
+          .sort((a, b) => a.joinedAt - b.joinedAt || order.indexOf(a.uid) - order.indexOf(b.uid))
+          .map((m) => ({ ...m, notify: withAllNotify(m.notify) }));
       }, cb);
     },
 

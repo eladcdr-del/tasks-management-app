@@ -89,14 +89,21 @@ export function normalizeJarGoal(
   };
 }
 
-/** A missing preference counts as ON; only an explicit `false` turns a type off. */
+/**
+ * A missing preference counts as ON; only an explicit `false` turns a type off. Member docs written
+ * before newTasks, soon and overdue existed (and by the previous app version) have only the first
+ * four keys.
+ */
 function normalizePrefs(v: unknown): NotifyPrefs {
   const n = obj(v);
   return {
     requests: n.requests !== false,
     reminders: n.reminders !== false,
     partnerDone: n.partnerDone !== false,
-    weekly: n.weekly !== false
+    weekly: n.weekly !== false,
+    newTasks: n.newTasks !== false,
+    soon: n.soon !== false,
+    overdue: n.overdue !== false
   };
 }
 
