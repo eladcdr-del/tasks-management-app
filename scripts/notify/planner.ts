@@ -524,7 +524,8 @@ export function plan(input: PlanInput): Plan {
 
   // ── New tasks: each settled burst goes to every other member with newTasks on, one push per
   //    burst. Left out for them: a task that is theirs or asked of them (the request push covers
-  //    it), and one they have acted on themselves (took, released, declined, edited: they know it).
+  //    it), one they have acted on themselves (took, released, declined, edited: they know it),
+  //    and one added before they joined (they found the list as it was).
   if (windows.newTasks) {
     for (const burst of newTaskBursts(openTasks, nowMs)) {
       const first = burst.tasks[0];
@@ -533,7 +534,11 @@ export function plan(input: PlanInput): Plan {
       for (const m of members) {
         if (m.uid === burst.creatorId || !canReceive(m.uid, 'newTasks')) continue;
         const news = burst.tasks.filter(
-          (t) => t.ownerId !== m.uid && t.requestedOf !== m.uid && t.updatedBy !== m.uid
+          (t) =>
+            t.ownerId !== m.uid &&
+            t.requestedOf !== m.uid &&
+            t.updatedBy !== m.uid &&
+            t.createdAt >= m.joinedAt
         );
         if (news.length === 0) continue;
         const only = news.length === 1 ? news[0] : undefined;

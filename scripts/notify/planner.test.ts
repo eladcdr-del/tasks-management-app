@@ -1338,6 +1338,16 @@ describe('new tasks ("משימות חדשות")', () => {
     expect(news(TUE('10:20'), [tasks[1]!, tasks[2]!])).toEqual([]);
   });
 
+  it('not to a member who joined after the tasks were added', () => {
+    const newcomer = { ...member('u-noam', 'נועם', 'n'), joinedAt: at('10:03') };
+    const tasks = [added('t1', at('10:00')), added('t2', at('10:05'))];
+    const out = news(TUE('10:20'), tasks, { members: [MICHAL, DANI, newcomer] });
+    expect(out.map((s) => [s.uid, s.keys])).toEqual([
+      ['u-dani', ['new:t1:u-dani', 'new:t2:u-dani']],
+      ['u-noam', ['new:t2:u-noam']]
+    ]);
+  });
+
   it('a request is announced by the request push only, exactly as before', () => {
     const parcel = added('t-parcel', at('10:00'), {
       title: 'לאסוף חבילה',
