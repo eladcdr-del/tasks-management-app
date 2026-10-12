@@ -148,7 +148,7 @@ test('a test push is shown as a notification even to a listening window, one at 
     data: {
       type: 'test',
       title: 'HomeCare: ההתראות מגיעות ✓',
-      body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.',
+      body: 'זו התראת בדיקה מהשרת. מעכשיו כל ההתראות של HomeCare יגיעו לכאן.',
       url: `${BASE}#/settings`,
       tag: 'homecare-test'
     },

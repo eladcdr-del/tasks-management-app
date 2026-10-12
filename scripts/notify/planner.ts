@@ -146,7 +146,7 @@ export const STUCK_SNOOZE_COUNT = 3;
  * "משימות חדשות" launched here: tasks created before it are never announced, so the first deploy
  * does not announce the backlog of tasks already in the house.
  */
-export const NEW_TASKS_FROM_MS = Date.parse('2026-10-12T18:00:00+03:00');
+export const NEW_TASKS_FROM_MS = Date.parse('2026-10-12T16:30:00+03:00');
 /** A task added longer ago than this is old news: never announced (also bounds the scan). */
 export const NEW_MAX_AGE_MS = 18 * 3_600_000;
 /**

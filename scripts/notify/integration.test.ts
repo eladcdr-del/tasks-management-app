@@ -436,7 +436,7 @@ describe.skipIf(!EMULATOR)('notifier ⇄ Firestore emulator', () => {
         {
           tokens: [tok.michalPhone.token],
           title: TEST_TITLE,
-          body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.',
+          body: 'זו התראת בדיקה מהשרת. מעכשיו כל ההתראות של HomeCare יגיעו לכאן.',
           url: 'https://eladcdr-del.github.io/tasks-management-app/#/settings'
         }
       ]);

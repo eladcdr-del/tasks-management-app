@@ -652,7 +652,7 @@ describe('test pushes ("בדיקת התראות")', () => {
   const TEST = {
     type: 'test',
     title: 'HomeCare: ההתראות מגיעות ✓',
-    body: 'זו התראת בדיקה מהשרת. מעכשיו בקשות ותזכורות יגיעו לכאן.',
+    body: 'זו התראת בדיקה מהשרת. מעכשיו כל ההתראות של HomeCare יגיעו לכאן.',
     url: `${APP}#/settings`,
     tag: 'homecare-test',
     eventIds: []
