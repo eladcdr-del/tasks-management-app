@@ -84,10 +84,12 @@
     color: var(--ink);
   }
 
+  /* Short helper text: balanced lines, so a second sentence or a last word is never left hanging. */
   .desc {
     font: var(--font-caption);
     font-weight: 400;
     color: var(--ink-2);
+    text-wrap: balance;
   }
 
   .track {

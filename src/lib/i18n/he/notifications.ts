@@ -34,9 +34,22 @@ export const notifications = {
   /** Blocked, in a Chrome tab: through the site info next to the address. */
   deniedSteps: ['לוחצים על הסמל שליד הכתובת, למעלה', 'בוחרים "הרשאות" ומאפשרים "התראות"'],
   typesTitle: 'על מה להודיע לי',
+  /**
+   * One switch per member.notify key, in the order Settings shows them. The no-break spaces keep
+   * "של משימה שלך" whole when the description wraps.
+   */
   types: {
     requests: { label: 'בקשות', desc: 'כשמבקשים ממך משימה, וכשעונים לבקשה שלך' },
+    newTasks: {
+      label: 'משימות חדשות',
+      desc: 'כשמישהו אחר מוסיף משימות לבית. כמה ביחד מגיעות בהתראה אחת'
+    },
     reminders: { label: 'תזכורות', desc: 'בבוקר של יום היעד, וערב לפני מועד אחרון' },
+    soon: { label: 'לפני השעה', desc: 'חצי שעה לפני משימה שנקבעה לה שעה' },
+    overdue: {
+      label: 'משימות באיחור',
+      desc: 'בבוקר, כשעבר המועד של\u00a0משימה\u00a0שלך או של\u00a0משימה פנויה'
+    },
     partnerDone: { label: 'משימות שהושלמו', desc: 'כשמישהו אחר בבית מסיים משימה' },
     weekly: { label: 'סיכום שבועי', desc: 'ביום ראשון, משימות שמחכות כבר זמן מה' }
   },

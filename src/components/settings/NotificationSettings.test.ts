@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { flushSync } from 'svelte';
 import { ui } from '$lib/state/ui.svelte';
+import { household } from '$lib/state/household.svelte';
 
 // Svelte's motion helpers (pulled in through '$components/ui') read prefers-reduced-motion on import.
 vi.hoisted(() => {
@@ -48,6 +49,9 @@ vi.mock('$lib/state/household.svelte', () => ({
 import NotificationSettings from './NotificationSettings.svelte';
 
 const status = () => document.querySelector('[data-push-status]')?.textContent;
+/** The switch whose row is labelled `label` (its accessible name includes the description too). */
+const switchFor = (label: string) =>
+  screen.getByRole('switch', { name: (name) => name.startsWith(`${label} `) });
 /** Each settings path in `el` (StepPath) as its label and steps. */
 const paths = (el: Element) =>
   [...el.querySelectorAll('.path')].map((p) => [
@@ -123,6 +127,47 @@ describe('NotificationSettings', () => {
     expect(screen.getByText('בבוקר של יום היעד, וערב לפני מועד אחרון')).toBeInTheDocument();
     expect(screen.getByText('כשמישהו אחר בבית מסיים משימה')).toBeInTheDocument();
   });
+
+  it('has one switch per kind, in order, each with what it sends', () => {
+    push.pushStatus.mockReturnValue('demo');
+    render(NotificationSettings);
+    const switches = screen.getAllByRole('switch');
+    expect(switches.map((s) => s.closest('label')?.querySelector('.label')?.textContent)).toEqual([
+      'בקשות',
+      'משימות חדשות',
+      'תזכורות',
+      'לפני השעה',
+      'משימות באיחור',
+      'משימות שהושלמו',
+      'סיכום שבועי'
+    ]);
+    expect(switches.every((s) => (s as HTMLInputElement).checked)).toBe(true);
+    expect(switchFor('משימות חדשות')).toHaveAccessibleDescription(
+      'כשמישהו אחר מוסיף משימות לבית. כמה ביחד מגיעות בהתראה אחת'
+    );
+    expect(switchFor('לפני השעה')).toHaveAccessibleDescription('חצי שעה לפני משימה שנקבעה לה שעה');
+    expect(switchFor('משימות באיחור')).toHaveAccessibleDescription(
+      'בבוקר, כשעבר המועד של\u00a0משימה\u00a0שלך או של\u00a0משימה פנויה'
+    );
+  });
+
+  it.each(['newTasks', 'soon', 'overdue'] as const)(
+    'turning %s off saves my switches with only that one changed',
+    async (key) => {
+      push.pushStatus.mockReturnValue('demo');
+      render(NotificationSettings);
+      const label = {
+        newTasks: 'משימות חדשות',
+        soon: 'לפני השעה',
+        overdue: 'משימות באיחור'
+      }[key];
+      await fireEvent.click(switchFor(label));
+      expect(household.updateMember).toHaveBeenCalledTimes(1);
+      expect(household.updateMember).toHaveBeenCalledWith({
+        notify: { ...household.me!.notify, [key]: false }
+      });
+    }
+  );
 });
 
 describe('בדיקת התראות', () => {

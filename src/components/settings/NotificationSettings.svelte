@@ -15,8 +15,9 @@
   //            only the second did not come
   //   denied   how to allow notifications again: in the installed app through Android's app info
   //            (long-press the icon → פרטי האפליקציה → התראות), in a tab through the site info
-  //   types    my member.notify switches {requests, reminders, partnerDone, weekly}; they are
-  //            per person (all my devices), so they show in every state, the demo included
+  //   types    my member.notify switches, one per push kind: requests, newTasks, reminders, soon,
+  //            overdue, partnerDone, weekly (in that order); they are per person (all my devices),
+  //            so they show in every state, the demo included
   // The status is re-read when the app returns to the foreground (the user may have changed the
   // permission in the system or site settings), on the Permissions API's change event, and when
   // this device's registration changes (UpdatePrompt registers a re-allowed permission on its own).
@@ -42,7 +43,15 @@
   import StepPath from './StepPath.svelte';
 
   const t = he.notifications;
-  const TYPES = ['requests', 'reminders', 'partnerDone', 'weekly'] as const;
+  const TYPES = [
+    'requests',
+    'newTasks',
+    'reminders',
+    'soon',
+    'overdue',
+    'partnerDone',
+    'weekly'
+  ] as const satisfies readonly (keyof NotifyPrefs)[];
 
   /** Bumped whenever the permission or the registration may have changed (neither is reactive). */
   let tick = $state(0);

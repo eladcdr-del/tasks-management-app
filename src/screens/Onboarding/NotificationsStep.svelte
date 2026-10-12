@@ -1,6 +1,6 @@
 <script lang="ts">
   // owner: step 5.1. #/onboarding/notifications, the last onboarding step: a warm explanation of
-  // the four notification types, then "הפעלה" (permission prompt + device registration, see
+  // the notification kinds (the morning line covers both reminders and overdue tasks), then "הפעלה" (permission prompt + device registration, see
   // platform/push.ts) or "אחר כך". Both continue to Home (replace, so Back never returns here),
   // except when the device could not be registered: then the step says so and "הפעלה" becomes
   // "נסו שוב" ("אחר כך" still continues).
@@ -9,7 +9,9 @@
   // simply continues (Settings explains why). Allowed but not registered here yet keeps "הפעלה".
   import BellRing from '@lucide/svelte/icons/bell-ring';
   import HandHeart from '@lucide/svelte/icons/hand-heart';
+  import ListPlus from '@lucide/svelte/icons/list-plus';
   import AlarmClock from '@lucide/svelte/icons/alarm-clock';
+  import Timer from '@lucide/svelte/icons/timer';
   import CircleCheck from '@lucide/svelte/icons/circle-check';
   import CalendarHeart from '@lucide/svelte/icons/calendar-heart';
   import { Banner, Button } from '$components/ui';
@@ -21,7 +23,9 @@
   const t = he.onboardingNotifications;
   const icons = {
     requests: HandHeart,
+    newTasks: ListPlus,
     reminders: AlarmClock,
+    soon: Timer,
     partnerDone: CircleCheck,
     weekly: CalendarHeart
   } as const;

@@ -128,16 +128,34 @@ test('Settings shows the demo notification state and saves the type switches', a
   const block = page.locator('[data-notifications="demo"]');
   await expect(block).toContainText('במצב הדגמה לא נשלחות התראות');
   await shot(page, 'settings-notifications');
+  // One switch per kind, in this order, all on in the seed.
+  await expect(block.locator('.toggle .label')).toHaveText([
+    'בקשות',
+    'משימות חדשות',
+    'תזכורות',
+    'לפני השעה',
+    'משימות באיחור',
+    'משימות שהושלמו',
+    'סיכום שבועי'
+  ]);
+  await expect(block.getByRole('switch')).toHaveCount(7);
   const weekly = block.getByRole('switch', { name: 'סיכום שבועי' });
+  const soon = block.getByRole('switch', { name: 'לפני השעה' });
   const before = await weekly.isChecked();
+  await expect(soon).toBeChecked();
   await block.getByText('סיכום שבועי', { exact: true }).click(); // the whole row is the target
   await expect(weekly).toBeChecked({ checked: !before });
+  await block.getByText('לפני השעה', { exact: true }).click();
+  await expect(soon).not.toBeChecked();
   // The demo persists with a short debounce: flush it before reloading.
   await page.evaluate(() =>
     (window as unknown as { __homecareTest: { flush(): Promise<void> } }).__homecareTest.flush()
   );
   await page.reload();
-  await expect(
-    page.locator('[data-notifications="demo"]').getByRole('switch', { name: 'סיכום שבועי' })
-  ).toBeChecked({ checked: !before });
+  const after = page.locator('[data-notifications="demo"]');
+  await expect(after.getByRole('switch', { name: 'סיכום שבועי' })).toBeChecked({
+    checked: !before
+  });
+  await expect(after.getByRole('switch', { name: 'לפני השעה' })).not.toBeChecked();
+  await expect(after.getByRole('switch', { name: 'משימות באיחור' })).toBeChecked();
 });
